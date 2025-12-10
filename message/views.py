@@ -1,77 +1,48 @@
-# chat/views.py
-from rest_framework.views import APIView
+from rest_framework import generics, permissions
 from rest_framework.response import Response
-from rest_framework import status
-from django.contrib.auth import get_user_model
-from .models import ChatThread
-from .serializers import ChatThreadSerializer
+from rest_framework.exceptions import ValidationError
+from .models import Message
+from .serializers import MessageSerializer
 
-User = get_user_model()
+# Only authenticated users can create, update, or delete messages
+class MessageCreateView(generics.CreateAPIView):
+    queryset = Message.objects.all()
+    serializer_class = MessageSerializer
+    permission_classes = [permissions.IsAuthenticated]
 
-class CreateOrGetThreadView(APIView):
-    def post(self, request):
-        client_id = request.data.get("client_id")
-        landscaper_id = request.data.get("landscaper_id")
+    def perform_create(self, serializer):
+        serializer.save(sender=self.request.user)  # Automatically set sender
 
-        if not client_id or not landscaper_id:
-            return Response({"error": "client_id & landscaper_id required"}, status=400)
+# Get all messages for a thread
+class MessageListView(generics.ListAPIView):
+    serializer_class = MessageSerializer
+    permission_classes = [permissions.IsAuthenticated]
 
-        try:
-            client = User.objects.get(id=client_id)
-            landscaper = User.objects.get(id=landscaper_id)
-        except User.DoesNotExist:
-            return Response({"error": "User not found"}, status=404)
+    def get_queryset(self):
+        thread_id = self.request.query_params.get('thread')
+        if not thread_id:
+            raise ValidationError({"thread": "Thread ID is required"})
+        return Message.objects.filter(thread_id=thread_id).order_by("created_at")
 
-        thread, created = ChatThread.objects.get_or_create(
-            client=client,
-            landscaper=landscaper
-        )
+# Update a message (only sender can update)
+class MessageUpdateView(generics.UpdateAPIView):
+    queryset = Message.objects.all()
+    serializer_class = MessageSerializer
+    permission_classes = [permissions.IsAuthenticated]
 
-        serializer = ChatThreadSerializer(thread)
-        return Response({"thread": serializer.data, "created": created})
-    
-class ThreadMessagesView(APIView):
-    def get(self, request, thread_id):
-        try:
-            thread = ChatThread.objects.get(id=thread_id)
-        except ChatThread.DoesNotExist:
-            return Response({"error": "Thread not found"}, status=404)
+    def perform_update(self, serializer):
+        message = self.get_object()
+        if message.sender != self.request.user:
+            raise ValidationError({"detail": "You cannot update someone else's message"})
+        serializer.save()
 
-        messages = thread.messages.all().order_by("created_at")
-        from .serializers import MessageSerializer
-        serializer = MessageSerializer(messages, many=True)
-        return Response(serializer.data)
+# Delete a message (only sender can delete)
+class MessageDeleteView(generics.DestroyAPIView):
+    queryset = Message.objects.all()
+    serializer_class = MessageSerializer
+    permission_classes = [permissions.IsAuthenticated]
 
-class DeleteMessageView(APIView):
-    def delete(self, request, message_id):
-        from .models import Message
-
-        try:
-            msg = Message.objects.get(id=message_id)
-        except Message.DoesNotExist:
-            return Response({"error": "Message not found"}, status=404)
-
-        msg.is_deleted = True
-        msg.text = None
-        msg.file = None
-        msg.save()
-
-        return Response({"message": "Deleted successfully"})
-
-class UpdateMessageView(APIView):
-    def patch(self, request, message_id):
-        from .models import Message
-
-        try:
-            msg = Message.objects.get(id=message_id)
-        except Message.DoesNotExist:
-            return Response({"error": "Message not found"}, status=404)
-
-        new_text = request.data.get("text")
-        if not new_text:
-            return Response({"error": "Text is required"}, status=400)
-
-        msg.text = new_text
-        msg.save()
-
-        return Response({"message": "Updated", "text": msg.text})
+    def perform_destroy(self, instance):
+        if instance.sender != self.request.user:
+            raise ValidationError({"detail": "You cannot delete someone else's message"})
+        instance.delete()

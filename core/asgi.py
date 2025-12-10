@@ -18,23 +18,30 @@
 #     ),
 # })
 
+# import os
+# import django
+# from channels.routing import ProtocolTypeRouter, URLRouter
+# from channels.auth import AuthMiddlewareStack
+# from django.core.asgi import get_asgi_application
+
+# os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings")
+# django.setup()
+
+# import message.routing   
+
+# application = ProtocolTypeRouter({
+#     "http": get_asgi_application(),
+#     "websocket": AuthMiddlewareStack(
+#         URLRouter(
+#             message.routing.websocket_urlpatterns
+#         )
+#     ),
+# })
+# core/asgi.py
+# Keep default ASGI for Django HTTP only
 import os
-from channels.auth import AuthMiddlewareStack
-from channels.routing import ProtocolTypeRouter, URLRouter
 from django.core.asgi import get_asgi_application
-import message.routing
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings")
 
-# Django ASGI application for HTTP requests
-django_asgi_app = get_asgi_application()
-
-application = ProtocolTypeRouter({
-    "http": django_asgi_app,  # handles normal HTTP requests
-    "websocket": AuthMiddlewareStack(
-        URLRouter(
-            message.routing.websocket_urlpatterns  # your websocket urls
-        )
-    ),
-})
-
+application = get_asgi_application()
