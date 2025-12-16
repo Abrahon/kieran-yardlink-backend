@@ -13,7 +13,7 @@ from datetime import timedelta
 
 from pathlib import Path
 import cloudinary
-
+import os
 from decouple import config
 
 
@@ -51,9 +51,8 @@ INSTALLED_APPS = [
     'profiles.apps.ProfilesConfig',
     'channels',
     'chat',
-    'message'
-    
-
+    'message',
+    'subscriptions',
 
 ]
 
@@ -106,10 +105,6 @@ SIMPLE_JWT = {
     "REFRESH_TOKEN_LIFETIME": timedelta(days=30),
 }
 
-# Database
-# https://docs.djangoproject.com/en/5.2/ref/settings/#databases
-
-# SECURITY
 
 
 # DATABASE
@@ -123,6 +118,24 @@ DATABASES = {
         'PORT': config('DB_PORT', default='5432'),
     }
 }
+
+# STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY") 
+# print("hi sujon",STRIPE_SECRET_KEY) 
+# STRIPE_PUBLIC_KEY = os.environ.get("STRIPE_PUBLIC_KEY")
+# STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET')
+
+from decouple import config
+import os
+
+# Using python-decouple for secret/public keys
+STRIPE_SECRET_KEY = config("STRIPE_SECRET_KEY", default="sk_test_51M6gYVGBPprXqVx5w0QANszIBD...")
+STRIPE_PUBLIC_KEY = config("STRIPE_PUBLIC_KEY", default="pk_test_51M6gYVGBPprXqVx542uwb0cuCS...")
+# Using environment variable for webhook secret
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "whsec_f5c7ce89a35e53f9c4f0a1ef9f3d0ebcfb2703321455836bc4938435f61a83f0")
+
+print("Stripe secret key loaded:", STRIPE_SECRET_KEY) 
+print("Stripe webhook key loaded:", STRIPE_WEBHOOK_SECRET) 
+ # Just to verify
 
 
 CLOUDINARY_STORAGE = {
@@ -214,133 +227,3 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
-
-# from decouple import config
-# from datetime import timedelta
-# from pathlib import Path
-
-# # Build paths inside the project like this: BASE_DIR / 'subdir'.
-# BASE_DIR = Path(__file__).resolve().parent.parent
-
-# SECRET_KEY = config('SECRET_KEY')
-# DEBUG = config('DEBUG', default=True, cast=bool)
-# ALLOWED_HOSTS = []
-
-# # Application definition
-# INSTALLED_APPS = [
-#     'django.contrib.admin',
-#     'django.contrib.auth',
-#     'django.contrib.contenttypes',
-#     'django.contrib.sessions',
-#     'django.contrib.messages',
-#     'django.contrib.staticfiles',
-    
-#     # Third-party
-#     'cloudinary',
-#     'cloudinary_storage',  
-#     'rest_framework',
-#     'corsheaders',
-#     'channels',
-    
-#     # Your apps
-#     'accounts.apps.AccountsConfig',
-#     'profiles.apps.ProfilesConfig',
-#     'chat',
-#     'message',
-# ]
-
-# MIDDLEWARE = [
-#     'corsheaders.middleware.CorsMiddleware', 
-#     'django.middleware.security.SecurityMiddleware',
-#     'django.contrib.sessions.middleware.SessionMiddleware',
-#     'django.middleware.common.CommonMiddleware',
-#     'django.middleware.csrf.CsrfViewMiddleware',
-#     'django.contrib.auth.middleware.AuthenticationMiddleware',
-#     'django.contrib.messages.middleware.MessageMiddleware',
-#     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-# ]
-
-# ROOT_URLCONF = 'core.urls'
-
-# TEMPLATES = [
-#     {
-#         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-#         'DIRS': [],
-#         'APP_DIRS': True,
-#         'OPTIONS': {
-#             'context_processors': [
-#                 'django.template.context_processors.request',
-#                 'django.contrib.auth.context_processors.auth',
-#                 'django.contrib.messages.context_processors.messages',
-#             ],
-#         },
-#     },
-# ]
-
-# ASGI_APPLICATION = "core.asgi.application"
-
-# CHANNEL_LAYERS = {
-#     "default": {
-#         "BACKEND": "channels.layers.InMemoryChannelLayer",
-#     }
-# }
-
-# WSGI_APPLICATION = 'core.wsgi.application'
-# AUTH_USER_MODEL = 'accounts.User'
-
-# # JWT
-# SIMPLE_JWT = {
-#     "ACCESS_TOKEN_LIFETIME": timedelta(days=30),
-#     "REFRESH_TOKEN_LIFETIME": timedelta(days=30),
-# }
-
-# # Database
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.postgresql',
-#         'NAME': config('DB_NAME'),
-#         'USER': config('DB_USER'),
-#         'PASSWORD': config('DB_PASSWORD'),
-#         'HOST': config('DB_HOST', default='localhost'),
-#         'PORT': config('DB_PORT', default='5432'),
-#     }
-# }
-
-# # Cloudinary storage (without calling cloudinary.config in settings)
-# DEFAULT_FILE_STORAGE = "cloudinary_storage.storage.MediaCloudinaryStorage"
-# MEDIA_URL = '/media/'
-
-# # REST Framework
-# REST_FRAMEWORK = {
-#     'DEFAULT_AUTHENTICATION_CLASSES': (
-#         'rest_framework_simplejwt.authentication.JWTAuthentication',
-#     ),
-#     'DEFAULT_PERMISSION_CLASSES': (
-#         'rest_framework.permissions.IsAuthenticated',
-#     ),
-# }
-
-# # Email settings
-# EMAIL_BACKEND = config("EMAIL_BACKEND")
-# EMAIL_HOST = config("EMAIL_HOST")
-# EMAIL_PORT = config("EMAIL_PORT", cast=int)
-# EMAIL_USE_SSL = config("EMAIL_USE_SSL", cast=bool)
-# EMAIL_USE_TLS = config("EMAIL_USE_TLS", cast=bool)
-# EMAIL_HOST_USER = config("EMAIL_HOST_USER")
-# EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD")
-# DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL")
-
-# # Password validation
-# AUTH_PASSWORD_VALIDATORS = [
-#     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',},
-#     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',},
-#     {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',},
-#     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',},
-# ]
-
-# LANGUAGE_CODE = 'en-us'
-# TIME_ZONE = 'UTC'
-# USE_I18N = True
-# USE_TZ = True
-# STATIC_URL = 'static/'
-# DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
