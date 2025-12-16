@@ -26,6 +26,8 @@ class Plan(models.Model):
         default=SubscriptionDuration.MONTHLY
     )
     is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
      # 🔹 Duration mapping
     @property
     def duration_days(self):

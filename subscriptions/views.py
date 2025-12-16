@@ -1,18 +1,20 @@
-from rest_framework import generics, permissions
+
 from .models import Plan
 from .serializers import PlanSerializer
-from rest_framework import generics, permissions
 from django.shortcuts import get_object_or_404
 from .models import Subscription, Plan
 from .serializers import SubscriptionSerializer
 
+import stripe
+from django.conf import settings
+from rest_framework import generics, permissions
 
+stripe.api_key = settings.STRIPE_SECRET_KEY
 from django.http import JsonResponse
 import stripe
 from django.conf import settings
 from django.views.decorators.csrf import csrf_exempt
 # create subscription
-stripe.api_key = settings.STRIPE_SECRET_KEY
 
 # print("strip api key", stripe.api_key )
 
@@ -105,6 +107,7 @@ class IsAdmin(permissions.BasePermission):
         return request.user.is_authenticated and request.user.role == "admin"
     
 
+
 class PlanListCreateView(generics.ListCreateAPIView):
     queryset = Plan.objects.all()
     serializer_class = PlanSerializer
@@ -113,6 +116,35 @@ class PlanListCreateView(generics.ListCreateAPIView):
         if self.request.method == "POST":
             return [IsAdmin()]
         return [permissions.AllowAny()]
+
+    def perform_create(self, serializer):
+        # Save plan in your database first
+        plan = serializer.save()
+
+        # Ensure duration is compatible with Stripe
+        interval = plan.duration.lower()
+        if interval not in ["day", "week", "month", "year"]:
+            # Default to month if invalid
+            interval = "month"
+
+        # Create product in Stripe
+        product = stripe.Product.create(
+            name=plan.name,
+            description=plan.description or "",
+        )
+
+        # Create price in Stripe
+        price = stripe.Price.create(
+            product=product.id,
+            unit_amount=int(plan.price * 100),  # Stripe expects amount in cents
+            currency="usd",
+            recurring={"interval": interval},  # 'day', 'week', 'month', 'year'
+        )
+
+        # Save Stripe IDs in your Plan model
+        plan.stripe_product_id = product.id
+        plan.stripe_price_id = price.id
+        plan.save()
 
 
 class PlanRetrieveUpdateDeleteView(generics.RetrieveUpdateDestroyAPIView):
