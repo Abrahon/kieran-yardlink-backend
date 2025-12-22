@@ -201,25 +201,6 @@ class SendOTPView(generics.CreateAPIView):
         )
 
 
-# class VerifyOTPView(generics.GenericAPIView):
-#     serializer_class = VerifyOTPSerializer
-#     permission_classes = [AllowAny]
-#     parser_classes = (MultiPartParser, FormParser)
-
-#     def post(self, request, *args, **kwargs):
-#         serializer = self.get_serializer(data=request.data, context={"request": request})
-#         serializer.is_valid(raise_exception=True)
-
-#         user = serializer.validated_data["user"]
-
-#         # ---------------------------------------------------------
-#         # 🔥 CHANGE 5: Activate user after successful OTP
-#         # ---------------------------------------------------------
-#         user.is_active = True
-#         user.save()
-
-#         return Response({"message": "OTP verified successfully. Account activated."})
-
 
 
 class VerifyOTPView(APIView):
