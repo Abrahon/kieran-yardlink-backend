@@ -23,6 +23,8 @@ urlpatterns = [
     path('api/',include('profiles.urls')),
     path('api/', include('chat.urls')),
     path('api/', include('message.urls')),
-    path('api/',include('subscriptions.urls'))
+    path('api/',include('subscriptions.urls')),
+    path('api/',include('landscapers.urls')),
+    path('api/',include('services.urls')),
 
 ]

@@ -53,6 +53,8 @@ INSTALLED_APPS = [
     'chat',
     'message',
     'subscriptions',
+    'landscapers',
+    'services',
 
 ]
 
