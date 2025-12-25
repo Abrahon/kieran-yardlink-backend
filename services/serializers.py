@@ -31,10 +31,19 @@ class ServiceSerializer(serializers.ModelSerializer):
 
         return attrs
 
+    # def create(self, validated_data):
+    #     user = self.context["request"].user
+    #     profile = user.profile
+    #     return Service.objects.create(landscaper=profile, **validated_data)
+    
     def create(self, validated_data):
         user = self.context["request"].user
-        profile = user.landscaper_profile
+        # Access landscaper profile via related_name
+        profile = getattr(user, "landscaper_profile", None)
+        if not profile:
+            raise serializers.ValidationError("Landscaper profile not found for this user.")
         return Service.objects.create(landscaper=profile, **validated_data)
+
 
     def update(self, instance, validated_data):
         user = self.context["request"].user

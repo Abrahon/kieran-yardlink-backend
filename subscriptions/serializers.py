@@ -6,9 +6,10 @@ from django.contrib.auth import get_user_model
 
 User = get_user_model()
 
-from rest_framework import serializers
 from decimal import Decimal
-from .models import Plan
+
+
+
 
 
 class PlanSerializer(serializers.ModelSerializer):
@@ -51,17 +52,6 @@ class PlanSerializer(serializers.ModelSerializer):
 
 
 
-from rest_framework import serializers
-from django.utils import timezone
-from datetime import timedelta
-from .models import Subscription
-
-
-from rest_framework import serializers
-from django.utils import timezone
-from datetime import timedelta
-from decimal import Decimal
-from .models import Plan, Subscription
 
 
 class SubscriptionSerializer(serializers.ModelSerializer):
