@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     'cloudinary',
     'cloudinary_storage',
     'rest_framework',
+    'django_rq',
     'corsheaders', 
     'accounts.apps.AccountsConfig',
     'profiles.apps.ProfilesConfig',
@@ -55,6 +56,7 @@ INSTALLED_APPS = [
     'subscriptions',
     'landscapers',
     'services',
+    'weather',
 
 ]
 
@@ -96,6 +98,22 @@ CHANNEL_LAYERS = {
         },
     },
 }
+
+RQ_QUEUES = {
+    "default": {
+        "URL": "redis://127.0.0.1:6379/1",
+        "DEFAULT_TIMEOUT": 360,
+    }
+}
+
+
+# OpenWeatherMap API Key
+WEATHER_API_KEY = '0bb807c6a2814dc697501504252812'
+# Optional defaults
+DEFAULT_CITY = 'Dhaka,BD'
+RAIN_ALERT_THRESHOLD = 30  
+
+
 
 WSGI_APPLICATION = 'core.wsgi.application'
 
