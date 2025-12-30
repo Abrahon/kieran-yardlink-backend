@@ -7,50 +7,87 @@ from rest_framework import status
 from .models import Property, PropertyPhoto
 from .serializers import PropertyPhotoSerializer
 
-class GrassTypeListView(APIView):
-    permission_classes = [IsAuthenticated]
+# properties/views.py
+from rest_framework import generics, permissions
+from .models import Property, PropertyPhoto
+from .serializers import PropertySerializer, PropertyPhotoSerializer
 
-    def get(self, request):
-        return Response([
-            {"key": key, "label": label}
-            for key, label in GrassTypeChoices.choices
-        ])
+# ------------------ Property Views ------------------
+
+class PropertyListCreateView(generics.ListCreateAPIView):
+    queryset = Property.objects.all()
+    serializer_class = PropertySerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        # Only return properties of the logged-in user
+        return self.queryset.filter(owner=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(owner=self.request.user)
+
+
+class PropertyDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Property.objects.all()
+    serializer_class = PropertySerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        # Ensure users can only access their own properties
+        return self.queryset.filter(owner=self.request.user)
 
 
 
 
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from rest_framework import status
+from .models import Property, PropertyPhoto
+from .serializers import PropertyPhotoSerializer
 
 class PropertyMultipleImageUploadView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
         property_id = request.data.get("property_id")
-        images = request.FILES.getlist("images[]")  # ARRAY
 
-        if not images:
+        if not property_id:
             return Response(
-                {"error": "images[] array is required"},
+                {"error": "property_id is required"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        property_obj = Property.objects.filter(
-            id=property_id,
-            owner=request.user
-        ).first()
-
-        if not property_obj:
+        # Ensure property exists
+        try:
+            property_obj = Property.objects.get(id=int(property_id))
+        except Property.DoesNotExist:
             return Response(
-                {"error": "Property not found or permission denied"},
+                {"error": "Property with this ID does not exist"},
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        photos = [
-            PropertyPhoto.objects.create(
-                property=property_obj,
-                image=image
+        # Check ownership
+        if property_obj.owner != request.user:
+            return Response(
+                {"error": "You do not have permission to upload images to this property"},
+                status=status.HTTP_403_FORBIDDEN
             )
-            for image in images
-        ]
+
+        # Get uploaded images
+        images = request.FILES.getlist("images")
+        if not images:
+            return Response(
+                {"error": "images array is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Create photos
+        photos = []
+        for image in images:
+            photo = PropertyPhoto.objects.create(property=property_obj, image=image)
+            photos.append(photo)
 
         serializer = PropertyPhotoSerializer(photos, many=True)
 

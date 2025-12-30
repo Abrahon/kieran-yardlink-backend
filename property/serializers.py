@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import Property
 from .enums import GrassTypeChoices
 from rest_framework import serializers
-from .models import PropertyPhot
+from .models import PropertyPhoto
 
 class PropertySerializer(serializers.ModelSerializer):
     grass_types = serializers.ListField(
@@ -22,8 +22,6 @@ class PropertySerializer(serializers.ModelSerializer):
             "notes",
         ]
 
-
-o
 
 
 

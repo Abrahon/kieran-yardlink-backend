@@ -46,11 +46,6 @@ class Property(models.Model):
 
 
 
-
-
-
-
-
 class PropertyPhoto(models.Model):
     property = models.ForeignKey(
         "Property",
@@ -62,3 +57,4 @@ class PropertyPhoto(models.Model):
         folder="property_photos"
     )
     uploaded_at = models.DateTimeField(auto_now_add=True)
+
