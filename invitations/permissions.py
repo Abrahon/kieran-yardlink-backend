@@ -1,11 +1,15 @@
-# permissions.py
 from rest_framework.permissions import BasePermission
+from subscriptions.models import Subscription  # import from subscription app
 
 class IsProLandscaper(BasePermission):
     def has_permission(self, request, view):
-        return (
-            request.user.is_authenticated
-            and request.user.role == "landscaper"
-            and hasattr(request.user, "subscription")
-            and request.user.subscription.is_pro
+        if not request.user.is_authenticated or request.user.role != "landscaper":
+            return False
+
+        active_subs = Subscription.objects.filter(
+            user=request.user,
+            is_active=True,
+            plan__name__icontains="Pro"
         )
+        return active_subs.exists()
+

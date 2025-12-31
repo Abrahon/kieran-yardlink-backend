@@ -2,7 +2,7 @@ from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from .models import AdminProfile
-from .serializers import AdminProfileSerializer,ChangePasswordSerializer
+from .serializers import AdminProfileSerializer,ChangePasswordSerializer,WorkerProfileSerializer
 from rest_framework import generics, permissions
 from django.shortcuts import render
 from rest_framework import generics, permissions, status
@@ -19,6 +19,15 @@ class AdminProfileView(RetrieveUpdateAPIView):
         profile, _ = AdminProfile.objects.get_or_create(user=self.request.user)
         return profile
 
+class WorkerProfileView(RetrieveUpdateAPIView):
+    serializer_class = WorkerProfileSerializer
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def get_object(self):
+        # Get the WorkerProfile for the logged-in user, create if missing
+        profile, _ = WorkerProfile.objects.get_or_create(user=self.request.user)
+        return profile
 
 # ---------------------- Change Password ---------------------- #
 class ChangePasswordView(generics.UpdateAPIView):

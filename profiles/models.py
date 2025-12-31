@@ -16,3 +16,26 @@ class AdminProfile(models.Model):
 
     def __str__(self):
         return f"{self.user.name}"
+
+
+
+
+User = get_user_model()
+
+class WorkerProfile(models.Model):
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name="worker_profile"
+    )
+    pro_landscaper = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="workers"
+    )
+    phone = models.CharField(max_length=15, blank=True, null=True)
+    image = CloudinaryField("worker_profile", blank=True, null=True)
+
+    def __str__(self):
+        return f"{self.user.name} - Worker of {self.pro_landscaper.name}"
+
