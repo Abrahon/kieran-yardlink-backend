@@ -388,38 +388,70 @@ class UserListView(APIView):
 
 # delete user admin and own user
 
+# class AdminDeleteUserView(generics.DestroyAPIView):
+#     """
+#     Admin can delete any user by ID safely (avoiding django_admin_log FK issues)
+#     """
+#     permission_classes = [IsAdminUser]
+#     queryset = User.objects.all()
+#     lookup_field = "id"
+
+#     def delete(self, request, *args, **kwargs):
+#         # Get the user to delete
+#         user = self.get_object()
+
+#         # Prevent deleting superuser accidentally
+#         if user.is_superuser:
+#             return Response(
+#                 {"detail": "Cannot delete a superuser."},
+#                 status=status.HTTP_403_FORBIDDEN
+#             )
+
+#         # Temporarily set request.user to a superuser to avoid admin log FK issues
+#         if not request.user.is_superuser:
+#             superuser = User.objects.filter(is_superuser=True).first()
+#             if superuser:
+#                 request.user = superuser
+
+#         # Delete the user
+#         user.delete()
+
+#         return Response(
+#             {"detail": f"User {user.email} deleted successfully."},
+#             status=status.HTTP_200_OK
+#         )
+
+
+from rest_framework import generics, status
+from rest_framework.response import Response
+from rest_framework.permissions import IsAdminUser
+from accounts.models import User
+
 class AdminDeleteUserView(generics.DestroyAPIView):
     """
-    Admin can delete any user by ID safely (avoiding django_admin_log FK issues)
+    Admin can delete any user by ID safely.
+    Only superusers can delete other superusers.
     """
     permission_classes = [IsAdminUser]
     queryset = User.objects.all()
     lookup_field = "id"
 
     def delete(self, request, *args, **kwargs):
-        # Get the user to delete
-        user = self.get_object()
+        user_to_delete = self.get_object()
 
-        # Prevent deleting superuser accidentally
-        if user.is_superuser:
+        # Only superuser can delete another superuser
+        if user_to_delete.is_superuser and not request.user.is_superuser:
             return Response(
-                {"detail": "Cannot delete a superuser."},
+                {"detail": "Only a superuser can delete another superuser."},
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        # Temporarily set request.user to a superuser to avoid admin log FK issues
-        if not request.user.is_superuser:
-            superuser = User.objects.filter(is_superuser=True).first()
-            if superuser:
-                request.user = superuser
-
         # Delete the user
-        user.delete()
+        email = user_to_delete.email
+        user_to_delete.delete()
 
         return Response(
-            {"detail": f"User {user.email} deleted successfully."},
+            {"detail": f"User {email} deleted successfully."},
             status=status.HTTP_200_OK
         )
-
-
 

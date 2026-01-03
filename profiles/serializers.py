@@ -40,37 +40,21 @@ class AdminProfileSerializer(serializers.ModelSerializer):
 
 
 
-class WorkerProfileSerializer(serializers.ModelSerializer):
-    # Read-only fields from User model
-    name = serializers.CharField(source="user.name", read_only=True)
-    email = serializers.EmailField(source="user.email", read_only=True)
-    role = serializers.CharField(source="user.role", read_only=True)
+from rest_framework import serializers
+from .models import WorkerProfile
 
-    # Image field for upload (Cloudinary)
-    image = serializers.ImageField(required=False)
+class WorkerProfileSerializer(serializers.ModelSerializer):
+    email = serializers.SerializerMethodField()
 
     class Meta:
         model = WorkerProfile
-        fields = ["name", "email", "role", "phone", "image"]
-        read_only_fields = ["name", "email", "role"]
+        fields = ["email", "name", "phone", "image"]
 
-    def get_image(self, obj):
-        """Return Cloudinary URL"""
-        if obj.image:
-            return obj.image.url
-        return None
+    def get_email(self, obj):
+        return obj.user.email
 
-    def update(self, instance, validated_data):
-        # Update phone
-        instance.phone = validated_data.get("phone", instance.phone)
 
-        # Update image if provided
-        image = validated_data.get("image")
-        if image:
-            instance.image = image  # Cloudinary handles upload automatically
 
-        instance.save()
-        return instance
 
 
 class ChangePasswordSerializer(serializers.Serializer):

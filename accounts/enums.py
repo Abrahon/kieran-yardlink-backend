@@ -4,3 +4,4 @@ class RoleChoices(TextChoices):
     ADMIN = 'admin', 'Admin'
     CLIENT = 'client', 'Client'
     LANDSCAPER = 'landscaper', 'Landscaper'
+    WORKER = 'worker', 'Worker'  

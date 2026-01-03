@@ -2,12 +2,14 @@ from django.db import models
 from accounts.models import User
 from cloudinary.models import CloudinaryField
 
+
 class LandscaperProfile(models.Model):
     user = models.OneToOneField(
         User,
         on_delete=models.CASCADE,
         related_name="landscaper_profile"
     )
+    # user = models.OneToOneField(User, on_delete=models.CASCADE)
     profile = CloudinaryField("pro_landscaper", blank=True, null=True)  # fixed name typo
 
     business_name = models.CharField(max_length=150)
