@@ -29,4 +29,5 @@ urlpatterns = [
     path("api/", include("weather.urls")),
     path("api/", include("property.urls")),
     path("api/", include("invitations.urls")),
+    path("api/qr/", include("qr.urls")),
 ]
