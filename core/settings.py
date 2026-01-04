@@ -328,12 +328,14 @@ INSTALLED_APPS = [
     "property",
     "invitations",
     'qr',
+    'bookings'
 ]
 
 # ------------------------------------------------------------------------------
 # MIDDLEWARE
 # ------------------------------------------------------------------------------
 MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
