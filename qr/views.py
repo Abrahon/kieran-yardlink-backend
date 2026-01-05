@@ -1,33 +1,30 @@
+# qrcode/views.py
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from django.shortcuts import get_object_or_404
-
+from bookings.models import ServiceBooking, BookingStatus
 from .models import LandscaperQRCode
-from .serializers import PublicLandscaperSerializer
-from bookings.models import ServiceBooking   # example app
+
+
 
 class ScanLandscaperQRCodeView(APIView):
-    permission_classes = []  # client may or may not be logged in
+    permission_classes = []
 
     def get(self, request, qr_id):
         qr = get_object_or_404(LandscaperQRCode, id=qr_id)
         landscaper = qr.landscaper
 
-        client = request.user if request.user.is_authenticated else None
-
-        # Client must be logged in to verify history
-        if not client:
+        if not request.user.is_authenticated:
             return Response(
                 {"detail": "Login required to view landscaper profile"},
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
-        # Check previous completed work
-        has_worked = Job.objects.filter(
-            client=client,
+        has_worked = ServiceBooking.objects.filter(
+            client=request.user,
             landscaper=landscaper,
-            status="completed"
+            status=BookingStatus.COMPLETED
         ).exists()
 
         if not has_worked:

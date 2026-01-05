@@ -26,3 +26,26 @@ class LandscaperProfile(models.Model):
 
     def __str__(self):
         return self.business_name
+
+
+
+DAYS_OF_WEEK = [
+    ('SUNDAY', 'Sunday'),
+    ('MONDAY', 'Monday'),
+    ('TUESDAY', 'Tuesday'),
+    ('WEDNESDAY', 'Wednesday'),
+    ('THURSDAY', 'Thursday'),
+    ('FRIDAY', 'Friday'),
+    ('SATURDAY', 'Saturday'),
+]
+
+
+
+class WorkingHours(models.Model):
+    landscaper = models.ForeignKey(LandscaperProfile, on_delete=models.CASCADE, related_name='working_hours')
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    day = models.CharField(max_length=10, choices=DAYS_OF_WEEK)
+
+    class Meta:
+        unique_together = ('landscaper', 'day')  # Each day only once

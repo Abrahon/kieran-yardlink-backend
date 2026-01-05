@@ -51,6 +51,7 @@ class ServiceBooking(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def mark_completed(self):
-        self.status = BookingStatus.COMPLETED
-        self.completed_at = timezone.now()
-        self.save()
+        if self.status != BookingStatus.COMPLETED:
+            self.status = BookingStatus.COMPLETED
+            self.completed_at = timezone.now()
+            self.save(update_fields=["status", "completed_at"])
