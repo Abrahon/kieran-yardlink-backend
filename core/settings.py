@@ -317,6 +317,7 @@ INSTALLED_APPS = [
     "channels",
 
     # Local apps
+    'common',
     "accounts",
     "profiles",
     "chat",
@@ -347,6 +348,7 @@ MIDDLEWARE = [
 ]
 
 CORS_ALLOW_ALL_ORIGINS = True
+# CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:5173,http://localhost:3000,http://10.10.13.15:3000,https://b2c-kohl.vercel.app').split(',')
 
 # ------------------------------------------------------------------------------
 # URLS / TEMPLATES

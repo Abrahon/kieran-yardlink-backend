@@ -4,12 +4,8 @@ from .serializers import LandscaperProfileSerializer
 from subscriptions.models import Subscription
 
 from rest_framework.exceptions import ValidationError
-from rest_framework import generics, permissions
 from rest_framework.exceptions import NotFound
 from .models import LandscaperProfile
-from .serializers import LandscaperProfileSerializer
-
-from rest_framework import generics, permissions
 from django.db.models import Q
 from bookings.models import ServiceBooking
 from .models import LandscaperProfile
@@ -20,6 +16,11 @@ from rest_framework.permissions import IsAuthenticated
 from .models import WorkingHours, LandscaperProfile, DAYS_OF_WEEK
 from .serializers import WorkingHoursSerializer
 from bookings.models import BookingStatus
+from rest_framework import generics, status
+from rest_framework.permissions import IsAdminUser
+from rest_framework.response import Response
+from services.permissions import IsLandscaper
+
 
 class CompleteLandscaperProfileView(generics.CreateAPIView):
     serializer_class = LandscaperProfileSerializer
@@ -111,63 +112,120 @@ class LandscaperFind(generics.ListAPIView):
 
 
 # working houser set
-# landscapers/views.py
-from rest_framework import generics, status
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from .models import WorkingHours, LandscaperProfile, DAYS_OF_WEEK
-from .serializers import WorkingHoursSerializer
 
 class WorkingHoursListCreateView(generics.ListCreateAPIView):
     serializer_class = WorkingHoursSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsLandscaper] 
 
     def get_queryset(self):
-        # Get the landscaper profile of the logged-in user
         profile = LandscaperProfile.objects.get(user=self.request.user)
-        return WorkingHours.objects.filter(landscaper=profile).order_by('day')
+        return WorkingHours.objects.filter(landscaper=profile).order_by("day")
 
     def create(self, request, *args, **kwargs):
-            
         try:
             profile = LandscaperProfile.objects.get(user=request.user)
         except LandscaperProfile.DoesNotExist:
-            return Response({"detail": "Landscaper profile not found."}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"detail": "Landscaper profile not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
-        days = request.data.get("days")
-        start_time = request.data.get("start_time")
-        end_time = request.data.get("end_time")
+        VALID_DAYS = [choice[0] for choice in DAYS_OF_WEEK]
 
-        # Validation
-        if not days or not isinstance(days, list):
-            return Response({"detail": "Please provide a list of days."}, status=status.HTTP_400_BAD_REQUEST)
-        if not start_time or not end_time:
-            return Response({"detail": "start_time and end_time are required."}, status=status.HTTP_400_BAD_REQUEST)
-        if start_time >= end_time:
-            return Response({"detail": "start_time must be before end_time."}, status=status.HTTP_400_BAD_REQUEST)
-
+        data = request.data
         created_hours = []
         errors = []
 
-        # Optional: delete only days being updated
-        WorkingHours.objects.filter(landscaper=profile, day__in=days).delete()
+        # ===============================
+        # CASE 1: MULTI-DAY SELECT (DICT)
+        # ===============================
+        if isinstance(data, dict):
+            days = data.get("days")
+            start_time = data.get("start_time")
+            end_time = data.get("end_time")
 
-        for day in days:
-            if day not in DAYS_OF_WEEK:
-                errors.append({"day": day, "detail": "Invalid day."})
-                continue
+            if not isinstance(days, list):
+                return Response(
+                    {"detail": "`days` must be a list."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
-            wh = WorkingHours.objects.create(
+            if not start_time or not end_time:
+                return Response(
+                    {"detail": "start_time and end_time are required."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if start_time >= end_time:
+                return Response(
+                    {"detail": "start_time must be before end_time."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Delete only selected days
+            WorkingHours.objects.filter(
                 landscaper=profile,
-                day=day,
-                start_time=start_time,
-                end_time=end_time
+                day__in=days
+            ).delete()
+
+            for day in days:
+                if day not in VALID_DAYS:
+                    errors.append({"day": day, "detail": "Invalid day"})
+                    continue
+
+                created_hours.append(
+                    WorkingHours.objects.create(
+                        landscaper=profile,
+                        day=day,
+                        start_time=start_time,
+                        end_time=end_time
+                    )
+                )
+
+        # ===============================
+        # CASE 2: LEGACY LIST PAYLOAD
+        # ===============================
+        elif isinstance(data, list):
+            WorkingHours.objects.filter(landscaper=profile).delete()
+
+            for idx, item in enumerate(data):
+                day = item.get("day")
+                start_time = item.get("start_time")
+                end_time = item.get("end_time")
+
+                if day not in VALID_DAYS:
+                    errors.append({"index": idx, "detail": "Invalid day"})
+                    continue
+
+                if not start_time or not end_time:
+                    errors.append({"index": idx, "detail": "Missing time"})
+                    continue
+
+                if start_time >= end_time:
+                    errors.append({"index": idx, "detail": "start_time must be before end_time"})
+                    continue
+
+                created_hours.append(
+                    WorkingHours.objects.create(
+                        landscaper=profile,
+                        day=day,
+                        start_time=start_time,
+                        end_time=end_time
+                    )
+                )
+
+        else:
+            return Response(
+                {"detail": "Invalid payload format."},
+                status=status.HTTP_400_BAD_REQUEST
             )
-            created_hours.append(wh)
 
         serializer = self.get_serializer(created_hours, many=True)
-        response_data = {"created_hours": serializer.data}
-        if errors:
-            response_data["errors"] = errors
 
-        return Response(response_data, status=status.HTTP_201_CREATED if created_hours else status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {
+                "created_hours": serializer.data,
+                "errors": errors
+            },
+            status=status.HTTP_201_CREATED if created_hours else status.HTTP_400_BAD_REQUEST
+        )

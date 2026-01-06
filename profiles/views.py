@@ -3,7 +3,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from .models import AdminProfile
 from .models import WorkerProfile 
-from .serializers import AdminProfileSerializer,ChangePasswordSerializer,WorkerProfileSerializer
+from .serializers import AdminProfileSerializer,ChangePasswordSerializer,WorkerProfileSerializer,ClientProfileSerializer
 from rest_framework import generics, permissions
 from django.shortcuts import render
 from rest_framework import generics, permissions, status
@@ -14,12 +14,15 @@ from accounts.models import RoleChoices
 from rest_framework.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
-
+from common.permissions import IsClient,IsAdmin,IsLandscaper
+# from services.permissions import IsLandscaper
 from invitations.models import TeamInvitation, InvitationStatus
 
+
+# admin profile
 class AdminProfileView(RetrieveUpdateAPIView):
     serializer_class = AdminProfileSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [permissions.IsAdminUser]
     parser_classes = [MultiPartParser, FormParser]
 
     def get_object(self):
@@ -28,6 +31,7 @@ class AdminProfileView(RetrieveUpdateAPIView):
         return profile
 
 
+# worker profile
 class WorkerProfileView(generics.GenericAPIView):
     """
     Get profile for a worker or landscaper:
@@ -36,6 +40,7 @@ class WorkerProfileView(generics.GenericAPIView):
     """
     serializer_class = WorkerProfileSerializer
     permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
 
     def get(self, request):
         user = request.user
@@ -72,12 +77,15 @@ class WorkerProfileView(generics.GenericAPIView):
         raise PermissionDenied("Access denied")
 
 
+
+# pro landscaper 
 class ProLandscaperWorkersView(generics.ListAPIView):
     """
     View for landscaper to see all their workers + self
     """
     serializer_class = WorkerProfileSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsLandscaper] 
+    parser_classes = [MultiPartParser, FormParser]
 
     def get_queryset(self):
         user = self.request.user
@@ -99,7 +107,23 @@ class ProLandscaperWorkersView(generics.ListAPIView):
 
 
 
-# ---------------------- Change Password ---------------------- #
+# client profile views
+class ClientProfileView(generics.RetrieveUpdateAPIView):
+    serializer_class = ClientProfileSerializer
+    permission_classes = [IsAuthenticated, IsClient]  # ✅ fixed indentation
+    parser_classes = [MultiPartParser, FormParser]    # ✅ fixed indentation
+
+    def get_object(self):
+        profile, created = ClientProfile.objects.get_or_create(
+            user=self.request.user
+        )
+        return profile
+
+        return profile
+
+
+
+# ---------------------- Change Password for admin ---------------------- #
 class ChangePasswordView(generics.UpdateAPIView):
     serializer_class = ChangePasswordSerializer
     
@@ -118,4 +142,5 @@ class ChangePasswordView(generics.UpdateAPIView):
         serializer.save()
         update_session_auth_hash(request, serializer.instance)
         return Response({"message": "Password updated successfully"}, status=status.HTTP_200_OK)
-    
+
+

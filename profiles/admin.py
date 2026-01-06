@@ -1,6 +1,9 @@
 from django.contrib import admin
 from .models import WorkerProfile,AdminProfile  # replace with your app name
 from django.utils.html import format_html
+# admin.py
+from django.contrib import admin
+from .models import ClientProfile
 
 @admin.register(WorkerProfile)
 class WorkerProfileAdmin(admin.ModelAdmin):
@@ -59,4 +62,9 @@ class AdminProfileAdmin(admin.ModelAdmin):
         return "-"
     image_tag.short_description = "Profile Image"
 
+
+
+@admin.register(ClientProfile)
+class ClientProfileAdmin(admin.ModelAdmin):
+    list_display = ("user", "name", "phone")
 

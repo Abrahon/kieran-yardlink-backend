@@ -29,7 +29,8 @@ class WeeklyAvailabilitySerializer(serializers.ModelSerializer):
 class PublicLandscaperSerializer(serializers.ModelSerializer):
     name = serializers.CharField(source="user.name", read_only=True)
     email = serializers.EmailField(source="user.email", read_only=True)
-    image = serializers.ImageField(read_only=True)
+    image = serializers.CloudinaryField(read_only=True)
+
 
     services = PublicServiceSerializer(many=True, read_only=True)
     weekly_schedule = WeeklyAvailabilitySerializer(
