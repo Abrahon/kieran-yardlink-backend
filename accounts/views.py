@@ -25,7 +25,7 @@ from .models import User, OTP
 from django.utils import timezone
 from .utils import generate_otp, send_otp_email 
 from .serializers import (
-    SendOTPSerializer, VerifyOTPSerializer, ResetPasswordSerializer
+    SendOTPSerializer, VerifyOTPSerializer, ResetPasswordSerializer,VerifyOTPForgetSerializer
 )
 
 
@@ -68,51 +68,92 @@ from .serializers import (
 
 #         return Response({"detail": "Verification OTP sent to email."}, status=status.HTTP_200_OK)
 
+# class SignupView(generics.GenericAPIView):
+#     serializer_class = SignupSerializer
+#     permission_classes = [AllowAny]
+#     parser_classes = (MultiPartParser, FormParser)
+
+#     def post(self, request, *args, **kwargs):
+#         serializer = self.get_serializer(data=request.data)
+#         serializer.is_valid(raise_exception=True)
+
+#         email = serializer.validated_data["email"]
+#         name = serializer.validated_data["name"]
+#         password = serializer.validated_data["password"]
+#         phone = serializer.validated_data.get("phone")
+#         address = serializer.validated_data.get("address")
+#         role = serializer.validated_data["role"]  
+
+#         # Check duplicate
+#         if User.objects.filter(email=email).exists():
+#             return Response({"detail": "User with this email already exists."}, status=400)
+
+#         # Save temporary user data in session
+#         request.session["pending_user"] = {
+#             "email": email,
+#             "name": name,
+#             "password": password,
+#             "phone": phone,
+#             "address": address,
+#             "role": role,   
+#         }
+
+#         # Delete previous OTPs
+#         OTP.objects.filter(email=email).delete()
+
+#         otp_code = generate_otp()
+#         OTP.objects.create(email=email, code=otp_code)
+
+#         sent = send_otp_email(email, otp_code, name)
+#         if not sent:
+#             return Response(
+#                 {"detail": "Unable to send verification email right now."},
+#                 status=503
+#             )
+
+#         return Response({"detail": "Verification OTP sent to email."}, status=200)
+
 class SignupView(generics.GenericAPIView):
     serializer_class = SignupSerializer
     permission_classes = [AllowAny]
     parser_classes = (MultiPartParser, FormParser)
 
-    def post(self, request, *args, **kwargs):
+    def post(self, request):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        email = serializer.validated_data["email"]
-        name = serializer.validated_data["name"]
-        password = serializer.validated_data["password"]
-        phone = serializer.validated_data.get("phone")
-        address = serializer.validated_data.get("address")
-        role = serializer.validated_data["role"]  
+        data = serializer.validated_data
+        email = data["email"]
 
-        # Check duplicate
         if User.objects.filter(email=email).exists():
-            return Response({"detail": "User with this email already exists."}, status=400)
+            return Response(
+                {"detail": "User with this email already exists."},
+                status=400
+            )
 
-        # Save temporary user data in session
+        # ✅ STORE SESSION
         request.session["pending_user"] = {
             "email": email,
-            "name": name,
-            "password": password,
-            "phone": phone,
-            "address": address,
-            "role": role,   
+            "name": data["name"],
+            "password": data["password"],
+            "phone": data.get("phone"),
+            "address": data.get("address"),
+            "role": data["role"],
         }
+        request.session.modified = True
 
-        # Delete previous OTPs
+        # ✅ EMAIL-BASED OTP
         OTP.objects.filter(email=email).delete()
 
         otp_code = generate_otp()
         OTP.objects.create(email=email, code=otp_code)
 
-        sent = send_otp_email(email, otp_code, name)
-        if not sent:
-            return Response(
-                {"detail": "Unable to send verification email right now."},
-                status=503
-            )
+        send_otp_email(email, otp_code, data["name"])
 
-        return Response({"detail": "Verification OTP sent to email."}, status=200)
-
+        return Response(
+            {"detail": "Verification OTP sent to email."},
+            status=200
+        )
 
 
 def get_tokens_for_user(user):
@@ -201,8 +242,6 @@ class SendOTPView(generics.CreateAPIView):
         )
 
 
-
-
 class VerifyOTPView(APIView):
     permission_classes = [AllowAny]
 
@@ -211,33 +250,46 @@ class VerifyOTPView(APIView):
         otp_code = request.data.get("otp")
 
         if not email or not otp_code:
-            return Response({"detail": "Email and OTP are required."}, status=400)
+            return Response(
+                {"detail": "Email and OTP are required."},
+                status=400
+            )
 
-        # Get OTP
         try:
-            otp_instance = OTP.objects.filter(email=email, code=otp_code).latest("created_at")
+            otp_instance = OTP.objects.filter(
+                email=email,
+                code=otp_code
+                
+            ).latest("created_at")
+            print(email,code)
         except OTP.DoesNotExist:
-            return Response({"detail": "OTP not found."}, status=400)
+            return Response(
+                {"detail": "OTP not found."},
+                status=400
+            )
 
-        # Check expired
         if otp_instance.is_expired():
             otp_instance.delete()
-            return Response({"detail": "OTP expired."}, status=400)
+            return Response(
+                {"detail": "OTP expired."},
+                status=400
+            )
 
-        # Get pending user data from session
         pending = request.session.get("pending_user")
         if not pending or pending["email"] != email:
-            return Response({"detail": "Signup data missing. Restart signup."}, status=400)
+            return Response(
+                {"detail": "Signup data missing. Restart signup."},
+                status=400
+            )
 
-        # ✅ Create user with role
-        user = User.objects.create_user(
+        # ✅ CREATE USER
+        User.objects.create_user(
             email=pending["email"],
             name=pending["name"],
             password=pending["password"],
-            phone=pending['phone'],
-            address=pending['address'],
-
-            role=pending["role"],  
+            phone=pending["phone"],
+            address=pending["address"],
+            role=pending["role"],
             is_active=True
         )
 
@@ -245,48 +297,60 @@ class VerifyOTPView(APIView):
         otp_instance.delete()
         del request.session["pending_user"]
 
-        return Response({"message": "Email verified and account created successfully."}, status=200)
+        return Response(
+            {"message": "Email verified and account created successfully."},
+            status=200
+        )
 
 
-
-# class VerifyOTPView(APIView):
+# class VerifyForgotPasswordOTPView(APIView):
 #     permission_classes = [AllowAny]
 
 #     def post(self, request):
 #         email = request.data.get("email")
 #         otp_code = request.data.get("otp")
 
-#         if not email or not otp_code:
-#             return Response({"detail": "Email and OTP are required."}, status=status.HTTP_400_BAD_REQUEST)
-
-#         # Get OTP by email and code
-#         try:
-#             otp_instance = OTP.objects.filter(email=email, code=otp_code).latest("created_at")
-#         except OTP.DoesNotExist:
-#             return Response({"non_field_errors": ["OTP not found for this email."]}, status=status.HTTP_400_BAD_REQUEST)
-
-#         # Check if OTP expired
-#         if otp_instance.is_expired():
-#             otp_instance.delete()
-#             return Response({"non_field_errors": ["OTP expired."]}, status=status.HTTP_400_BAD_REQUEST)
-
-#         # Create user if it doesn't exist
-#         user, created = User.objects.get_or_create(
+#         otp = OTP.objects.filter(
 #             email=email,
-#             defaults={"is_active": True}  # only set fields that exist
-#         )
+#             code=otp_code,
+#             purpose="reset"
+#         ).order_by("-created_at").first()
 
-#         if not created:
-#             # If user already exists, just activate
-#             user.is_active = True
-#             user.save()
+#         if not otp:
+#             return Response({"detail": "Invalid OTP."}, status=400)
 
-#         # Associate OTP with user (optional)
-#         otp_instance.user = user
-#         otp_instance.delete()
+#         if otp.is_expired():
+#             otp.delete()
+#             return Response({"detail": "OTP expired."}, status=400)
 
-#         return Response({"message": "OTP verified and user created successfully."}, status=status.HTTP_200_OK)
+#         # Mark session as verified
+#         request.session["password_reset_verified"] = email
 
+#         otp.delete()
+
+#         return Response(
+#             {"message": "OTP verified. You may now reset your password."},
+#             status=200
+
+#        )
+
+# verify otp for forget password 
+class VerifyOTPForgetView(generics.GenericAPIView):
+    serializer_class = VerifyOTPForgetSerializer
+    permission_classes = [AllowAny]
+    parser_classes = (MultiPartParser, FormParser)
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+
+        # OTP verified → keep email in session for password reset
+        request.session['verified_email'] = serializer.validated_data["user"].email
+
+        return Response({"message": "OTP verified successfully."})
+
+
+# 
 class ResetPasswordView(generics.GenericAPIView):
     serializer_class = ResetPasswordSerializer
     permission_classes = [AllowAny]
@@ -341,8 +405,6 @@ class ResetPasswordView(generics.GenericAPIView):
     
 
 # role wise filtering user client landscaper
-
-
 class UserListView(APIView):
     permission_classes = [IsAdminUser]
 

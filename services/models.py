@@ -1,5 +1,6 @@
 from django.db import models
 from landscapers.models import LandscaperProfile
+from profiles.models import ClientProfile
 from .enums import ServiceCategory
 
 class Service(models.Model):
@@ -16,7 +17,6 @@ class Service(models.Model):
         choices=ServiceCategory.choices
     )
 
-    is_addon = models.BooleanField(default=False)
 
     # New fields
     price = models.DecimalField(
@@ -42,3 +42,34 @@ class Service(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.landscaper.user.email})"
+
+
+
+# CLIENT MODEL
+class ClientServicePreference(models.Model):
+    client = models.OneToOneField(
+        ClientProfile,
+        on_delete=models.CASCADE,
+        related_name="service_preferences"
+    )
+
+    services = models.ManyToManyField(
+        Service,
+        related_name="selected_by_clients",
+        blank=True
+    )
+
+    frequency = models.CharField(
+        max_length=20,
+        choices=[
+            ("weekly", "Weekly"),
+            ("biweekly", "Bi-Weekly"),
+            ("monthly", "Monthly"),
+        ]
+    )
+
+    note = models.TextField(blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Preferences of {self.client.user.email}"

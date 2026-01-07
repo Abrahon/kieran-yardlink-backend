@@ -1,11 +1,4 @@
 
-# class ServiceCategory(models.TextChoices):
-#     LAWN = "lawn", "Lawn"
-#     GARDEN = "garden", "Garden"
-#     TREE = "tree", "Tree"
-#     IRRIGATION = "irrigation", "Irrigation"
-#     CLEANUP = "cleanup", "Seasonal Cleanup"
-
 from django.db import models
 
 class ServiceCategory(models.TextChoices):

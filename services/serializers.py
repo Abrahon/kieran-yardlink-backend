@@ -10,7 +10,7 @@ class ServiceSerializer(serializers.ModelSerializer):
             "name",
             "description",
             "category",
-            "is_addon",
+            # "is_addon",
             "price",
             "square_feet",
             "created_at",

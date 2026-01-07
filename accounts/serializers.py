@@ -160,7 +160,6 @@ class SendOTPSerializer(serializers.Serializer):
 # ---------------------------
 
 
-
 class VerifyOTPSerializer(serializers.Serializer):
     email = serializers.EmailField()
     otp = serializers.CharField(max_length=6)
@@ -182,6 +181,32 @@ class VerifyOTPSerializer(serializers.Serializer):
             raise serializers.ValidationError("Invalid OTP.")
 
         data['otp_instance'] = otp
+        return data
+
+# ---------------------------
+# VERIFY OTP SERIALIZER forget password
+# ---------------------------
+class VerifyOTPForgetSerializer(serializers.Serializer):
+    code = serializers.CharField(max_length=6)
+
+    def validate(self, data):
+        request = self.context.get("request")
+        email = request.data.get("email")
+
+        if not email:
+            raise serializers.ValidationError(
+                "No OTP request found. Please request OTP first."
+            )
+
+        user = User.objects.filter(email=email).first()
+        if not user:
+            raise serializers.ValidationError("User not found.")
+
+        otp = OTP.objects.filter(user=user, code=data["code"]).order_by("-created_at").first()
+        if not otp or otp.is_expired():
+            raise serializers.ValidationError("OTP is invalid or expired.")
+
+        data["user"] = user
         return data
 
 # ---------------------------

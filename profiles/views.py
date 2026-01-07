@@ -2,7 +2,8 @@ from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from .models import AdminProfile
-from .models import WorkerProfile 
+from .models import WorkerProfile
+from .models import ClientProfile
 from .serializers import AdminProfileSerializer,ChangePasswordSerializer,WorkerProfileSerializer,ClientProfileSerializer
 from rest_framework import generics, permissions
 from django.shortcuts import render
@@ -14,7 +15,7 @@ from accounts.models import RoleChoices
 from rest_framework.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
-from common.permissions import IsClient,IsAdmin,IsLandscaper
+from common.permissions import IsClient,IsAdmin,IsLandscaper,IsWorker
 # from services.permissions import IsLandscaper
 from invitations.models import TeamInvitation, InvitationStatus
 
@@ -39,7 +40,7 @@ class WorkerProfileView(generics.GenericAPIView):
     - Landscaper: all accepted workers + self profile
     """
     serializer_class = WorkerProfileSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsWorker]
     parser_classes = [MultiPartParser, FormParser]
 
     def get(self, request):
@@ -110,8 +111,8 @@ class ProLandscaperWorkersView(generics.ListAPIView):
 # client profile views
 class ClientProfileView(generics.RetrieveUpdateAPIView):
     serializer_class = ClientProfileSerializer
-    permission_classes = [IsAuthenticated, IsClient]  # ✅ fixed indentation
-    parser_classes = [MultiPartParser, FormParser]    # ✅ fixed indentation
+    permission_classes = [IsAuthenticated, IsClient]  # 
+    parser_classes = [MultiPartParser, FormParser]    # 
 
     def get_object(self):
         profile, created = ClientProfile.objects.get_or_create(
@@ -123,7 +124,9 @@ class ClientProfileView(generics.RetrieveUpdateAPIView):
 
 
 
-# ---------------------- Change Password for admin ---------------------- #
+# ---------------------- Change Password for---------------------- #
+
+# admin change password
 class ChangePasswordView(generics.UpdateAPIView):
     serializer_class = ChangePasswordSerializer
     
@@ -143,4 +146,62 @@ class ChangePasswordView(generics.UpdateAPIView):
         update_session_auth_hash(request, serializer.instance)
         return Response({"message": "Password updated successfully"}, status=status.HTTP_200_OK)
 
+# landscaper change password
+class ChangePasswordLandscaperView(generics.UpdateAPIView):
+    serializer_class = ChangePasswordSerializer
+    permission_classes = [IsAuthenticated, IsLandscaper] 
 
+    def get_object(self):
+        return self.request.user
+
+    def update(self, request, *args, **kwargs):
+        serializer = self.get_serializer(
+            instance=self.get_object(),
+            data=request.data,
+            context={'request': request}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        update_session_auth_hash(request, serializer.instance)
+        return Response({"message": "Password updated successfully"}, status=status.HTTP_200_OK)
+
+
+# Client Change password
+class ChangePasswordClientView(generics.UpdateAPIView):
+    serializer_class = ChangePasswordSerializer
+    
+    permission_classes = [IsAuthenticated,IsClient]
+
+    def get_object(self):
+        return self.request.user
+
+    def update(self, request, *args, **kwargs):
+        serializer = self.get_serializer(
+            instance=self.get_object(),
+            data=request.data,
+            context={'request': request}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        update_session_auth_hash(request, serializer.instance)
+        return Response({"message": "Password updated successfully"}, status=status.HTTP_200_OK)
+
+
+class ChangePasswordWorkerView(generics.UpdateAPIView):
+    serializer_class = ChangePasswordSerializer
+    
+    permission_classes = [IsAuthenticated,IsWorker]
+
+    def get_object(self):
+        return self.request.user
+
+    def update(self, request, *args, **kwargs):
+        serializer = self.get_serializer(
+            instance=self.get_object(),
+            data=request.data,
+            context={'request': request}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        update_session_auth_hash(request, serializer.instance)
+        return Response({"message": "Password updated successfully"}, status=status.HTTP_200_OK)
