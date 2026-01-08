@@ -155,6 +155,17 @@ class SendOTPSerializer(serializers.Serializer):
         return user
 
 
+# Resend otp
+
+class ResendOTPSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+    def validate_email(self, value):
+        # Optional: block if already verified
+        if User.objects.filter(email=value, is_active=True).exists():
+            raise serializers.ValidationError("This account is already verified.")
+        return value
+
 # ---------------------------
 # VERIFY OTP SERIALIZER
 # ---------------------------
@@ -254,10 +265,46 @@ class ChangePasswordSerializer(serializers.Serializer):
         user.set_password(self.validated_data["new_password"])
         user.save()
         return user
-
-
-
 class UserSerializer(serializers.ModelSerializer):
+    landscaper_plan = serializers.SerializerMethodField()
+
     class Meta:
         model = User
-        fields = ['id', 'name', 'email', 'address', 'phone', 'role', 'is_active', 'date_joined']
+        fields = [
+            "id",
+            "name",
+            "email",
+            "address",
+            "phone",
+            "role",
+            "is_active",
+            "date_joined",
+            "landscaper_plan",
+        ]
+
+    def get_landscaper_plan(self, obj):
+        if obj.role != "landscaper":
+            return None
+
+        subscription = (
+            obj.subscription_set
+            .filter(is_active=True)
+            .select_related("plan")
+            .first()
+        )
+
+        return subscription.plan.name if subscription else None
+
+
+# class UserSerializer(serializers.ModelSerializer):
+    # landscaper_plan = serializers.SerializerMethodField()
+    
+    # class Meta:
+        
+    #     model = User
+    #     fields = ['id', 'name', 'email', 'address', 'phone', 'role', 'is_active', 'date_joined','landscaper_plan']
+    
+    # def get_landscaper_plan(self, obj):
+    #     if obj.role == "landscaper" and hasattr(obj, "landscaper_profile"):
+    #         return obj.landscaper_profile.plan
+    #     return None

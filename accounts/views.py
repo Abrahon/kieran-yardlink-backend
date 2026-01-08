@@ -20,7 +20,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework import views
 
-from .serializers import SignupSerializer, LoginSerializer, ResetPasswordSerializer
+from .serializers import SignupSerializer, LoginSerializer, ResetPasswordSerializer,ResendOTPSerializer
 from .models import User, OTP
 from django.utils import timezone
 from .utils import generate_otp, send_otp_email 
@@ -30,43 +30,6 @@ from .serializers import (
 
 
 
-# class SignupView(generics.GenericAPIView):
-#     serializer_class = SignupSerializer
-#     permission_classes = [AllowAny]
-#     parser_classes = (MultiPartParser, FormParser)
-
-#     def post(self, request, *args, **kwargs):
-#         """
-#         Validate the signup data but DO NOT create the user yet.
-#         Generate and send OTP to the provided email, and store OTP with the email.
-#         """
-#         serializer = self.get_serializer(data=request.data)
-#         serializer.is_valid(raise_exception=True)
-
-#         email = serializer.validated_data.get("email")
-#         name = serializer.validated_data.get("name", "")
-#         # Save password and other fields in the serializer? We will require password when verifying OR
-#         # you can optionally store hashed password temporarily in a secure table (not covered here)
-
-#         # Prevent duplicate signup attempts if user already exists
-#         if User.objects.filter(email__iexact=email).exists():
-#             return Response({"detail": "User with this email already exists."}, status=status.HTTP_400_BAD_REQUEST)
-
-#         # Delete previous OTPs for this email
-#         OTP.objects.filter(email__iexact=email).delete()
-
-#         otp_code = generate_otp()
-#         OTP.objects.create(email=email, code=otp_code)
-
-#         sent = send_otp_email(to_email=email, otp_code=otp_code, name=name)
-#         if not sent:
-#             # don't create user; let client retry later
-#             return Response(
-#                 {"detail": "Unable to send verification email right now. Please try again later."},
-#                 status=status.HTTP_503_SERVICE_UNAVAILABLE
-#             )
-
-#         return Response({"detail": "Verification OTP sent to email."}, status=status.HTTP_200_OK)
 
 # class SignupView(generics.GenericAPIView):
 #     serializer_class = SignupSerializer
@@ -241,6 +204,36 @@ class SendOTPView(generics.CreateAPIView):
             status=200
         )
 
+# resend otp views 
+class ResendOTPView(generics.GenericAPIView):
+    serializer_class = ResendOTPSerializer
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        email = serializer.validated_data["email"]
+
+        # 🔁 Remove old OTPs
+        OTP.objects.filter(email=email).delete()
+
+        # 🔐 Generate new OTP
+        otp_code = generate_otp()
+        OTP.objects.create(email=email, code=otp_code)
+
+        # 📧 Send email
+        send_otp_email(email, otp_code)
+
+        # 🧠 Optional: store in session
+        request.session["otp_user_email"] = email
+        request.session.modified = True
+
+        return Response(
+            {"detail": "OTP resent successfully."},
+            status=status.HTTP_200_OK
+        )
+
 
 class VerifyOTPView(APIView):
     permission_classes = [AllowAny]
@@ -302,37 +295,6 @@ class VerifyOTPView(APIView):
             status=200
         )
 
-
-# class VerifyForgotPasswordOTPView(APIView):
-#     permission_classes = [AllowAny]
-
-#     def post(self, request):
-#         email = request.data.get("email")
-#         otp_code = request.data.get("otp")
-
-#         otp = OTP.objects.filter(
-#             email=email,
-#             code=otp_code,
-#             purpose="reset"
-#         ).order_by("-created_at").first()
-
-#         if not otp:
-#             return Response({"detail": "Invalid OTP."}, status=400)
-
-#         if otp.is_expired():
-#             otp.delete()
-#             return Response({"detail": "OTP expired."}, status=400)
-
-#         # Mark session as verified
-#         request.session["password_reset_verified"] = email
-
-#         otp.delete()
-
-#         return Response(
-#             {"message": "OTP verified. You may now reset your password."},
-#             status=200
-
-#        )
 
 # verify otp for forget password 
 class VerifyOTPForgetView(generics.GenericAPIView):
@@ -405,46 +367,102 @@ class ResetPasswordView(generics.GenericAPIView):
     
 
 # role wise filtering user client landscaper
+# class UserListView(APIView):
+#     permission_classes = [IsAdminUser]
+
+#     def get(self, request):
+#         try:
+#             role = request.query_params.get("role")
+
+#             users = User.objects.all()
+
+#             # 🔥 Filter by role if provided
+#             if role:
+#                 users = users.filter(role=role)
+
+#             # 📌 Stats
+#             total_users = User.objects.count()
+#             total_clients = User.objects.filter(role="client").count()
+#             total_landscapers = User.objects.filter(role="landscaper").count()
+
+#             # 🔥 Daily active users (last 24 hours)
+#             last_24h = timezone.now() - timedelta(hours=24)
+#             daily_active_users = User.objects.filter(last_login__gte=last_24h).count()
+
+#             serializer = UserSerializer(users, many=True)
+
+#             return Response({
+#                 "status": "success",
+#                 "summary": {
+#                     "total_users": total_users,
+#                     "total_clients": total_clients,
+#                     "total_landscapers": total_landscapers,
+#                     "daily_active_users": daily_active_users,
+#                 },
+#                 "data": serializer.data
+#             }, status=status.HTTP_200_OK)
+
+#         except Exception as e:
+#             return Response(
+#                 {"status": "error", "message": str(e)},
+#                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
+#             )
 class UserListView(APIView):
     permission_classes = [IsAdminUser]
 
     def get(self, request):
-        try:
-            role = request.query_params.get("role")
+        role = request.query_params.get("role")
+        plan = request.query_params.get("plan")  # basic | pro
 
-            users = User.objects.all()
+        users = User.objects.all()
 
-            # 🔥 Filter by role if provided
-            if role:
-                users = users.filter(role=role)
+        if role:
+            users = users.filter(role=role)
 
-            # 📌 Stats
-            total_users = User.objects.count()
-            total_clients = User.objects.filter(role="client").count()
-            total_landscapers = User.objects.filter(role="landscaper").count()
-
-            # 🔥 Daily active users (last 24 hours)
-            last_24h = timezone.now() - timedelta(hours=24)
-            daily_active_users = User.objects.filter(last_login__gte=last_24h).count()
-
-            serializer = UserSerializer(users, many=True)
-
-            return Response({
-                "status": "success",
-                "summary": {
-                    "total_users": total_users,
-                    "total_clients": total_clients,
-                    "total_landscapers": total_landscapers,
-                    "daily_active_users": daily_active_users,
-                },
-                "data": serializer.data
-            }, status=status.HTTP_200_OK)
-
-        except Exception as e:
-            return Response(
-                {"status": "error", "message": str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        if plan:
+            users = users.filter(
+                subscription__is_active=True,
+                subscription__plan__name__iexact=plan
             )
+
+        users = users.distinct()
+
+        # 📊 Stats
+        total_users = User.objects.count()
+        total_clients = User.objects.filter(role="client").count()
+        total_landscapers = User.objects.filter(role="landscaper").count()
+
+        total_basic_landscapers = User.objects.filter(
+            role="landscaper",
+            subscription__is_active=True,
+            subscription__plan__name__iexact="basic"
+        ).distinct().count()
+
+        total_pro_landscapers = User.objects.filter(
+            role="landscaper",
+            subscription__is_active=True,
+            subscription__plan__name__iexact="pro"
+        ).distinct().count()
+
+        last_24h = timezone.now() - timedelta(hours=24)
+        daily_active_users = User.objects.filter(
+            last_login__gte=last_24h
+        ).count()
+
+        serializer = UserSerializer(users, many=True)
+
+        return Response({
+            "status": "success",
+            "summary": {
+                "total_users": total_users,
+                "total_clients": total_clients,
+                "total_landscapers": total_landscapers,
+                "basic_landscapers": total_basic_landscapers,
+                "pro_landscapers": total_pro_landscapers,
+                "daily_active_users": daily_active_users,
+            },
+            "data": serializer.data,
+        }, status=status.HTTP_200_OK)
 
 
 
