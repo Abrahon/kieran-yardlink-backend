@@ -221,3 +221,10 @@ class AdminPlanDeleteView(generics.DestroyAPIView):
         if Subscription.objects.filter(plan=instance, status="active").exists():
             raise ValidationError("Cannot delete plan with active subscriptions.")
         instance.delete()
+
+
+# admin delete subscriptions
+class AdminSubscriptionDeleteView(generics.DestroyAPIView):
+    queryset = Subscription.objects.all()
+    permission_classes = [IsAuthenticated, IsAdmin]
+

@@ -16,7 +16,9 @@ urlpatterns = [
 
     # admin dashyboard
     path("admin/dashboard-stats/", views.AdminDashboardStatsView.as_view()),
-    path("admin/plans/<int:pk>/delete/", views.AdminPlanDeleteView.as_view())
+    path("admin/plans/<int:pk>/delete/", views.AdminPlanDeleteView.as_view()),
+    path("admin/subscriptions/<int:pk>/delete/", views.AdminSubscriptionDeleteView.as_view())
+
 
 
 
