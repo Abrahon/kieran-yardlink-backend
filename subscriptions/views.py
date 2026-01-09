@@ -6,9 +6,9 @@ from django.views.decorators.csrf import csrf_exempt
 from rest_framework import generics, permissions
 from django.utils import timezone
 from datetime import timedelta
-
+from rest_framework.response import Response
 from .models import Plan, Subscription
-from .serializers import PlanSerializer, SubscriptionSerializer
+from .serializers import PlanSerializer, SubscriptionSerializer,AdminSubscriptionSerializer
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 
@@ -17,6 +17,8 @@ from django.db.models import Count, Sum
 from .models import Plan
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
+
+
 
 
 class IsAdmin(permissions.BasePermission):
@@ -67,16 +69,27 @@ def create_checkout_session(request):
 
     plan = get_object_or_404(Plan, id=plan_id)
 
+    # session = stripe.checkout.Session.create(
+    #     payment_method_types=["card"],
+    #     mode="subscription",
+    #     customer_email=request.user.email,
+    #     line_items=[
+    #         {
+    #             "price": plan.stripe_price_id,
+    #             "quantity": 1,
+    #         }
+    #     ],
+    #     success_url="http://127.0.0.1:8000/api/success/",
+    #     cancel_url="http://127.0.0.1:8000/api/cancel/",
+    # )
+
     session = stripe.checkout.Session.create(
-        payment_method_types=["card"],
         mode="subscription",
         customer_email=request.user.email,
-        line_items=[
-            {
-                "price": plan.stripe_price_id,
-                "quantity": 1,
-            }
-        ],
+        line_items=[{"price": plan.stripe_price_id, "quantity": 1}],
+        metadata={
+            "price_id": plan.stripe_price_id
+        },
         success_url="http://127.0.0.1:8000/api/success/",
         cancel_url="http://127.0.0.1:8000/api/cancel/",
     )
@@ -170,6 +183,10 @@ def cancel(request):
     return HttpResponse("Payment canceled!")
 
 
+# subscription list
+
+
+
 # add Admin Dashboard Stats API
 class AdminDashboardStatsView(APIView):
     permission_classes = [IsAuthenticated, IsAdmin]
@@ -228,3 +245,58 @@ class AdminSubscriptionDeleteView(generics.DestroyAPIView):
     queryset = Subscription.objects.all()
     permission_classes = [IsAuthenticated, IsAdmin]
 
+
+
+# extend subscriptions
+class ExtendSubscriptionView(APIView):
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def post(self, request, pk):
+        days = request.data.get("days")
+
+        if not days or int(days) <= 0:
+            return Response(
+                {"detail": "Valid number of days required"},
+                status=400
+            )
+
+        subscription = get_object_or_404(Subscription, pk=pk)
+
+        if subscription.end_date < timezone.now():
+            subscription.end_date = timezone.now()
+
+        subscription.end_date += timedelta(days=int(days))
+        subscription.status = "active"
+        subscription.save()
+
+        return Response({
+            "message": "Subscription extended successfully",
+            "new_end_date": subscription.end_date
+        })
+
+
+# admin subscriptions views list
+class AdminSubscriptionListView(generics.ListAPIView):
+    serializer_class = AdminSubscriptionSerializer
+    permission_classes = [IsAdmin]
+
+    def get_queryset(self):
+        queryset = Subscription.objects.select_related(
+            "user", "plan"
+        ).order_by("-created_at")
+
+        # 🔍 Filters
+        status_param = self.request.query_params.get("status")
+        plan_param = self.request.query_params.get("plan")
+        role_param = self.request.query_params.get("role")
+
+        if status_param:
+            queryset = queryset.filter(status=status_param)
+
+        if plan_param:
+            queryset = queryset.filter(plan__name__iexact=plan_param)
+
+        if role_param:
+            queryset = queryset.filter(user__role=role_param)
+
+        return queryset

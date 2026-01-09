@@ -136,3 +136,39 @@ class SubscriptionSerializer(serializers.ModelSerializer):
         )
 
         return subscription
+
+# admin subscriptions 
+from rest_framework import serializers
+from .models import Subscription
+from django.utils import timezone
+
+class AdminSubscriptionSerializer(serializers.ModelSerializer):
+    user_email = serializers.EmailField(source="user.email", read_only=True)
+    user_role = serializers.CharField(source="user.role", read_only=True)
+    plan_name = serializers.CharField(source="plan.name", read_only=True)
+    plan_price = serializers.DecimalField(
+        source="plan.price",
+        max_digits=10,
+        decimal_places=2,
+        read_only=True
+    )
+
+    is_expired = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Subscription
+        fields = [
+            "id",
+            "user_email",
+            "user_role",
+            "plan_name",
+            "plan_price",
+            "status",
+            "start_date",
+            "end_date",
+            "is_expired",
+            "created_at",
+        ]
+
+    def get_is_expired(self, obj):
+        return obj.end_date < timezone.now()
