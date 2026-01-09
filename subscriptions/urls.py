@@ -4,7 +4,7 @@ from . import views
 urlpatterns = [
     path("plans/", views.PlanListCreateView.as_view(), name="plan-list-create"),
     path("plans/<int:pk>/", views.PlanRetrieveUpdateDeleteView.as_view(), name="plan-detail"),
-    
+
     path("subscriptions/", views.SubscriptionListView.as_view(), name="subscription-list"),
     path("subscriptions/create/", views.SubscriptionCreateView.as_view(), name="subscription-create"),
 
@@ -13,4 +13,11 @@ urlpatterns = [
 
     path("success/", views.success, name="payment-success"),
     path("cancel/", views.cancel, name="payment-cancel"),
+
+    # admin dashyboard
+    path("admin/dashboard-stats/", views.AdminDashboardStatsView.as_view()),
+    path("admin/plans/<int:pk>/delete/", views.AdminPlanDeleteView.as_view())
+
+
+
 ]

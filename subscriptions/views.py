@@ -170,9 +170,7 @@ def cancel(request):
     return HttpResponse("Payment canceled!")
 
 
-# add total subscription
-
-
+# add Admin Dashboard Stats API
 class AdminDashboardStatsView(APIView):
     permission_classes = [IsAuthenticated, IsAdmin]
 
@@ -212,3 +210,14 @@ class AdminDashboardStatsView(APIView):
             "monthly_revenue": monthly_revenue,
             "subscribers_by_plan": subscribers_by_plan
         })
+
+# admin plan delete
+class AdminPlanDeleteView(generics.DestroyAPIView):
+    queryset = Plan.objects.all()
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def perform_destroy(self, instance):
+        # Prevent deleting plans with active subscriptions
+        if Subscription.objects.filter(plan=instance, status="active").exists():
+            raise ValidationError("Cannot delete plan with active subscriptions.")
+        instance.delete()
