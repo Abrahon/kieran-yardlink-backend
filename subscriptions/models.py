@@ -6,13 +6,13 @@ from .enums import SubscriptionDuration, SubscriptionStatus
 
 User = get_user_model()
 
+# plan model
 class Plan(models.Model):
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True, null=True)
     price = models.DecimalField(max_digits=10, decimal_places=2)
     discount = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    duration = models.CharField(max_length=20, choices=SubscriptionDuration.choices,
-                                default=SubscriptionDuration.MONTHLY)
+    duration = models.CharField(max_length=20, choices=SubscriptionDuration.choices,default=SubscriptionDuration.MONTHLY)                        
     stripe_product_id = models.CharField(max_length=255, blank=True, null=True)
     stripe_price_id = models.CharField(max_length=255, blank=True, null=True)
     is_active = models.BooleanField(default=True)
@@ -30,6 +30,8 @@ class Plan(models.Model):
     def __str__(self):
         return f"{self.name} ({self.duration})"
 
+
+# subscription model
 class Subscription(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     plan = models.ForeignKey(Plan, on_delete=models.CASCADE)

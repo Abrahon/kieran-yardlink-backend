@@ -31,51 +31,7 @@ from .serializers import (
 
 
 
-# class SignupView(generics.GenericAPIView):
-#     serializer_class = SignupSerializer
-#     permission_classes = [AllowAny]
-#     parser_classes = (MultiPartParser, FormParser)
-
-#     def post(self, request, *args, **kwargs):
-#         serializer = self.get_serializer(data=request.data)
-#         serializer.is_valid(raise_exception=True)
-
-#         email = serializer.validated_data["email"]
-#         name = serializer.validated_data["name"]
-#         password = serializer.validated_data["password"]
-#         phone = serializer.validated_data.get("phone")
-#         address = serializer.validated_data.get("address")
-#         role = serializer.validated_data["role"]  
-
-#         # Check duplicate
-#         if User.objects.filter(email=email).exists():
-#             return Response({"detail": "User with this email already exists."}, status=400)
-
-#         # Save temporary user data in session
-#         request.session["pending_user"] = {
-#             "email": email,
-#             "name": name,
-#             "password": password,
-#             "phone": phone,
-#             "address": address,
-#             "role": role,   
-#         }
-
-#         # Delete previous OTPs
-#         OTP.objects.filter(email=email).delete()
-
-#         otp_code = generate_otp()
-#         OTP.objects.create(email=email, code=otp_code)
-
-#         sent = send_otp_email(email, otp_code, name)
-#         if not sent:
-#             return Response(
-#                 {"detail": "Unable to send verification email right now."},
-#                 status=503
-#             )
-
-#         return Response({"detail": "Verification OTP sent to email."}, status=200)
-
+# signup views 
 class SignupView(generics.GenericAPIView):
     serializer_class = SignupSerializer
     permission_classes = [AllowAny]
@@ -204,6 +160,7 @@ class SendOTPView(generics.CreateAPIView):
             status=200
         )
 
+
 # resend otp views 
 class ResendOTPView(generics.GenericAPIView):
     serializer_class = ResendOTPSerializer
@@ -235,6 +192,35 @@ class ResendOTPView(generics.GenericAPIView):
         )
 
 
+
+# resend otp forget password
+class ResendForgotOTPView(generics.GenericAPIView):
+    serializer_class = ResendOTPSerializer
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        email = serializer.validated_data["email"]
+
+        # Delete old OTPs for forgot password flow
+        OTP.objects.filter(email=email).delete()
+
+        # Generate new OTP
+        otp_code = generate_otp()
+        OTP.objects.create(email=email, code=otp_code)
+
+        # Send email
+        send_otp_email(email, otp_code, subject="Forgot Password OTP")
+
+        return Response(
+            {"detail": "Forgot password OTP resent successfully."},
+            status=status.HTTP_200_OK
+        )
+
+
+# verify otpo for email
 class VerifyOTPView(APIView):
     permission_classes = [AllowAny]
 
@@ -254,7 +240,7 @@ class VerifyOTPView(APIView):
                 code=otp_code
                 
             ).latest("created_at")
-            print(email,code)
+            # print(email,code)
         except OTP.DoesNotExist:
             return Response(
                 {"detail": "OTP not found."},
@@ -269,6 +255,7 @@ class VerifyOTPView(APIView):
             )
 
         pending = request.session.get("pending_user")
+        print("pending", pending)
         if not pending or pending["email"] != email:
             return Response(
                 {"detail": "Signup data missing. Restart signup."},
@@ -364,49 +351,36 @@ class ResetPasswordView(generics.GenericAPIView):
         serializer.save()
 
         return Response({"message": "Password reset successfully."}, status=status.HTTP_200_OK)
-    
 
-# role wise filtering user client landscaper
-# class UserListView(APIView):
-#     permission_classes = [IsAdminUser]
 
-#     def get(self, request):
-#         try:
-#             role = request.query_params.get("role")
+# resend otp for forget password
+class ResendForgotOTPView(generics.GenericAPIView):
+    serializer_class = ResendOTPSerializer
+    permission_classes = [AllowAny]
 
-#             users = User.objects.all()
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
 
-#             # 🔥 Filter by role if provided
-#             if role:
-#                 users = users.filter(role=role)
+        email = serializer.validated_data["email"]
 
-#             # 📌 Stats
-#             total_users = User.objects.count()
-#             total_clients = User.objects.filter(role="client").count()
-#             total_landscapers = User.objects.filter(role="landscaper").count()
+        # Delete old OTPs for forgot password flow
+        OTP.objects.filter(email=email).delete()
 
-#             # 🔥 Daily active users (last 24 hours)
-#             last_24h = timezone.now() - timedelta(hours=24)
-#             daily_active_users = User.objects.filter(last_login__gte=last_24h).count()
+        # Generate new OTP
+        otp_code = generate_otp()
+        OTP.objects.create(email=email, code=otp_code)
 
-#             serializer = UserSerializer(users, many=True)
+        # Send email
+        send_otp_email(email, otp_code, subject="Forgot Password OTP")
 
-#             return Response({
-#                 "status": "success",
-#                 "summary": {
-#                     "total_users": total_users,
-#                     "total_clients": total_clients,
-#                     "total_landscapers": total_landscapers,
-#                     "daily_active_users": daily_active_users,
-#                 },
-#                 "data": serializer.data
-#             }, status=status.HTTP_200_OK)
+        return Response(
+            {"detail": "Forgot password OTP resent successfully."},
+            status=status.HTTP_200_OK
+        )
 
-#         except Exception as e:
-#             return Response(
-#                 {"status": "error", "message": str(e)},
-#                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
-#             )
+
+# userlist views
 class UserListView(APIView):
     permission_classes = [IsAdminUser]
 
@@ -466,47 +440,9 @@ class UserListView(APIView):
 
 
 
-# delete user admin and own user
-
-# class AdminDeleteUserView(generics.DestroyAPIView):
-#     """
-#     Admin can delete any user by ID safely (avoiding django_admin_log FK issues)
-#     """
-#     permission_classes = [IsAdminUser]
-#     queryset = User.objects.all()
-#     lookup_field = "id"
-
-#     def delete(self, request, *args, **kwargs):
-#         # Get the user to delete
-#         user = self.get_object()
-
-#         # Prevent deleting superuser accidentally
-#         if user.is_superuser:
-#             return Response(
-#                 {"detail": "Cannot delete a superuser."},
-#                 status=status.HTTP_403_FORBIDDEN
-#             )
-
-#         # Temporarily set request.user to a superuser to avoid admin log FK issues
-#         if not request.user.is_superuser:
-#             superuser = User.objects.filter(is_superuser=True).first()
-#             if superuser:
-#                 request.user = superuser
-
-#         # Delete the user
-#         user.delete()
-
-#         return Response(
-#             {"detail": f"User {user.email} deleted successfully."},
-#             status=status.HTTP_200_OK
-#         )
 
 
-from rest_framework import generics, status
-from rest_framework.response import Response
-from rest_framework.permissions import IsAdminUser
-from accounts.models import User
-
+# delete user for admin views 
 class AdminDeleteUserView(generics.DestroyAPIView):
     """
     Admin can delete any user by ID safely.
