@@ -12,6 +12,8 @@ from .serializers import PlanSerializer, SubscriptionSerializer
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 
+from rest_framework.views import APIView
+from django.db.models import Count, Sum
 from .models import Plan
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
@@ -166,3 +168,47 @@ def success(request):
 
 def cancel(request):
     return HttpResponse("Payment canceled!")
+
+
+# add total subscription
+
+
+class AdminDashboardStatsView(APIView):
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def get(self, request):
+        now = timezone.now()
+        month_start = now.replace(day=1)
+
+        total_plans = Plan.objects.count()
+
+        active_subscriptions = Subscription.objects.filter(
+            status="active",
+            end_date__gte=now
+        ).count()
+
+        expired_subscriptions = Subscription.objects.filter(
+            end_date__lt=now
+        ).count()
+
+        # Monthly revenue (DB-based, Stripe-safe)
+        monthly_revenue = Subscription.objects.filter(
+            start_date__gte=month_start,
+            status="active"
+        ).aggregate(
+            total=Sum("plan__price")
+        )["total"] or 0
+
+        subscribers_by_plan = (
+            Subscription.objects.filter(status="active")
+            .values("plan__name")
+            .annotate(total=Count("id"))
+        )
+
+        return Response({
+            "total_plans": total_plans,
+            "active_subscriptions": active_subscriptions,
+            "expired_subscriptions": expired_subscriptions,
+            "monthly_revenue": monthly_revenue,
+            "subscribers_by_plan": subscribers_by_plan
+        })
