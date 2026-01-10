@@ -11,7 +11,6 @@ from decimal import Decimal
 
 
 
-
 class PlanSerializer(serializers.ModelSerializer):
 
     class Meta:

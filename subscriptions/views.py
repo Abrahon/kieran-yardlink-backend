@@ -15,7 +15,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from django.db.models import Count, Sum
 from .models import Plan
-
+from common.permissions import IsLandscaper
+from rest_framework import status
+from django.db.models import Q
 stripe.api_key = settings.STRIPE_SECRET_KEY
 
 
@@ -54,47 +56,80 @@ class PlanRetrieveUpdateDeleteView(generics.RetrieveUpdateDestroyAPIView):
         return [IsAdmin()] if self.request.method in ["PUT", "PATCH", "DELETE"] else [permissions.AllowAny()]
 
 
-
-
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([permissions.IsAuthenticated])
 def create_checkout_session(request):
     plan_id = request.data.get("plan_id")
 
     if not plan_id:
-        return JsonResponse(
-            {"error": "plan_id is required"},
-            status=400
+        return Response(
+            {"detail": "plan_id is required"},
+            status=status.HTTP_400_BAD_REQUEST
         )
 
     plan = get_object_or_404(Plan, id=plan_id)
 
-    # session = stripe.checkout.Session.create(
-    #     payment_method_types=["card"],
-    #     mode="subscription",
-    #     customer_email=request.user.email,
-    #     line_items=[
-    #         {
-    #             "price": plan.stripe_price_id,
-    #             "quantity": 1,
-    #         }
-    #     ],
-    #     success_url="http://127.0.0.1:8000/api/success/",
-    #     cancel_url="http://127.0.0.1:8000/api/cancel/",
-    # )
+    if not plan.stripe_price_id:
+        return Response(
+            {"detail": "Plan not linked with Stripe"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
     session = stripe.checkout.Session.create(
         mode="subscription",
         customer_email=request.user.email,
-        line_items=[{"price": plan.stripe_price_id, "quantity": 1}],
         metadata={
-            "price_id": plan.stripe_price_id
+            "user_id": str(request.user.id),
+            "plan_id": str(plan.id),
         },
-        success_url="http://127.0.0.1:8000/api/success/",
-        cancel_url="http://127.0.0.1:8000/api/cancel/",
+        line_items=[{
+            "price": plan.stripe_price_id,
+            "quantity": 1,
+        }],
+        success_url="http://localhost:8000/api/success/",
+        cancel_url="http://localhost:8000/api/cancel/",
     )
 
-    return JsonResponse({"checkout_url": session.url})
+    return Response({"checkout_url": session.url})
+
+
+# @api_view(["POST"])
+# @permission_classes([IsLandscaper])
+# def create_checkout_session(request):
+#     plan_id = request.data.get("plan_id")
+
+#     if not plan_id:
+#         return Response(
+#             {"detail": "plan_id is required"},
+#             status=status.HTTP_400_BAD_REQUEST
+#         )
+
+#     plan = get_object_or_404(Plan, id=plan_id)
+
+#     if not plan.stripe_price_id:
+#         return Response(
+#             {"detail": "Plan is not linked with Stripe price"},
+#             status=status.HTTP_400_BAD_REQUEST
+#         )
+
+#     session = stripe.checkout.Session.create(
+#         mode="subscription",
+#         customer_email=request.user.email,
+#         payment_method_types=["card"],
+#         line_items=[
+#             {
+#                 "price": plan.stripe_price_id,
+#                 "quantity": 1,
+#             }
+#         ],
+#         success_url="http://127.0.0.1:8000/api/success/",
+#         cancel_url="http://127.0.0.1:8000/api/cancel/",
+#     )
+
+#     return Response(
+#         {"checkout_url": session.url},
+#         status=status.HTTP_200_OK
+#     )
 
 # its for optional
 # stripe.checkout.Session.create(
@@ -116,7 +151,7 @@ def create_checkout_session(request):
 
 class SubscriptionListView(generics.ListAPIView):
     serializer_class = SubscriptionSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsLandscaper]
 
     def get_queryset(self):
         return Subscription.objects.filter(user=self.request.user)
@@ -124,11 +159,15 @@ class SubscriptionListView(generics.ListAPIView):
 
 class SubscriptionCreateView(generics.CreateAPIView):
     serializer_class = SubscriptionSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsLandscaper]
 
     def perform_create(self, serializer):
         plan = get_object_or_404(Plan, id=self.request.data.get("plan"))
         serializer.save(user=self.request.user, plan=plan)
+
+
+
+
 @csrf_exempt
 def stripe_webhook(request):
     payload = request.body
@@ -148,32 +187,46 @@ def stripe_webhook(request):
     except Exception:
         return HttpResponse("Webhook error", status=400)
 
-    # ✅ Handle successful checkout
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
 
-        customer_email = session.get("customer_details", {}).get("email")
-        stripe_price_id = session["metadata"].get("price_id")
+        metadata = session.get("metadata", {})
+        user_id = metadata.get("user_id")
+        plan_id = metadata.get("plan_id")
+        stripe_subscription_id = session.get("subscription")
 
-        if not customer_email or not stripe_price_id:
+        if not user_id or not plan_id or not stripe_subscription_id:
             return HttpResponse("Missing metadata", status=400)
 
         from django.contrib.auth import get_user_model
         User = get_user_model()
 
-        user = User.objects.filter(email=customer_email).first()
-        plan = Plan.objects.filter(stripe_price_id=stripe_price_id).first()
+        user = User.objects.filter(id=user_id).first()
+        plan = Plan.objects.filter(id=plan_id).first()
 
-        if user and plan:
+        if not user or not plan:
+            return HttpResponse("Invalid user or plan", status=400)
+
+        # ✅ Prevent duplicate subscriptions
+        if not Subscription.objects.filter(
+            stripe_subscription_id=stripe_subscription_id
+        ).exists():
             Subscription.objects.create(
                 user=user,
                 plan=plan,
+                stripe_subscription_id=stripe_subscription_id,
                 start_date=timezone.now(),
                 end_date=timezone.now() + timedelta(days=plan.duration_days),
                 status="active"
             )
 
+            # ✅ UPGRADE ROLE
+            user.role = "landscaper"
+            user.save(update_fields=["role"])
+
     return HttpResponse(status=200)
+
+
 
 # Optional success/cancel pages
 def success(request):
@@ -183,7 +236,6 @@ def cancel(request):
     return HttpResponse("Payment canceled!")
 
 
-# subscription list
 
 
 
@@ -228,6 +280,9 @@ class AdminDashboardStatsView(APIView):
             "subscribers_by_plan": subscribers_by_plan
         })
 
+
+
+
 # admin plan delete
 class AdminPlanDeleteView(generics.DestroyAPIView):
     queryset = Plan.objects.all()
@@ -241,9 +296,49 @@ class AdminPlanDeleteView(generics.DestroyAPIView):
 
 
 # admin delete subscriptions
-class AdminSubscriptionDeleteView(generics.DestroyAPIView):
-    queryset = Subscription.objects.all()
-    permission_classes = [IsAuthenticated, IsAdmin]
+# class AdminSubscriptionDeleteView(generics.DestroyAPIView):
+#     queryset = Subscription.objects.all()
+#     permission_classes = [IsAuthenticated, IsAdmin]
+
+
+
+class AdminSubscriptionDeleteView(APIView):
+    permission_classes = [IsAdmin]
+
+    def delete(self, request, subscription_id):
+        # 1️⃣ Get subscription
+        subscription = get_object_or_404(Subscription, id=subscription_id)
+
+        # 2️⃣ Cancel Stripe subscription if linked
+        if subscription.plan.stripe_price_id:  # optional check
+            # If you stored Stripe subscription ID, cancel via API
+            stripe_subscription_id = getattr(subscription, 'stripe_subscription_id', None)
+            if stripe_subscription_id:
+                try:
+                    stripe.Subscription.delete(stripe_subscription_id)
+                except stripe.error.StripeError as e:
+                    return Response(
+                        {"detail": f"Stripe error: {str(e)}"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+        # 3️⃣ Update subscription in DB
+        subscription.status = "canceled"
+        subscription.is_active = False
+        subscription.end_date = timezone.now()
+        subscription.save(update_fields=["status", "is_active", "end_date"])
+
+        # 4️⃣ Downgrade user role if no other active subscriptions
+        user = subscription.user
+        active_subs = Subscription.objects.filter(user=user, is_active=True, status="active").exists()
+        if not active_subs and user.role == "landscaper":
+            user.role = "user"
+            user.save(update_fields=["role"])
+
+        return Response(
+            {"detail": "Subscription canceled and role updated if necessary."},
+            status=status.HTTP_200_OK
+        )
 
 
 
@@ -276,27 +371,42 @@ class ExtendSubscriptionView(APIView):
 
 
 # admin subscriptions views list
-class AdminSubscriptionListView(generics.ListAPIView):
-    serializer_class = AdminSubscriptionSerializer
-    permission_classes = [IsAdmin]
+# views.py
+class SubscriptionListAPIView(APIView):
+    """
+    Admin-only API to list all subscriptions
+    """
+    permission_classes = [IsAuthenticated, IsAdmin]
 
-    def get_queryset(self):
+    def get(self, request):
+        status_param = request.query_params.get("status")       # active / expired / cancelled
+        plan_id = request.query_params.get("plan")
+        email = request.query_params.get("email")
+
         queryset = Subscription.objects.select_related(
             "user", "plan"
         ).order_by("-created_at")
 
-        # 🔍 Filters
-        status_param = self.request.query_params.get("status")
-        plan_param = self.request.query_params.get("plan")
-        role_param = self.request.query_params.get("role")
-
         if status_param:
             queryset = queryset.filter(status=status_param)
 
-        if plan_param:
-            queryset = queryset.filter(plan__name__iexact=plan_param)
+        if plan_id:
+            queryset = queryset.filter(plan_id=plan_id)
 
-        if role_param:
-            queryset = queryset.filter(user__role=role_param)
+        if email:
+            queryset = queryset.filter(user__email__icontains=email)
 
-        return queryset
+        serializer = SubscriptionSerializer(
+            queryset,
+            many=True,
+            context={"request": request}
+        )
+
+        return Response(
+            {
+                "count": queryset.count(),
+                "subscriptions": serializer.data,
+            },
+            status=status.HTTP_200_OK
+        )
+

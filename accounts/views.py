@@ -27,7 +27,7 @@ from .utils import generate_otp, send_otp_email
 from .serializers import (
     SendOTPSerializer, VerifyOTPSerializer, ResetPasswordSerializer,VerifyOTPForgetSerializer
 )
-
+from rest_framework_simplejwt.tokens import RefreshToken
 
 
 
@@ -221,66 +221,116 @@ class ResendForgotOTPView(generics.GenericAPIView):
 
 
 # verify otpo for email
+# class VerifyOTPView(APIView):
+#     permission_classes = [AllowAny]
+
+#     def post(self, request):
+#         email = request.data.get("email")
+#         otp_code = request.data.get("otp")
+
+#         if not email or not otp_code:
+#             return Response(
+#                 {"detail": "Email and OTP are required."},
+#                 status=400
+#             )
+
+#         try:
+#             otp_instance = OTP.objects.filter(
+#                 email=email,
+#                 code=otp_code
+                
+#             ).latest("created_at")
+#             # print(email,code)
+#         except OTP.DoesNotExist:
+#             return Response(
+#                 {"detail": "OTP not found."},
+#                 status=400
+#             )
+
+#         if otp_instance.is_expired():
+#             otp_instance.delete()
+#             return Response(
+#                 {"detail": "OTP expired."},
+#                 status=400
+#             )
+
+#         pending = request.session.get("pending_user")
+#         print("pending", pending)
+#         if not pending or pending["email"] != email:
+#             return Response(
+#                 {"detail": "Signup data missing. Restart signup."},
+#                 status=400
+#             )
+
+#         # ✅ CREATE USER
+#         User.objects.create_user(
+#             email=pending["email"],
+#             name=pending["name"],
+#             password=pending["password"],
+#             phone=pending["phone"],
+#             address=pending["address"],
+#             role=pending["role"],
+#             is_active=True
+#         )
+
+#         # Cleanup
+#         otp_instance.delete()
+#         del request.session["pending_user"]
+
+#         return Response(
+#             {"message": "Email verified and account created successfully."},
+#             status=200
+#         )
+
+
 class VerifyOTPView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
         email = request.data.get("email")
-        otp_code = request.data.get("otp")
+        otp = request.data.get("otp")
 
-        if not email or not otp_code:
+        otp_obj = OTP.objects.filter(email=email, code=otp).first()
+        if not otp_obj:
             return Response(
-                {"detail": "Email and OTP are required."},
+                {"detail": "Invalid or expired OTP"},
                 status=400
             )
 
-        try:
-            otp_instance = OTP.objects.filter(
-                email=email,
-                code=otp_code
-                
-            ).latest("created_at")
-            # print(email,code)
-        except OTP.DoesNotExist:
+        pending_user = request.session.get("pending_user")
+        if not pending_user or pending_user["email"] != email:
             return Response(
-                {"detail": "OTP not found."},
-                status=400
-            )
-
-        if otp_instance.is_expired():
-            otp_instance.delete()
-            return Response(
-                {"detail": "OTP expired."},
-                status=400
-            )
-
-        pending = request.session.get("pending_user")
-        print("pending", pending)
-        if not pending or pending["email"] != email:
-            return Response(
-                {"detail": "Signup data missing. Restart signup."},
+                {"detail": "Session expired. Please signup again."},
                 status=400
             )
 
         # ✅ CREATE USER
-        User.objects.create_user(
-            email=pending["email"],
-            name=pending["name"],
-            password=pending["password"],
-            phone=pending["phone"],
-            address=pending["address"],
-            role=pending["role"],
-            is_active=True
+        user = User.objects.create_user(
+            email=pending_user["email"],
+            name=pending_user["name"],
+            password=pending_user["password"],
+            phone=pending_user.get("phone"),
+            address=pending_user.get("address"),
+            role="user"   
         )
 
-        # Cleanup
-        otp_instance.delete()
-        del request.session["pending_user"]
 
-        return Response(
-            {"message": "Email verified and account created successfully."},
-            status=200
-        )
+        # cleanup
+        OTP.objects.filter(email=email).delete()
+        request.session.flush()
+
+        # ✅ GENERATE TOKENS (CORRECT PLACE)
+        refresh = RefreshToken.for_user(user)
+
+        return Response({
+            "access": str(refresh.access_token),
+            "refresh": str(refresh),
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "role": user.role
+            }
+        }, status=201)
 
 
 # verify otp for forget password 

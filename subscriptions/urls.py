@@ -1,5 +1,5 @@
 from django.urls import path
-from . import views
+from .import views
 
 urlpatterns = [
     path("plans/", views.PlanListCreateView.as_view(), name="plan-list-create"),
@@ -19,7 +19,7 @@ urlpatterns = [
     path("admin/plans/<int:pk>/delete/", views.AdminPlanDeleteView.as_view()),
     path("admin/subscriptions/<int:pk>/delete/", views.AdminSubscriptionDeleteView.as_view()),
     path("admin/subscriptions/<int:pk>/extend/", views.ExtendSubscriptionView.as_view()),
-    path("admin/subscriptions/",views.AdminSubscriptionListView.as_view(),name="admin-subscriptions"
+    path("admin/subscriptions/",views.SubscriptionListAPIView.as_view(),name="admin-subscriptions"
 )
 
 
