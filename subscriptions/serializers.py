@@ -9,8 +9,6 @@ User = get_user_model()
 from decimal import Decimal
 
 
-
-
 class PlanSerializer(serializers.ModelSerializer):
 
     class Meta:
@@ -49,13 +47,10 @@ class PlanSerializer(serializers.ModelSerializer):
         return data
 
 
-
-
-
-
 class SubscriptionSerializer(serializers.ModelSerializer):
     plan_name = serializers.CharField(source="plan.name", read_only=True)
     user_email = serializers.CharField(source="user.email", read_only=True)
+    user_name = serializers.CharField(source="user.name", read_only=True)  
     remaining_days = serializers.SerializerMethodField()
 
     class Meta:
@@ -63,6 +58,7 @@ class SubscriptionSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "user",
+            "user_name",      # new
             "user_email",
             "plan",
             "plan_name",
@@ -79,6 +75,9 @@ class SubscriptionSerializer(serializers.ModelSerializer):
             "start_date",
             "end_date",
             "created_at",
+            "user_name",
+            "user_email",
+            "plan_name",
         )
 
     def get_remaining_days(self, obj):
@@ -93,17 +92,17 @@ class SubscriptionSerializer(serializers.ModelSerializer):
         if user is None:
             raise serializers.ValidationError({"user": "User must be authenticated."})
 
-        # 🔒 Role validation
+        # Role validation
         if user.role not in ["client", "landscaper"]:
             raise serializers.ValidationError(
                 {"user": "Only clients or landscapers can subscribe."}
             )
 
-        # 🔒 Plan active
+        # Plan active
         if not plan.is_active:
             raise serializers.ValidationError({"plan": "This plan is inactive."})
 
-        # 🔒 One active subscription
+        # One active subscription per user
         if Subscription.objects.filter(user=user, status="active").exists():
             raise serializers.ValidationError(
                 {"subscription": "User already has an active subscription."}
@@ -116,7 +115,7 @@ class SubscriptionSerializer(serializers.ModelSerializer):
         user = request.user
         plan = validated_data["plan"]
 
-        start_date = timezone.now()  # datetime object
+        start_date = timezone.now()
         duration_days = 30 if plan.duration == "monthly" else 365
         end_date = start_date + timedelta(days=duration_days)
 
@@ -133,8 +132,8 @@ class SubscriptionSerializer(serializers.ModelSerializer):
             start_date=start_date,
             end_date=end_date,
         )
-
         return subscription
+
 
 # admin subscriptions 
 from rest_framework import serializers

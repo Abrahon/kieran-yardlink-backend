@@ -56,45 +56,8 @@ class PlanRetrieveUpdateDeleteView(generics.RetrieveUpdateDestroyAPIView):
         return [IsAdmin()] if self.request.method in ["PUT", "PATCH", "DELETE"] else [permissions.AllowAny()]
 
 
-@api_view(["POST"])
-@permission_classes([permissions.IsAuthenticated])
-def create_checkout_session(request):
-    plan_id = request.data.get("plan_id")
-
-    if not plan_id:
-        return Response(
-            {"detail": "plan_id is required"},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-    plan = get_object_or_404(Plan, id=plan_id)
-
-    if not plan.stripe_price_id:
-        return Response(
-            {"detail": "Plan not linked with Stripe"},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-    session = stripe.checkout.Session.create(
-        mode="subscription",
-        customer_email=request.user.email,
-        metadata={
-            "user_id": str(request.user.id),
-            "plan_id": str(plan.id),
-        },
-        line_items=[{
-            "price": plan.stripe_price_id,
-            "quantity": 1,
-        }],
-        success_url="http://localhost:8000/api/success/",
-        cancel_url="http://localhost:8000/api/cancel/",
-    )
-
-    return Response({"checkout_url": session.url})
-
-
 # @api_view(["POST"])
-# @permission_classes([IsLandscaper])
+# @permission_classes([permissions.IsAuthenticated])
 # def create_checkout_session(request):
 #     plan_id = request.data.get("plan_id")
 
@@ -108,45 +71,58 @@ def create_checkout_session(request):
 
 #     if not plan.stripe_price_id:
 #         return Response(
-#             {"detail": "Plan is not linked with Stripe price"},
+#             {"detail": "Plan not linked with Stripe"},
 #             status=status.HTTP_400_BAD_REQUEST
 #         )
 
 #     session = stripe.checkout.Session.create(
 #         mode="subscription",
 #         customer_email=request.user.email,
-#         payment_method_types=["card"],
-#         line_items=[
-#             {
-#                 "price": plan.stripe_price_id,
-#                 "quantity": 1,
-#             }
-#         ],
-#         success_url="http://127.0.0.1:8000/api/success/",
-#         cancel_url="http://127.0.0.1:8000/api/cancel/",
-#     )
-
-#     return Response(
-#         {"checkout_url": session.url},
-#         status=status.HTTP_200_OK
-#     )
-
-# its for optional
-# stripe.checkout.Session.create(
-#     mode="subscription",
-#     customer_email=request.user.email,
-#     line_items=[
-#         {
+#         metadata={
+#             "user_id": str(request.user.id),
+#             "plan_id": str(plan.id),
+#         },
+#         line_items=[{
 #             "price": plan.stripe_price_id,
 #             "quantity": 1,
-#         }
-#     ],
-#     success_url="http://localhost:8000/api/success/",
-#     cancel_url="http://localhost:8000/api/cancel/",
-#     metadata={
-#         "price_id": plan.stripe_price_id
-#     }
-# )
+#         }],
+#         success_url = f"http://localhost:8000/api/success/?session_id={{CHECKOUT_SESSION_ID}}",
+#         cancel_url = f"http://localhost:8000/api/cancel/?session_id={{CHECKOUT_SESSION_ID}}"
+
+#     )
+
+#     return Response({"checkout_url": session.url})
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def create_checkout_session(request):
+    plan_id = request.data.get("plan_id")
+    if not plan_id:
+        return Response({"detail": "plan_id is required"}, status=400)
+
+    plan = get_object_or_404(Plan, id=plan_id)
+    if not plan.stripe_price_id:
+        return Response({"detail": "Plan not linked with Stripe"}, status=400)
+
+    # Add session ID to URLs
+    success_url = f"http://localhost:8000/api/success/?session_id={{CHECKOUT_SESSION_ID}}"
+    cancel_url = f"http://localhost:8000/api/cancel/?session_id={{CHECKOUT_SESSION_ID}}"
+
+    session = stripe.checkout.Session.create(
+        mode="subscription",
+        customer_email=request.user.email,
+        metadata={
+            "user_id": str(request.user.id),
+            "plan_id": str(plan.id),
+        },
+        line_items=[{"price": plan.stripe_price_id, "quantity": 1}],
+        success_url=success_url,
+        cancel_url=cancel_url,
+    )
+
+    return Response({"checkout_url": session.url})
+
+
 
 
 class SubscriptionListView(generics.ListAPIView):
@@ -229,11 +205,21 @@ def stripe_webhook(request):
 
 
 # Optional success/cancel pages
+from django.http import HttpResponse
+
 def success(request):
-    return HttpResponse("Payment succeeded!")
+    session_id = request.GET.get("session_id")
+    if session_id:
+        return HttpResponse(f"Payment succeeded! Session ID: {session_id}")
+    return HttpResponse("Payment succeeded! (No session ID received)")
+
 
 def cancel(request):
+    session_id = request.GET.get("session_id")
+    if session_id:
+        return HttpResponse(f"Payment canceled! Session ID: {session_id}")
     return HttpResponse("Payment canceled!")
+
 
 
 
@@ -410,3 +396,62 @@ class SubscriptionListAPIView(APIView):
             status=status.HTTP_200_OK
         )
 
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def confirm_subscription(request):
+    session_id = request.query_params.get("session_id")
+    if not session_id:
+        return Response({"detail": "session_id is required"}, status=400)
+
+    try:
+        session = stripe.checkout.Session.retrieve(session_id)
+    except stripe.error.StripeError:
+        return Response({"detail": "Invalid session"}, status=400)
+
+    if session.payment_status == "paid" and session.status == "complete":
+        plan_id = session.metadata.get("plan_id")
+        plan = Plan.objects.filter(id=plan_id).first()
+        user = request.user
+
+        if not plan:
+            return Response({"detail": "Plan not found"}, status=404)
+
+        # Create subscription if not exists
+        subscription, created = Subscription.objects.get_or_create(
+            user=user,
+            plan=plan,
+            defaults={
+                "stripe_subscription_id": session.subscription,
+                "status": "active",
+                "start_date": timezone.now(),
+                "end_date": timezone.now() + timedelta(days=plan.duration_days),
+                "is_active": True,
+            }
+        )
+
+        # Upgrade user role if not already
+        if user.role != "landscaper":
+            user.role = "landscaper"
+            user.save(update_fields=["role"])
+
+        return Response({
+            "paid": True,
+            "detail": "Subscription activated",
+            "plan": {
+                "id": plan.id,
+                "name": plan.name,           # Basic or Pro
+                "price": float(plan.price),
+                "discount": float(plan.discount),
+                "duration": plan.duration,
+                "final_price": float(plan.price - (plan.price * plan.discount / 100))
+            },
+            "subscription": {
+                "id": subscription.id,
+                "status": subscription.status,
+                "start_date": subscription.start_date,
+                "end_date": subscription.end_date,
+                "remaining_days": (subscription.end_date - timezone.now()).days
+            }
+        }, status=200)
+
+    return Response({"paid": False, "detail": "Payment not completed"}, status=200)
