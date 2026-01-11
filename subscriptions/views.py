@@ -455,3 +455,30 @@ def confirm_subscription(request):
         }, status=200)
 
     return Response({"paid": False, "detail": "Payment not completed"}, status=200)
+
+
+
+class MySubscriptionAPIView(APIView):
+    """
+    User API to view own subscriptions
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        queryset = Subscription.objects.select_related(
+            "user", "plan"
+        ).filter(user=request.user).order_by("-created_at")
+
+        serializer = SubscriptionSerializer(
+            queryset,
+            many=True,
+            context={"request": request}
+        )
+
+        return Response(
+            {
+                "count": queryset.count(),
+                "subscriptions": serializer.data,
+            },
+            status=status.HTTP_200_OK
+        )

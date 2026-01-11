@@ -27,6 +27,9 @@ from cloudinary.models import CloudinaryField
 #     def __str__(self):
 #         return self.business_name
 
+from django.db import models
+from cloudinary.models import CloudinaryField
+
 class LandscaperProfile(models.Model):
     user = models.OneToOneField(
         User,
@@ -48,8 +51,21 @@ class LandscaperProfile(models.Model):
     latitude = models.DecimalField(max_digits=20, decimal_places=14)
     longitude = models.DecimalField(max_digits=20, decimal_places=14)
 
-    is_profile_completed = models.BooleanField(default=False)
+    # ✅ Standard services (multiple selection)
+    standard_services = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="List of standard services selected by landscaper"
+    )
 
+    # ✅ Optional add-ons (multiple selection)
+    add_ons = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Optional add-on services"
+    )
+
+    is_profile_completed = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
