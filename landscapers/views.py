@@ -14,7 +14,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from .models import WorkingHours, LandscaperProfile, DAYS_OF_WEEK
-from .serializers import WorkingHoursSerializer
+from .serializers import WorkingHoursSerializer,ServiceSerializer
 from bookings.models import BookingStatus
 from rest_framework import generics, status
 from rest_framework.permissions import IsAdminUser
@@ -22,32 +22,7 @@ from rest_framework.response import Response
 from services.permissions import IsLandscaper
 
 
-# class CompleteLandscaperProfileView(generics.CreateAPIView):
-#     serializer_class = LandscaperProfileSerializer
-#     permission_classes = [permissions.IsAuthenticated]
 
-#     def perform_create(self, serializer):
-#         user = self.request.user
-
-#         # Enforce role
-#         if user.role != "landscaper":
-#             raise PermissionDenied("Only landscapers can complete this profile.")
-
-#         # Check if profile already exists
-#         if hasattr(user, "landscaper_profile"):
-#             raise ValidationError("Profile already exists for this user.")
-
-#         # Check subscription
-#         subscription = Subscription.objects.filter(user=user, status="active").first()
-#         plan_name = subscription.plan.name.lower() if subscription else "basic"
-
-#         # If image is provided but user is not Pro, block it
-#         profile_image = serializer.validated_data.get("profile")
-#         if profile_image and "pro" not in plan_name:
-#             raise PermissionDenied("Only Pro subscription users can upload a profile image.")
-
-#         # Save profile
-#         serializer.save()
     
 from rest_framework import generics, permissions
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -97,6 +72,49 @@ class GetLandscaperProfileView(generics.RetrieveAPIView):
         except LandscaperProfile.DoesNotExist:
             raise NotFound("Landscaper profile not found for this user.")
 
+# service views
+from rest_framework import generics, permissions
+from rest_framework.exceptions import PermissionDenied, ValidationError
+from .models import Service
+
+class CreateServiceView(generics.CreateAPIView):
+    serializer_class = ServiceSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def perform_create(self, serializer):
+        user = self.request.user
+
+        # Only landscapers can create services
+        if user.role != "landscaper":
+            raise PermissionDenied("Only landscapers can create services.")
+
+        serializer.save(landscaper=user)
+
+
+class ListServicesView(generics.ListAPIView):
+    serializer_class = ServiceSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = Service.objects.all()
+        params = self.request.query_params
+
+        # Filter by landscaper
+        landscaper_id = params.get("landscaper")
+        if landscaper_id:
+            queryset = queryset.filter(landscaper_id=landscaper_id)
+
+        # Filter by category
+        category = params.get("category")
+        if category:
+            queryset = queryset.filter(category=category)
+
+        # Filter by standard service
+        standard_service = params.get("standard_service")
+        if standard_service:
+            queryset = queryset.filter(standard_services__contains=[standard_service])
+
+        return queryset
 
 
 # for client search

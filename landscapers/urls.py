@@ -1,10 +1,12 @@
 from django.urls import path
-from .views import CompleteLandscaperProfileView,GetLandscaperProfileView,LandscaperFind,WorkingHoursListCreateView
+from .views import CompleteLandscaperProfileView,GetLandscaperProfileView,LandscaperFind,WorkingHoursListCreateView,CreateServiceView,ListServicesView
 
 
 urlpatterns = [
     path("landscaper/complete-profile/",CompleteLandscaperProfileView.as_view()),
     path("landscaper/profile/", GetLandscaperProfileView.as_view(), name="get-landscaper-profile"),
+    path("service/create/", CreateServiceView.as_view(), name="create-service"),
+    path("services/", ListServicesView.as_view(), name="list-services"),
     path("landscapers/search/", LandscaperFind.as_view(), name="landscaper-search"),
     path('working-hours/', WorkingHoursListCreateView.as_view(), name='working-hours'),
 ]
