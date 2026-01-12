@@ -20,14 +20,23 @@ from rest_framework import generics, status
 from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
 from services.permissions import IsLandscaper
-
-
+from rest_framework.parsers import MultiPartParser, FormParser
 
     
 from rest_framework import generics, permissions
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from .models import LandscaperProfile
 from subscriptions.models import Subscription
+
+from rest_framework import generics, permissions
+from rest_framework.exceptions import PermissionDenied, ValidationError
+from .models import LandscaperProfile
+from subscriptions.models import Subscription
+
+from rest_framework import generics, permissions
+from rest_framework.exceptions import PermissionDenied, ValidationError
+from .models import LandscaperProfile
+
 
 class CompleteLandscaperProfileView(generics.CreateAPIView):
     serializer_class = LandscaperProfileSerializer
@@ -42,22 +51,15 @@ class CompleteLandscaperProfileView(generics.CreateAPIView):
         if hasattr(user, "landscaper_profile"):
             raise ValidationError("Profile already exists.")
 
-        subscription = Subscription.objects.filter(
-            user=user,
-            status="active"
-        ).first()
-
-        plan_name = subscription.plan.name.lower() if subscription else "basic"
-
-        if serializer.validated_data.get("profile") and "pro" not in plan_name:
-            raise PermissionDenied(
-                "Only Pro subscription users can upload a profile image."
-            )
+        # Get uploaded file from request
+        profile_file = self.request.FILES.get("profile")
 
         serializer.save(
             user=user,
-            is_profile_completed=True
+            is_profile_completed=True,
+            profile=profile_file
         )
+
 
 
 
@@ -68,9 +70,9 @@ class GetLandscaperProfileView(generics.RetrieveAPIView):
     def get_object(self):
         user = self.request.user
         try:
-            return user.landscaper_profile  # related_name from OneToOneField
+            return user.landscaper_profile
         except LandscaperProfile.DoesNotExist:
-            raise NotFound("Landscaper profile not found for this user.")
+            raise ValidationError("Landscaper profile not found for this user.")
 
 # service views
 from rest_framework import generics, permissions
@@ -80,6 +82,7 @@ from .models import Service
 class CreateServiceView(generics.CreateAPIView):
     serializer_class = ServiceSerializer
     permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
 
     def perform_create(self, serializer):
         user = self.request.user

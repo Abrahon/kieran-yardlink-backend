@@ -42,6 +42,13 @@ class UserManager(BaseUserManager):
 
 
 class User(AbstractBaseUser, PermissionsMixin):
+    # accounts/models.py
+    stripe_customer_id = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True
+)
+
     name = models.CharField(max_length=100)
     email = models.EmailField(unique=True)
     phone = models.CharField(max_length=20, blank=True, null=True)

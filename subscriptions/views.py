@@ -11,8 +11,8 @@ from .models import Plan, Subscription
 from .serializers import PlanSerializer, SubscriptionSerializer,AdminSubscriptionSerializer
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
-
 from rest_framework.views import APIView
+
 from django.db.models import Count, Sum
 from .models import Plan
 from common.permissions import IsLandscaper
@@ -60,20 +60,16 @@ class PlanRetrieveUpdateDeleteView(generics.RetrieveUpdateDestroyAPIView):
 # @permission_classes([permissions.IsAuthenticated])
 # def create_checkout_session(request):
 #     plan_id = request.data.get("plan_id")
-
 #     if not plan_id:
-#         return Response(
-#             {"detail": "plan_id is required"},
-#             status=status.HTTP_400_BAD_REQUEST
-#         )
+#         return Response({"detail": "plan_id is required"}, status=400)
 
 #     plan = get_object_or_404(Plan, id=plan_id)
-
 #     if not plan.stripe_price_id:
-#         return Response(
-#             {"detail": "Plan not linked with Stripe"},
-#             status=status.HTTP_400_BAD_REQUEST
-#         )
+#         return Response({"detail": "Plan not linked with Stripe"}, status=400)
+
+#     # Add session ID to URLs
+#     success_url = f"http://localhost:8000/api/success/?session_id={{CHECKOUT_SESSION_ID}}"
+#     cancel_url = f"http://localhost:8000/api/cancel/?session_id={{CHECKOUT_SESSION_ID}}"
 
 #     session = stripe.checkout.Session.create(
 #         mode="subscription",
@@ -82,13 +78,9 @@ class PlanRetrieveUpdateDeleteView(generics.RetrieveUpdateDestroyAPIView):
 #             "user_id": str(request.user.id),
 #             "plan_id": str(plan.id),
 #         },
-#         line_items=[{
-#             "price": plan.stripe_price_id,
-#             "quantity": 1,
-#         }],
-#         success_url = f"http://localhost:8000/api/success/?session_id={{CHECKOUT_SESSION_ID}}",
-#         cancel_url = f"http://localhost:8000/api/cancel/?session_id={{CHECKOUT_SESSION_ID}}"
-
+#         line_items=[{"price": plan.stripe_price_id, "quantity": 1}],
+#         success_url=success_url,
+#         cancel_url=cancel_url,
 #     )
 
 #     return Response({"checkout_url": session.url})
@@ -104,24 +96,49 @@ def create_checkout_session(request):
     if not plan.stripe_price_id:
         return Response({"detail": "Plan not linked with Stripe"}, status=400)
 
-    # Add session ID to URLs
-    success_url = f"http://localhost:8000/api/success/?session_id={{CHECKOUT_SESSION_ID}}"
-    cancel_url = f"http://localhost:8000/api/cancel/?session_id={{CHECKOUT_SESSION_ID}}"
+    # ================================
+    # FIX 1: CREATE / REUSE CUSTOMER
+    # ================================
+    if not request.user.stripe_customer_id:
+        customer = stripe.Customer.create(
+            email=request.user.email,
+            name=request.user.name or request.user.email
+,
+        )
+        request.user.stripe_customer_id = customer.id
+        request.user.save(update_fields=["stripe_customer_id"])
+
+    success_url = "http://localhost:8000/api/success/?session_id={CHECKOUT_SESSION_ID}"
+    cancel_url = "http://localhost:8000/api/cancel/"
 
     session = stripe.checkout.Session.create(
         mode="subscription",
-        customer_email=request.user.email,
+
+        # ❌ REMOVE THIS
+        # customer_email=request.user.email,
+
+        # ✅ ADD THIS (MOST IMPORTANT LINE)
+        customer=request.user.stripe_customer_id,
+
+        payment_method_types=["card"],
+
         metadata={
             "user_id": str(request.user.id),
             "plan_id": str(plan.id),
         },
-        line_items=[{"price": plan.stripe_price_id, "quantity": 1}],
+
+        line_items=[
+            {
+                "price": plan.stripe_price_id,
+                "quantity": 1
+            }
+        ],
+
         success_url=success_url,
         cancel_url=cancel_url,
     )
 
     return Response({"checkout_url": session.url})
-
 
 
 
@@ -327,7 +344,6 @@ class AdminSubscriptionDeleteView(APIView):
         )
 
 
-
 # extend subscriptions
 class ExtendSubscriptionView(APIView):
     permission_classes = [IsAuthenticated, IsAdmin]
@@ -395,6 +411,7 @@ class SubscriptionListAPIView(APIView):
             },
             status=status.HTTP_200_OK
         )
+
 
 @api_view(["GET"])
 @permission_classes([permissions.IsAuthenticated])
@@ -482,3 +499,73 @@ class MySubscriptionAPIView(APIView):
             },
             status=status.HTTP_200_OK
         )
+        
+# # stripe onfo get
+# from rest_framework.decorators import api_view, permission_classes
+# from rest_framework.response import Response
+
+
+
+
+
+# @api_view(["GET"])
+# @permission_classes([IsAuthenticated])
+# def user_payment_history(request):
+#     """
+#     Fetch payment history for the logged-in user from Stripe
+#     """
+
+#     subscription = Subscription.objects.filter(
+#         user=request.user,
+#         stripe_customer_id__isnull=False
+#     ).first()
+
+#     if not subscription:
+#         return Response(
+#             {"detail": "No Stripe customer found for this user"},
+#             status=404
+#         )
+
+#     # Fetch invoices from Stripe
+#     invoices = stripe.Invoice.list(
+#         customer=subscription.stripe_customer_id,
+#         limit=20
+#     )
+
+#     payments = []
+
+#     for invoice in invoices.data:
+#         card_info = None
+
+#         if invoice.payment_intent:
+#             payment_intent = stripe.PaymentIntent.retrieve(
+#                 invoice.payment_intent
+#             )
+
+#             if payment_intent.charges.data:
+#                 charge = payment_intent.charges.data[0]
+#                 card = charge.payment_method_details.get("card")
+
+#                 if card:
+#                     card_info = {
+#                         "brand": card.brand,
+#                         "last4": card.last4,
+#                         "exp_month": card.exp_month,
+#                         "exp_year": card.exp_year,
+#                     }
+
+#         payments.append({
+#             "invoice_id": invoice.id,
+#             "amount_paid": invoice.amount_paid / 100,
+#             "currency": invoice.currency,
+#             "status": invoice.status,
+#             "paid_at": invoice.status_transitions.paid_at,
+#             "receipt_url": invoice.hosted_invoice_url,
+#             "card": card_info,
+#         })
+
+#     return Response({
+#         "user": request.user.email,
+#         "payment_count": len(payments),
+#         "payments": payments
+#     })

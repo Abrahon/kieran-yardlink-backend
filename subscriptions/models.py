@@ -32,21 +32,52 @@ class Plan(models.Model):
 
 
 # subscription model
+
+# class Subscription(models.Model):
+#     user = models.ForeignKey(User, on_delete=models.CASCADE)
+#     plan = models.ForeignKey(Plan, on_delete=models.CASCADE)
+#     status = models.CharField(max_length=20, choices=SubscriptionStatus.choices,default=SubscriptionStatus.ACTIVE)
+#     stripe_subscription_id = models.CharField(max_length=255, blank=True, null=True)  
+#     start_date = models.DateTimeField()
+#     end_date = models.DateTimeField()
+#     is_active = models.BooleanField(default=True)
+#     created_at = models.DateTimeField(auto_now_add=True)
+#     updated_at = models.DateTimeField(auto_now=True)
+
+#     def extend(self):
+#         days = 30 if self.plan.duration == "monthly" else 365
+#         self.end_date += timedelta(days=days)
+#         self.save()
+
+#     def __str__(self):
+#         return f"{self.user.email} - {self.plan.name}"
+
+
 class Subscription(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     plan = models.ForeignKey(Plan, on_delete=models.CASCADE)
-    status = models.CharField(max_length=20, choices=SubscriptionStatus.choices,default=SubscriptionStatus.ACTIVE)
-    stripe_subscription_id = models.CharField(max_length=255, blank=True, null=True)  
+
+    stripe_customer_id = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True
+    )
+
+    stripe_subscription_id = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=SubscriptionStatus.choices,
+        default=SubscriptionStatus.ACTIVE
+    )
+
     start_date = models.DateTimeField()
     end_date = models.DateTimeField()
+
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-
-    def extend(self):
-        days = 30 if self.plan.duration == "monthly" else 365
-        self.end_date += timedelta(days=days)
-        self.save()
-
-    def __str__(self):
-        return f"{self.user.email} - {self.plan.name}"

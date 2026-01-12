@@ -21,16 +21,16 @@ urlpatterns = [
     path("admin/subscriptions/<int:pk>/extend/", views.ExtendSubscriptionView.as_view()),
     path("admin/subscriptions/",views.SubscriptionListAPIView.as_view(),name="admin-subscriptions"),
     path("confirm-subscription/", views.confirm_subscription, name="confirm-subscription"),
+
+    # path(
+    #     "payments/history/",
+    #     views.user_payment_history,
+    #     name="payment-history"
+    # ),
+
     path(
         "my-subscriptions/",
         views.MySubscriptionAPIView.as_view(),
-        name="my-subscriptions"
-    
-),
-
-
-
-
-
+        name="my-subscriptions"),
 
 ]

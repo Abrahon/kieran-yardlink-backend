@@ -78,6 +78,73 @@ class WorkerProfileView(generics.GenericAPIView):
         raise PermissionDenied("Access denied")
 
 
+# class WorkerProfileView(generics.GenericAPIView):
+#     serializer_class = WorkerProfileSerializer
+#     permission_classes = [IsAuthenticated]
+#     parser_classes = [MultiPartParser, FormParser]
+
+#     def get(self, request):
+#         user = request.user
+
+#         # 🔹 Worker → own profile only
+#         if user.role == "worker":
+#             profile = get_object_or_404(WorkerProfile, user=user)
+#             return Response(self.get_serializer(profile).data)
+
+#         # 🔹 PRO Landscaper only
+#         if user.role == "landscaper" and is_pro_landscaper(user):
+#             worker_id = request.query_params.get("worker_id")
+
+#             accepted_invitations = TeamInvitation.objects.filter(
+#                 landscaper=user.landscaper_profile,
+#                 status=InvitationStatus.ACCEPTED
+#             )
+
+#             if worker_id:
+#                 profile = get_object_or_404(
+#                     WorkerProfile,
+#                     id=worker_id,
+#                     pro_landscaper__in=accepted_invitations
+#                 )
+#                 return Response(self.get_serializer(profile).data)
+
+#             profiles = WorkerProfile.objects.filter(
+#                 Q(pro_landscaper__in=accepted_invitations) |
+#                 Q(user=user)
+#             )
+#             return Response(self.get_serializer(profiles, many=True).data)
+
+#         raise PermissionDenied("Only PRO landscapers are allowed")
+
+#     # ✅ UPDATE
+#     def patch(self, request):
+#         return self._update_self_profile(request)
+
+#     def put(self, request):
+#         return self._update_self_profile(request)
+
+#     def _update_self_profile(self, request):
+#         user = request.user
+
+#         if user.role == "worker":
+#             profile = get_object_or_404(WorkerProfile, user=user)
+
+#         elif user.role == "landscaper" and is_pro_landscaper(user):
+#             profile = get_object_or_404(WorkerProfile, user=user)
+
+#         else:
+#             raise PermissionDenied("Only PRO landscapers can update profile")
+
+#         serializer = self.get_serializer(
+#             profile,
+#             data=request.data,
+#             partial=True
+#         )
+#         serializer.is_valid(raise_exception=True)
+#         serializer.save()
+
+#         return Response(serializer.data)
+
 
 # pro landscaper 
 class ProLandscaperWorkersView(generics.ListAPIView):
