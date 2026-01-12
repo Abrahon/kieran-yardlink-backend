@@ -7,8 +7,8 @@ class ContactMessageSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ContactMessage
-        fields = ['id', 'name', 'email', 'message', 'category', 'status', 'created_at', 'replied_at']
-        read_only_fields = ['id', 'email', 'status', 'created_at', 'replied_at']
+        fields = ['id', 'name', 'email', 'message', 'status', 'created_at', 'replied_at']
+        read_only_fields = ['id', 'email', 'status', 'created_at','category', 'replied_at']
 
     def get_email(self, obj):
         return obj.user.email

@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import AdminProfile,ClientProfile,WorkerProfile,ClientProfile
+from .models import AdminProfile,ClientProfile,WorkerProfile,ClientProfile,LandscaperProfile
 from django.contrib.auth.password_validation import validate_password
 from django.utils.translation import gettext as _
 from .models import WorkerProfile
@@ -59,9 +59,22 @@ class WorkerProfileSerializer(serializers.ModelSerializer):
 
 
 
+# client serializers
+class LandscaperProfileSerializer(serializers.ModelSerializer):
+    email = serializers.EmailField(source="user.email", read_only=True)
+    image = serializers.SerializerMethodField()  
+
+    class Meta:
+        model = LandscaperProfile
+        fields = ["email", "name", "phone", "image"]
+
+    def get_image(self, obj):
+        if obj.image:
+            return obj.image.url
+        return None
+
 
 # client serializers
-
 class ClientProfileSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(source="user.email", read_only=True)
     image = serializers.SerializerMethodField()  # override image to return URL

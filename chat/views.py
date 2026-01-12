@@ -18,8 +18,7 @@ class ContactMessageCreateAPIView(generics.CreateAPIView):
     permission_classes = [permissions.AllowAny]
 
     def perform_create(self, serializer):
-        serializer.save()  # Don't pass user here
-
+        serializer.save()  
 
 
 # ---------------------------

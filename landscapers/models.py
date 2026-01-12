@@ -127,6 +127,7 @@ class Service(models.Model):
         return f"{', '.join(self.standard_services)} ({self.landscaper.email})"
 
 
+
 DAYS_OF_WEEK = [
     ('SUNDAY', 'Sunday'),
     ('MONDAY', 'Monday'),
@@ -136,8 +137,6 @@ DAYS_OF_WEEK = [
     ('FRIDAY', 'Friday'),
     ('SATURDAY', 'Saturday'),
 ]
-
-
 
 class WorkingHours(models.Model):
     landscaper = models.ForeignKey(LandscaperProfile, on_delete=models.CASCADE, related_name='working_hours')

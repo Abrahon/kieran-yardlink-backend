@@ -18,6 +18,7 @@ from django.db.models import Q
 from common.permissions import IsClient,IsAdmin,IsLandscaper,IsWorker
 # from services.permissions import IsLandscaper
 from invitations.models import TeamInvitation, InvitationStatus
+from invitations.permissions import IsProLandscaper
 
 
 # admin profile
@@ -175,7 +176,21 @@ class ProLandscaperWorkersView(generics.ListAPIView):
 
 
 
-# client profile views
+# prolandscaer profile views
+class ProLandScaperProfileView(generics.RetrieveUpdateAPIView):
+    serializer_class = ClientProfileSerializer
+    permission_classes = [IsAuthenticated, IsProLandscaper]  # 
+    parser_classes = [MultiPartParser, FormParser]    # 
+
+    def get_object(self):
+        profile, created = ClientProfile.objects.get_or_create(
+            user=self.request.user
+        )
+        return profile
+
+        return profile
+
+
 class ClientProfileView(generics.RetrieveUpdateAPIView):
     serializer_class = ClientProfileSerializer
     permission_classes = [IsAuthenticated, IsClient]  # 
@@ -188,7 +203,6 @@ class ClientProfileView(generics.RetrieveUpdateAPIView):
         return profile
 
         return profile
-
 
 
 # ---------------------- Change Password for---------------------- #
@@ -212,6 +226,7 @@ class ChangePasswordView(generics.UpdateAPIView):
         serializer.save()
         update_session_auth_hash(request, serializer.instance)
         return Response({"message": "Password updated successfully"}, status=status.HTTP_200_OK)
+
 
 # landscaper change password
 class ChangePasswordLandscaperView(generics.UpdateAPIView):

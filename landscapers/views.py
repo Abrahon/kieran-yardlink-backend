@@ -21,6 +21,9 @@ from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
 from services.permissions import IsLandscaper
 from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework import generics, permissions
+from rest_framework.exceptions import PermissionDenied, ValidationError
+from .models import Service
 
     
 from rest_framework import generics, permissions
@@ -75,14 +78,13 @@ class GetLandscaperProfileView(generics.RetrieveAPIView):
             raise ValidationError("Landscaper profile not found for this user.")
 
 # service views
-from rest_framework import generics, permissions
-from rest_framework.exceptions import PermissionDenied, ValidationError
-from .models import Service
+
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
 class CreateServiceView(generics.CreateAPIView):
     serializer_class = ServiceSerializer
     permission_classes = [permissions.IsAuthenticated]
-    parser_classes = [MultiPartParser, FormParser]
+    # parser_classes = [MultiPartParser, FormParser, JSONParser]  # <-- added JSONParser
 
     def perform_create(self, serializer):
         user = self.request.user
@@ -92,6 +94,7 @@ class CreateServiceView(generics.CreateAPIView):
             raise PermissionDenied("Only landscapers can create services.")
 
         serializer.save(landscaper=user)
+
 
 
 class ListServicesView(generics.ListAPIView):

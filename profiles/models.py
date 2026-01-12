@@ -33,7 +33,18 @@ class WorkerProfile(models.Model):
         return self.name
 
         
+# landscaper 
+class LandscaperProfile(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    name = models.CharField(max_length=255, default="Landscaper")
+    phone = models.CharField(max_length=20, blank=True, default="")
+    image = CloudinaryField("landscaper_profile", blank=True, null=True)
 
+    def __str__(self):
+        return self.name
+
+
+# client
 class ClientProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     name = models.CharField(max_length=255, default="Client")
