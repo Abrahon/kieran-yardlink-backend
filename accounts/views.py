@@ -19,7 +19,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework import views
-
+from django.shortcuts import get_object_or_404
 from .serializers import SignupSerializer, LoginSerializer, ResetPasswordSerializer,ResendOTPSerializer
 from .models import User, OTP
 from django.utils import timezone
@@ -431,12 +431,14 @@ class ResendForgotOTPView(generics.GenericAPIView):
 
 
 # userlist views
+
 class UserListView(APIView):
     permission_classes = [IsAdminUser]
 
     def get(self, request):
         role = request.query_params.get("role")
         plan = request.query_params.get("plan")  # basic | pro
+        status_param = request.query_params.get("status")  # active | paused
         search_query = request.query_params.get("search", "").strip()
 
         users = User.objects.all()
@@ -451,6 +453,13 @@ class UserListView(APIView):
                 subscription__is_active=True,
                 subscription__plan__name__iexact=plan
             )
+
+        # Filter by active/paused
+        if status_param:
+            if status_param.lower() == "paused":
+                users = users.filter(is_active=False)
+            elif status_param.lower() == "active":
+                users = users.filter(is_active=True)
 
         # Search by name or email
         if search_query:
@@ -478,6 +487,9 @@ class UserListView(APIView):
             subscription__plan__name__iexact="pro"
         ).distinct().count()
 
+        paused_users = User.objects.filter(is_active=False).count()
+        active_users = User.objects.filter(is_active=True).count()
+
         last_24h = timezone.now() - timedelta(hours=24)
         daily_active_users = User.objects.filter(
             last_login__gte=last_24h
@@ -493,10 +505,12 @@ class UserListView(APIView):
                 "total_landscapers": total_landscapers,
                 "basic_landscapers": total_basic_landscapers,
                 "pro_landscapers": total_pro_landscapers,
+                "paused_users": paused_users,
+                "active_users": active_users,
                 "daily_active_users": daily_active_users,
             },
             "data": serializer.data,
-        }, status=status.HTTP_200_OK)
+        }, status=200)
 
 
 
@@ -531,3 +545,45 @@ class AdminDeleteUserView(generics.DestroyAPIView):
             status=status.HTTP_200_OK
         )
 
+# user puse 
+
+class AdminPauseUserView(APIView):
+    """
+    Admin API to pause (deactivate) or unpause (activate) a user
+    """
+    permission_classes = [IsAdminUser]
+
+    def patch(self, request, user_id):
+        """
+        Toggle user's active status.
+        Send JSON payload: {"action": "pause"} or {"action": "unpause"}
+        """
+        user = get_object_or_404(User, id=user_id)
+
+        action = request.data.get("action")
+        if action not in ["pause", "unpause"]:
+            return Response(
+                {"detail": "Invalid action. Must be 'pause' or 'unpause'."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if action == "pause":
+            user.is_active = False
+            message = "User has been paused."
+        else:
+            user.is_active = True
+            message = "User has been unpaused."
+
+        user.save(update_fields=["is_active"])
+        return Response(
+            {
+                "status": "success",
+                "message": message,
+                "user": {
+                    "id": user.id,
+                    "email": user.email,
+                    "is_active": user.is_active,
+                }
+            },
+            status=status.HTTP_200_OK
+        )

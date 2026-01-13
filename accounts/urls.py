@@ -9,7 +9,8 @@ from .views import (
     AdminDeleteUserView,
     VerifyOTPForgetView,
     ResendOTPView,
-    ResendForgotOTPView
+    ResendForgotOTPView,
+    AdminPauseUserView
     
 )
 
@@ -27,5 +28,7 @@ urlpatterns = [
     # path('check/token/', CheckTokenView.as_view(), name='check-token'),
     path('users-list/', UserListView.as_view(), name='user-list'),
     path("admin/delete-user/<int:id>/", AdminDeleteUserView.as_view(), name="admin-delete-user"),
+     path('admin/users/<int:user_id>/pause/', AdminPauseUserView.as_view(), name='admin-pause-user'),
+
 
 ]
