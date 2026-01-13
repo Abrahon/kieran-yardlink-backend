@@ -315,6 +315,7 @@ INSTALLED_APPS = [
     "cloudinary_storage",
     "django_rq",
     "channels",
+    "django_filters",
 
     # Local apps
     'common',
@@ -403,13 +404,31 @@ AUTH_PASSWORD_VALIDATORS = [
 # DJANGO REST FRAMEWORK + JWT
 # ------------------------------------------------------------------------------
 REST_FRAMEWORK = {
+    # Authentication
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
+
+    # Default permission
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticated",
     ),
+
+    # Pagination
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 10,  # Default number of items per page
+
+    # Filtering & search
+    "DEFAULT_FILTER_BACKENDS": (
+        "django_filters.rest_framework.DjangoFilterBackend",
+        "rest_framework.filters.SearchFilter",
+        "rest_framework.filters.OrderingFilter",
+    ),
+
+    # Optional: default ordering param
+    "ORDERING_PARAM": "ordering",
 }
+
 
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(days=30),

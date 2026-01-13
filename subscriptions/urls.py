@@ -18,9 +18,15 @@ urlpatterns = [
     path("admin/dashboard-stats/", views.AdminDashboardStatsView.as_view()),
     path("admin/plans/<int:pk>/delete/", views.AdminPlanDeleteView.as_view()),
     path("admin/subscriptions/<int:pk>/delete/", views.AdminSubscriptionDeleteView.as_view()),
-    path("admin/subscriptions/<int:pk>/extend/", views.ExtendSubscriptionView.as_view()),
+    # path("admin/subscriptions/<int:pk>/extend/", views.ExtendSubscriptionView.as_view()),
     path("admin/subscriptions/",views.SubscriptionListAPIView.as_view(),name="admin-subscriptions"),
     path("confirm-subscription/", views.confirm_subscription, name="confirm-subscription"),
+    path(
+        "admin/subscriptions/<int:pk>/extend/",views.ExtendSubscriptionView.as_view(),
+        name="extend-subscription"
+    ),
+
+
 
     # path(
     #     "payments/history/",

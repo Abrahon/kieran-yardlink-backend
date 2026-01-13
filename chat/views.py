@@ -7,7 +7,8 @@ from django.utils import timezone
 from rest_framework.parsers import JSONParser, FormParser, MultiPartParser
 from .models import ContactMessage, MessageStatus
 from .serializers import ContactMessageSerializer,AdminUpdateSerializer,AdminUpdateSerializer
-
+from rest_framework import generics, permissions
+from django.db.models import Q
 
 
 # ---------------------------
@@ -24,13 +25,29 @@ class ContactMessageCreateAPIView(generics.CreateAPIView):
 # ---------------------------
 # Admin lists all messages
 # ---------------------------
+
+
 class AdminContactMessageListAPIView(generics.ListAPIView):
+    """
+    Admin API to list all contact messages with search functionality
+    """
     serializer_class = ContactMessageSerializer
     permission_classes = [permissions.IsAdminUser]
     parser_classes = [JSONParser, FormParser, MultiPartParser]
 
     def get_queryset(self):
-        return ContactMessage.objects.all().order_by("-created_at")
+        queryset = ContactMessage.objects.all().order_by("-created_at")
+        search_query = self.request.query_params.get("search", "").strip()
+
+        if search_query:
+            queryset = queryset.filter(
+                Q(name__icontains=search_query) |
+                Q(user__email__icontains=search_query) |
+                Q(message__icontains=search_query)
+            )
+
+        return queryset
+
 
 
 # ---------------------------

@@ -12,7 +12,7 @@ from .serializers import PlanSerializer, SubscriptionSerializer,AdminSubscriptio
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
-
+from rest_framework.exceptions import ValidationError
 from django.db.models import Count, Sum
 from .models import Plan
 from common.permissions import IsLandscaper
@@ -287,15 +287,22 @@ class AdminDashboardStatsView(APIView):
 
 
 # admin plan delete
+
 class AdminPlanDeleteView(generics.DestroyAPIView):
     queryset = Plan.objects.all()
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def perform_destroy(self, instance):
-        # Prevent deleting plans with active subscriptions
-        if Subscription.objects.filter(plan=instance, status="active").exists():
-            raise ValidationError("Cannot delete plan with active subscriptions.")
+        if Subscription.objects.filter(
+            plan=instance,
+            status="active"
+        ).exists():
+            raise ValidationError({
+                "detail": "Cannot delete plan with active subscriptions."
+            })
+
         instance.delete()
+
 
 
 # admin delete subscriptions
@@ -345,6 +352,38 @@ class AdminSubscriptionDeleteView(APIView):
 
 
 # extend subscriptions
+# class ExtendSubscriptionView(APIView):
+#     permission_classes = [IsAuthenticated, IsAdmin]
+
+#     def post(self, request, pk):
+#         days = request.data.get("days")
+
+#         if not days or int(days) <= 0:
+#             return Response(
+#                 {"detail": "Valid number of days required"},
+#                 status=400
+#             )
+
+#         subscription = get_object_or_404(Subscription, pk=pk)
+
+#         if subscription.end_date < timezone.now():
+#             subscription.end_date = timezone.now()
+
+#         subscription.end_date += timedelta(days=int(days))
+#         subscription.status = "active"
+#         subscription.save()
+
+#         return Response({
+#             "message": "Subscription extended successfully",
+#             "new_end_date": subscription.end_date
+#         })
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from datetime import timedelta
+
 class ExtendSubscriptionView(APIView):
     permission_classes = [IsAuthenticated, IsAdmin]
 
@@ -359,58 +398,71 @@ class ExtendSubscriptionView(APIView):
 
         subscription = get_object_or_404(Subscription, pk=pk)
 
-        if subscription.end_date < timezone.now():
-            subscription.end_date = timezone.now()
+        # If expired, restart from today
+        base_date = (
+            subscription.end_date
+            if subscription.end_date > timezone.now()
+            else timezone.now()
+        )
 
-        subscription.end_date += timedelta(days=int(days))
+        subscription.end_date = base_date + timedelta(days=int(days))
         subscription.status = "active"
+        subscription.is_active = True
         subscription.save()
 
         return Response({
             "message": "Subscription extended successfully",
-            "new_end_date": subscription.end_date
+            "subscription_id": subscription.id,
+            "new_end_date": subscription.end_date,
+            "remaining_days": (subscription.end_date - timezone.now()).days
         })
 
 
 # admin subscriptions views list
 # views.py
+
+# subscriptions/views.py
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+from django.db.models import Q
+from subscriptions.models import Subscription
+from subscriptions.serializers import SubscriptionSerializer
+from common.permissions import IsAdmin
+
 class SubscriptionListAPIView(APIView):
     """
-    Admin-only API to list all subscriptions
+    Admin-only API to list subscriptions with:
+    - search: plan name, user email, or user full name
+    - filter by plan (partial match): e.g., 'ProPlan' or 'BasicPlan'
     """
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def get(self, request):
-        status_param = request.query_params.get("status")       # active / expired / cancelled
-        plan_id = request.query_params.get("plan")
-        email = request.query_params.get("email")
+        search = request.query_params.get("search", "") 
+        plan_name = request.query_params.get("plan", "")  
 
-        queryset = Subscription.objects.select_related(
-            "user", "plan"
-        ).order_by("-created_at")
+        queryset = Subscription.objects.select_related("user", "plan").order_by("-created_at")
 
-        if status_param:
-            queryset = queryset.filter(status=status_param)
+        # Flexible plan filter (partial match)
+        if plan_name:
+            queryset = queryset.filter(plan__name__icontains=plan_name)
 
-        if plan_id:
-            queryset = queryset.filter(plan_id=plan_id)
+        # Apply search filter (plan name, user email, or user name)
+        if search:
+            queryset = queryset.filter(
+                Q(plan__name__icontains=search) |
+                Q(user__email__icontains=search) |
+                Q(user__name__icontains=search)
+            )
 
-        if email:
-            queryset = queryset.filter(user__email__icontains=email)
+        serializer = SubscriptionSerializer(queryset, many=True, context={"request": request})
 
-        serializer = SubscriptionSerializer(
-            queryset,
-            many=True,
-            context={"request": request}
-        )
-
-        return Response(
-            {
-                "count": queryset.count(),
-                "subscriptions": serializer.data,
-            },
-            status=status.HTTP_200_OK
-        )
+        return Response({
+            "count": queryset.count(),
+            "subscriptions": serializer.data,
+        }, status=status.HTTP_200_OK)
 
 
 @api_view(["GET"])

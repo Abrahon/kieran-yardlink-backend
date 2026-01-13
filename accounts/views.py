@@ -9,7 +9,7 @@ from django.shortcuts import render, redirect
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from datetime import timedelta
-
+from django.db.models import Q
 from rest_framework import generics, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -437,16 +437,26 @@ class UserListView(APIView):
     def get(self, request):
         role = request.query_params.get("role")
         plan = request.query_params.get("plan")  # basic | pro
+        search_query = request.query_params.get("search", "").strip()
 
         users = User.objects.all()
 
+        # Filter by role
         if role:
             users = users.filter(role=role)
 
+        # Filter by subscription plan
         if plan:
             users = users.filter(
                 subscription__is_active=True,
                 subscription__plan__name__iexact=plan
+            )
+
+        # Search by name or email
+        if search_query:
+            users = users.filter(
+                Q(name__icontains=search_query) |
+                Q(email__icontains=search_query)
             )
 
         users = users.distinct()
