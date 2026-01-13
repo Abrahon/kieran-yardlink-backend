@@ -62,16 +62,12 @@ class WorkerProfileSerializer(serializers.ModelSerializer):
 # client serializers
 class LandscaperProfileSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(source="user.email", read_only=True)
-    image = serializers.SerializerMethodField()  
+    image = serializers.ImageField(required=False)
 
     class Meta:
         model = LandscaperProfile
         fields = ["email", "name", "phone", "image"]
 
-    def get_image(self, obj):
-        if obj.image:
-            return obj.image.url
-        return None
 
 
 # client serializers

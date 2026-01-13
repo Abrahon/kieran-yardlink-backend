@@ -4,7 +4,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from .models import AdminProfile
 from .models import WorkerProfile
 from .models import ClientProfile
-from .serializers import AdminProfileSerializer,ChangePasswordSerializer,WorkerProfileSerializer,ClientProfileSerializer
+from .serializers import AdminProfileSerializer,ChangePasswordSerializer,WorkerProfileSerializer,ClientProfileSerializer,LandscaperProfileSerializer
 from rest_framework import generics, permissions
 from django.shortcuts import render
 from rest_framework import generics, permissions, status
@@ -18,7 +18,7 @@ from django.db.models import Q
 from common.permissions import IsClient,IsAdmin,IsLandscaper,IsWorker
 # from services.permissions import IsLandscaper
 from invitations.models import TeamInvitation, InvitationStatus
-from invitations.permissions import IsProLandscaper
+from invitations.permissions import IsProLandscaper, IsProOrBasicLandscaper
 
 
 # admin profile
@@ -153,7 +153,7 @@ class ProLandscaperWorkersView(generics.ListAPIView):
     View for landscaper to see all their workers + self
     """
     serializer_class = WorkerProfileSerializer
-    permission_classes = [IsAuthenticated, IsLandscaper] 
+    permission_classes = [IsAuthenticated, IsProLandscaper] 
     parser_classes = [MultiPartParser, FormParser]
 
     def get_queryset(self):
@@ -178,9 +178,9 @@ class ProLandscaperWorkersView(generics.ListAPIView):
 
 # prolandscaer profile views
 class ProLandScaperProfileView(generics.RetrieveUpdateAPIView):
-    serializer_class = ClientProfileSerializer
-    permission_classes = [IsAuthenticated, IsProLandscaper]  # 
-    parser_classes = [MultiPartParser, FormParser]    # 
+    serializer_class = LandscaperProfileSerializer  
+    permission_classes = [IsAuthenticated, IsProOrBasicLandscaper]  
+    parser_classes = [MultiPartParser, FormParser]    
 
     def get_object(self):
         profile, created = ClientProfile.objects.get_or_create(
@@ -189,6 +189,8 @@ class ProLandScaperProfileView(generics.RetrieveUpdateAPIView):
         return profile
 
         return profile
+
+
 
 
 class ClientProfileView(generics.RetrieveUpdateAPIView):
