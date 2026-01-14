@@ -1,38 +1,32 @@
 from rest_framework import serializers
-from landscapers.models import LandscaperProfile
+from landscapers.models import LandscaperProfile, WorkingHours
 from services.models import Service
-from landscapers.models import WeeklyAvailability
 
 
 class PublicServiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Service
-        fields = [
-            "id",
-            "name",
-            "price"
-        ]
+        fields = ["id", "name", "price"]
 
 
 class WeeklyAvailabilitySerializer(serializers.ModelSerializer):
     day = serializers.CharField(source="get_day_of_week_display")
 
     class Meta:
-        model = WeeklyAvailability
-        fields = [
-            "day",
-            "start_time",
-            "end_time"
-        ]
+        model = WorkingHours
+        fields = ["day", "start_time", "end_time"]
 
 
 class PublicLandscaperSerializer(serializers.ModelSerializer):
     name = serializers.CharField(source="user.name", read_only=True)
     email = serializers.EmailField(source="user.email", read_only=True)
-    image = serializers.CloudinaryField(read_only=True)
+    image = serializers.SerializerMethodField()
 
+    services = PublicServiceSerializer(
+        many=True,
+        read_only=True
+    )
 
-    services = PublicServiceSerializer(many=True, read_only=True)
     weekly_schedule = WeeklyAvailabilitySerializer(
         source="weekly_availability",
         many=True,
@@ -53,3 +47,8 @@ class PublicLandscaperSerializer(serializers.ModelSerializer):
             "services",
             "weekly_schedule",
         ]
+
+    def get_image(self, obj):
+        if obj.image:
+            return obj.image.url
+        return None

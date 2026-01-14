@@ -265,6 +265,8 @@ class ChangePasswordSerializer(serializers.Serializer):
         user.set_password(self.validated_data["new_password"])
         user.save()
         return user
+
+        
 class UserSerializer(serializers.ModelSerializer):
     landscaper_plan = serializers.SerializerMethodField()
 
