@@ -47,7 +47,7 @@ class WorkerProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = WorkerProfile
-        fields = ["email", "name", "phone", "image"]
+        fields = ["email", "name", "phone", "image","is_blocked"]
 
     def get_email(self, obj):
         return obj.user.email

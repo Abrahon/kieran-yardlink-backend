@@ -24,13 +24,26 @@ class AdminProfile(models.Model):
     # profiles/models.py
 class WorkerProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
-    pro_landscaper = models.ForeignKey(TeamInvitation, on_delete=models.CASCADE)
+    pro_landscaper = models.ForeignKey(
+        
+        LandscaperProfile,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True
+    )
+    
+
     name = models.CharField(max_length=255, default="Worker")
     phone = models.CharField(max_length=20, blank=True, default="")
     image = CloudinaryField("worker_profile", blank=True, null=True)
+    is_blocked = models.BooleanField(default=False)
 
     def __str__(self):
         return self.name
+
+
+
+    
 
         
 # landscaper 
