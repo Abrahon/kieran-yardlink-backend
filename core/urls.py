@@ -16,6 +16,8 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path,include
+from invitations.views import accept_invite_page
+
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -29,5 +31,8 @@ urlpatterns = [
     path("api/", include("weather.urls")),
     path("api/", include("property.urls")),
     path("api/", include("invitations.urls")),
+    path("accept-invite/<uuid:token>/", accept_invite_page, name="accept-invite-page"),
+
     path("api/qr/", include("qr.urls")),
 ]
+#

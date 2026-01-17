@@ -168,29 +168,73 @@ class DeleteInvitationView(APIView):
 # =========================
 # BLOCK WORKER
 # =========================
-class BlockWorkerView(APIView):
+class WorkerBlockToggleView(APIView):
     permission_classes = [IsAuthenticated, IsProLandscaper]
 
     def post(self, request, worker_id):
-        # ✅ Use the correct field 'pro_landscaper'
+        """
+        action = 'block' or 'unblock'
+        """
+        action = request.data.get("action")
+        if action not in ["block", "unblock"]:
+            return Response(
+                {"detail": "Invalid action. Use 'block' or 'unblock'."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Use user__id instead of WorkerProfile id
         worker = WorkerProfile.objects.filter(
-            id=worker_id,
+            user__id=worker_id,
             pro_landscaper=request.user.landscaper_profile
         ).select_related("user").first()
 
         if not worker:
-            return Response(
-                {"detail": "Worker not found"},
-                status=status.HTTP_404_NOT_FOUND
-            )
+            return Response({"detail": "Worker not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        # Block worker
-        worker.is_blocked = True
-        worker.user.is_active = False
+        if action == "block":
+            worker.is_blocked = True
+            worker.user.is_active = False
+            message = "Worker blocked successfully"
+        else:
+            worker.is_blocked = False
+            worker.user.is_active = True
+            message = "Worker unblocked successfully"
+
         worker.user.save()
         worker.save()
 
-        return Response(
-            {"detail": "Worker blocked successfully"},
-            status=status.HTTP_200_OK
+        return Response({"detail": message}, status=status.HTTP_200_OK)
+
+class AcceptedInvitationListView(ListAPIView):
+    permission_classes = [IsAuthenticated, IsProLandscaper]
+    serializer_class = InvitationListSerializer
+
+    def get_queryset(self):
+        return TeamInvitation.objects.filter(
+            landscaper=self.request.user.landscaper_profile,
+            status="accepted"
         )
+
+# # invitations/views.py
+# class AcceptedWorkerListView(ListAPIView):
+#     permission_classes = [IsAuthenticated, IsProLandscaper]
+#     serializer_class = WorkerProfileSerializer
+
+#     def get_queryset(self):
+#         return WorkerProfile.objects.filter(
+#             pro_landscaper=self.request.user.landscaper_profile
+#         ).select_related("user")
+# invitations/views.py
+from django.shortcuts import render, get_object_or_404
+from .models import TeamInvitation
+
+def accept_invite_page(request, token):
+    invitation = get_object_or_404(
+        TeamInvitation,
+        token=token,
+        status="pending"
+    )
+    return render(request, "invitations/accept_invite.html", {"token": token})
+
+
+

@@ -355,14 +355,15 @@ CORS_ALLOW_ALL_ORIGINS = True
 # URLS / TEMPLATES
 # ------------------------------------------------------------------------------
 ROOT_URLCONF = "core.urls"
-
+# settings.py
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
-        "APP_DIRS": True,
+        "DIRS": [],  # can leave empty, we will use app directories
+        "APP_DIRS": True,  # this is important
         "OPTIONS": {
             "context_processors": [
+                "django.template.context_processors.debug",
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
@@ -370,6 +371,7 @@ TEMPLATES = [
         },
     },
 ]
+
 
 WSGI_APPLICATION = "core.wsgi.application"
 ASGI_APPLICATION = "core.asgi.application"
