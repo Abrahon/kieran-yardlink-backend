@@ -50,3 +50,20 @@ def create_checkout_session(request):
 
 # CASH PAYMENT
 
+class CashPaymentAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, booking_id):
+        try:
+            booking = ServiceBooking.objects.get(id=booking_id, client=request.user)
+        except ServiceBooking.DoesNotExist:
+            return Response({"error": "Booking not found."}, status=404)
+
+        # Mark cash as pending
+        booking.payment_status = "cash_pending"
+        booking.save()
+
+        return Response({
+            "message": "Cash payment selected. Please pay the landscaper in person."
+        })
+
