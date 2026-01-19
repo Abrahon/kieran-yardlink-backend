@@ -65,6 +65,7 @@ class ServiceBooking(models.Model):
     completed_at = models.DateTimeField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
+    stripe_payment_id = models.CharField(max_length=255, blank=True, null=True)
 
     def mark_completed(self):
 

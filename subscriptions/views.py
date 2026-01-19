@@ -56,35 +56,6 @@ class PlanRetrieveUpdateDeleteView(generics.RetrieveUpdateDestroyAPIView):
         return [IsAdmin()] if self.request.method in ["PUT", "PATCH", "DELETE"] else [permissions.AllowAny()]
 
 
-# @api_view(["POST"])
-# @permission_classes([permissions.IsAuthenticated])
-# def create_checkout_session(request):
-#     plan_id = request.data.get("plan_id")
-#     if not plan_id:
-#         return Response({"detail": "plan_id is required"}, status=400)
-
-#     plan = get_object_or_404(Plan, id=plan_id)
-#     if not plan.stripe_price_id:
-#         return Response({"detail": "Plan not linked with Stripe"}, status=400)
-
-#     # Add session ID to URLs
-#     success_url = f"http://localhost:8000/api/success/?session_id={{CHECKOUT_SESSION_ID}}"
-#     cancel_url = f"http://localhost:8000/api/cancel/?session_id={{CHECKOUT_SESSION_ID}}"
-
-#     session = stripe.checkout.Session.create(
-#         mode="subscription",
-#         customer_email=request.user.email,
-#         metadata={
-#             "user_id": str(request.user.id),
-#             "plan_id": str(plan.id),
-#         },
-#         line_items=[{"price": plan.stripe_price_id, "quantity": 1}],
-#         success_url=success_url,
-#         cancel_url=cancel_url,
-#     )
-
-#     return Response({"checkout_url": session.url})
-
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def create_checkout_session(request):
@@ -157,8 +128,6 @@ class SubscriptionCreateView(generics.CreateAPIView):
     def perform_create(self, serializer):
         plan = get_object_or_404(Plan, id=self.request.data.get("plan"))
         serializer.save(user=self.request.user, plan=plan)
-
-
 
 
 @csrf_exempt
