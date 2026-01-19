@@ -13,6 +13,12 @@ class BookingStatus(models.TextChoices):
     COMPLETED = "completed", "Completed"
     CANCELLED = "cancelled", "Cancelled"
 
+class PaymentStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    PAID = "paid", "Paid"
+    CASH_PENDING = "cash_pending", "Cash Pending"
+
+
 
 class ServiceBooking(models.Model):
     client = models.ForeignKey(
@@ -44,6 +50,16 @@ class ServiceBooking(models.Model):
         default=BookingStatus.REQUESTED
     )
 
+    payment_status = models.CharField(
+        max_length=20,
+        choices=[
+            ("pending", "Pending"),
+            ("cash_pending", "Cash Pending"),
+            ("paid", "Paid")
+        ],
+        default="pending"
+    )
+
     scheduled_date = models.DateField(null=True, blank=True)
 
     completed_at = models.DateTimeField(null=True, blank=True)
@@ -51,7 +67,13 @@ class ServiceBooking(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def mark_completed(self):
+
         if self.status != BookingStatus.COMPLETED:
             self.status = BookingStatus.COMPLETED
             self.completed_at = timezone.now()
-            self.save(update_fields=["status", "completed_at"])
+            # Optional: auto-update cash_pending
+            if self.payment_status == PaymentStatus.CASH_PENDING:
+                self.payment_status = PaymentStatus.PAID
+                self.save(update_fields=["status", "completed_at", "payment_status"])
+            else:
+                self.save(update_fields=["status", "completed_at"])

@@ -33,7 +33,7 @@ class SendInvitationView(CreateAPIView):
             email=email
         )
 
-        invite_link = f"http://localhost:8000/accept-invite/{invitation.token}"
+        invite_link = f"https://zznkjkkp-8000.inc1.devtunnels.ms/accept-invite/{invitation.token}"
 
         send_mail(
             subject="You're invited to join a landscaper team",

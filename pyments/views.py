@@ -5,8 +5,12 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from landscapers.models import LandscaperProfile
-
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from bookings.models import ServiceBooking, BookingStatus
 stripe.api_key = settings.STRIPE_SECRET_KEY
+
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
@@ -43,3 +47,6 @@ def create_checkout_session(request):
     )
 
     return Response({"checkout_url": session.url})
+
+# CASH PAYMENT
+
