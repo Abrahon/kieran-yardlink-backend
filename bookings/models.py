@@ -59,6 +59,7 @@ class ServiceBooking(models.Model):
         ],
         default="pending"
     )
+    scheduled_time = models.TimeField(null=True, blank=True)  
 
     scheduled_date = models.DateField(null=True, blank=True)
 

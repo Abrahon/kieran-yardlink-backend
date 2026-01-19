@@ -117,6 +117,8 @@
 #             if service.price:
 #                 total += service.price
 #         return total
+
+
 from rest_framework import serializers
 from .models import Service, ClientServicePreference
 
@@ -125,6 +127,7 @@ class ServiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Service
         fields = ["id", "name", "description", "category", "price", "square_feet", "is_standard"]
+        
 
 # ---------------- Client Preference Write ----------------
 class ClientServicePreferenceWriteSerializer(serializers.ModelSerializer):

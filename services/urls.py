@@ -25,13 +25,22 @@ from .views import (
     ClientServicePreferenceAPIView,
     StandardServiceListAPIView,
     StandardServiceCreateAPIView,
-    CustomServiceCreateAPIView
+    CustomServiceCreateAPIView,
+    ClientPreferenceNoteUpdateAPIView,  # new import
 )
 
 urlpatterns = [
+    # Standard services
     path("services/standard/", StandardServiceListAPIView.as_view()),
     path("services/standard/add/", StandardServiceCreateAPIView.as_view()),
+    
+    # Custom services
     path("services/custom/add/", CustomServiceCreateAPIView.as_view()),
-    path("client/service-preference/", ClientServicePreferenceAPIView.as_view()),
+    
+    # Client preferences
+    path("client/service-preference/", ClientServicePreferenceAPIView.as_view()),  # GET/PATCH/PUT full
+    path("client/service-preference/note/", ClientPreferenceNoteUpdateAPIView.as_view()),  # POST note only
+    
+    # Client overview
     path("client/service-overview/", ClientServiceOverviewAPIView.as_view()),
 ]

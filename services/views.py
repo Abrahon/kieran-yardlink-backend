@@ -26,6 +26,7 @@ class StandardServiceListAPIView(generics.ListAPIView):
     def get_queryset(self):
         return Service.objects.filter(is_standard=True)
 
+
 # ---------------- Add Standard Service (Admin Only) ----------------
 class StandardServiceCreateAPIView(generics.CreateAPIView):
     serializer_class = ServiceSerializer
@@ -61,6 +62,7 @@ class ClientServicePreferenceAPIView(generics.RetrieveUpdateAPIView):
     def get_serializer_class(self):
         if self.request.method == "GET":
             return ClientServicePreferenceReadSerializer
+  
         return ClientServicePreferenceWriteSerializer
 
 # ---------------- Client Service Overview ----------------
@@ -139,3 +141,25 @@ class ClientServiceOverviewAPIView(APIView):
             )
         })
 
+
+
+from rest_framework.exceptions import NotFound
+from .serializers import ClientServicePreferenceReadSerializer
+from .models import ClientServicePreference
+
+class ClientPreferenceNoteUpdateAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            client = request.user.clientprofile
+        except AttributeError:
+            raise NotFound("Client profile does not exist.")
+
+        preference, _ = ClientServicePreference.objects.get_or_create(client=client)
+        note = request.data.get("note", "")
+        preference.note = note
+        preference.save(update_fields=["note"])
+
+        serializer = ClientServicePreferenceReadSerializer(preference)
+        return Response(serializer.data)

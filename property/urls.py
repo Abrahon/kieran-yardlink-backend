@@ -3,12 +3,13 @@ from django.urls import path
 from .views import (
     PropertyListCreateView,
     PropertyDetailView,
-    PropertyMultipleImageUploadView)
+    PropertyMultipleImageUploadView,
+    PropertyImagesListView)
+
+
 urlpatterns = [
-        # Property URLs
-    path('properties/', PropertyListCreateView.as_view(), name='property-list-create'),
-    path('properties/<int:pk>/', PropertyDetailView.as_view(), name='property-detail'),
-    path("properties/images/upload/",PropertyMultipleImageUploadView.as_view(),name="property-image-array-upload"),
-
-
+    path("properties/", PropertyListCreateView.as_view()),
+    path("properties/<int:pk>/", PropertyDetailView.as_view()),
+    path("properties/images/", PropertyMultipleImageUploadView.as_view()),
+    path("properties/images/<int:property_id>/", PropertyImagesListView.as_view()),
 ]
