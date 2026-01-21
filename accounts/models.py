@@ -42,6 +42,7 @@ class UserManager(BaseUserManager):
 
 
 class User(AbstractBaseUser, PermissionsMixin):
+
     # accounts/models.py
     stripe_customer_id = models.CharField(
         max_length=255,
@@ -90,6 +91,12 @@ class User(AbstractBaseUser, PermissionsMixin):
         super().clean()
         if self.role not in RoleChoices.values:
             raise ValueError("Invalid role for user")
+     # ✅ Add this method:
+    def get_full_name(self):
+        """
+        Return the full name of the user for compatibility with Django conventions.
+        """
+        return self.name or self.email
 
 
 class OTP(models.Model):
