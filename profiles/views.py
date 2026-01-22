@@ -193,19 +193,74 @@ class ProLandScaperProfileView(generics.RetrieveUpdateAPIView):
 
 
 
-class ClientProfileView(generics.RetrieveUpdateAPIView):
-    serializer_class = ClientProfileSerializer
-    permission_classes = [IsAuthenticated, IsClient]  # 
-    parser_classes = [MultiPartParser, FormParser]    # 
+# class ClientProfileView(generics.RetrieveUpdateAPIView):
+#     serializer_class = ClientProfileSerializer
+#     permission_classes = [IsAuthenticated, IsClient]  # 
+#     parser_classes = [MultiPartParser, FormParser]    # 
 
-    def get_object(self):
-        profile, created = ClientProfile.objects.get_or_create(
-            user=self.request.user
+#     def get_object(self):
+#         profile, created = ClientProfile.objects.get_or_create(
+#             user=self.request.user
+#         )
+#         return profile
+
+#         return profile
+
+# client profile views 
+
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from rest_framework import status
+
+from .models import ClientProfile
+from .serializers import ClientProfileSerializer
+
+# If you have a custom permission for client users
+try:
+    from .permissions import IsClient
+except ImportError:
+    IsClient = IsAuthenticated  # fallback if not created yet
+
+
+
+class ClientProfileView(APIView):
+    permission_classes = [IsAuthenticated, IsClient]
+
+    def get_object(self, user):
+        # Get or create client profile
+        profile, created = ClientProfile.objects.get_or_create(user=user)
+        return profile
+
+    # ---------------- GET profile ----------------
+    def get(self, request):
+        client_profile = self.get_object(request.user)
+        serializer = ClientProfileSerializer(client_profile)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    # ---------------- PUT (full update) ----------------
+    def put(self, request):
+        client_profile = self.get_object(request.user)
+        serializer = ClientProfileSerializer(
+            client_profile,
+            data=request.data  # all required fields must be sent
         )
-        return profile
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
-        return profile
-
+    # ---------------- PATCH (partial update) ----------------
+    def patch(self, request):
+        client_profile = self.get_object(request.user)
+        serializer = ClientProfileSerializer(
+            client_profile,
+            data=request.data,
+            partial=True  # only fields you want to change
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 # ---------------------- Change Password for---------------------- #

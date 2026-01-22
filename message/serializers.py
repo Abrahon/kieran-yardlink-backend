@@ -29,140 +29,182 @@ def is_image_file(uploaded_file: UploadedFile) -> bool:
         return False
 
 
+# class MessageSerializer(serializers.ModelSerializer):
+#     """
+#     Serializer for Message model.
+#     - sender is read-only and taken from request.user in create()
+#     - message_type is read-only (computed)
+#     - file validation enforced here
+#     """
+#     sender = serializers.PrimaryKeyRelatedField(read_only=True)
+#     file_url = serializers.SerializerMethodField(read_only=True)
+#     message_type = serializers.ReadOnlyField()
+
+#     class Meta:
+#         model = Message
+#         # Explicit fields help avoid accidentally exposing internal fields.
+#         fields = [
+#             'id', 'thread', 'sender', 'text', 'file', 'file_url',
+#             'message_type', 'created_at' "is_deleted","updated_at",
+        
+            
+#         ]
+#         read_only_fields = ['id', 'sender', 'file_url', 'message_type', 'created_at'"updated_at",'is_deleted']
+
+#     def validate_thread(self, value):
+#         # Basic check: thread must exist (DRF will already validate PK -> object)
+#         if value is None:
+#             raise serializers.ValidationError("thread is required.")
+#         return value
+
+#     def validate_file(self, uploaded_file):
+#         """
+#         Validate uploaded file:
+#         - size
+#         - extension allowed
+#         - optional image detection
+#         """
+#         if uploaded_file is None:
+#             return None
+
+#         if not isinstance(uploaded_file, UploadedFile):
+#             # If frontend passes a URL or string, don't attempt file validation here.
+#             # We allow None or UploadedFile here. If you want to support remote URLs,
+#             # handle them separately.
+#             raise serializers.ValidationError("Invalid file object.")
+
+#         # size check
+#         if uploaded_file.size > MAX_UPLOAD_SIZE:
+#             raise serializers.ValidationError(f"File too large. Max size is {MAX_UPLOAD_SIZE} bytes.")
+
+#         # extension check
+#         ext = get_extension(uploaded_file.name)
+#         if ext not in ALLOWED_EXTENSIONS:
+#             raise serializers.ValidationError(f"File extension '{ext}' is not allowed.")
+
+#         # If the extension looks like an image, verify content is an image.
+#         if ext in ('.jpg', '.jpeg', '.png', '.gif'):
+#             if not is_image_file(uploaded_file):
+#                 raise serializers.ValidationError("Uploaded file's content does not match an image format.")
+
+#         return uploaded_file
+
+#     def validate(self, attrs):
+#         """
+#         Enforce at least text or file present for a message.
+#         """
+#         text = attrs.get('text', '') or ''
+#         file_obj = attrs.get('file', None)
+
+#         if not text.strip() and not file_obj:
+#             raise serializers.ValidationError("Either 'text' or 'file' must be provided.")
+
+#         return attrs
+
+#     def create(self, validated_data):
+#         """
+#         Create message:
+#         - set sender from request.user (do not trust client)
+#         - compute message_type automatically
+#         - ensure sender belongs to thread
+#         """
+#         request = self.context.get('request')
+#         if not request or not request.user or request.user.is_anonymous:
+#             raise serializers.ValidationError("Authentication required to send messages.")
+
+#         sender = request.user
+#         thread = validated_data.get('thread')
+
+#         # Check sender is participant in thread (adjust according to your ChatThread model)
+#         # Here we assume ChatThread has client and landscaper foreign keys.
+#         if not (thread.client_id == sender.id or thread.landscaper_id == sender.id):
+#             raise serializers.ValidationError("You are not a participant of this chat thread.")
+
+#         # Decide message_type
+#         file_obj = validated_data.get('file', None)
+#         text = validated_data.get('text', '') or ''
+
+#         if file_obj:
+#             ext = get_extension(file_obj.name)
+#             if ext in ('.jpg', '.jpeg', '.png', '.gif'):
+#                 message_type = 'image'
+#             else:
+#                 message_type = 'file'
+#         else:
+#             # option: if this is a special 'request' message triggered by flow,
+#             # the caller/view can set a flag or you can detect via thread state.
+#             message_type = 'text'
+
+#         # Save message
+#         message = Message.objects.create(
+#             thread=thread,
+#             sender=sender,
+#             text=text,
+#             file=file_obj,
+#         )
+#         # if your model has a message_type field, update it
+#         # (the example model used a property; if it's a DB field, set it here)
+#         if hasattr(message, 'message_type') and not getattr(message, 'message_type'):
+#             # If message_type is a real field on model, set it:
+#             try:
+#                 message.message_type = message_type
+#                 message.save(update_fields=['message_type'])
+#             except Exception:
+#                 # If message_type is a read-only property, ignore
+#                 pass
+
+#         return message
+
+#     def get_file_url(self, obj):
+#         request = self.context.get('request', None)
+#         if not obj.file:
+#             return None
+#         try:
+#             if request is not None:
+#                 return request.build_absolute_uri(obj.file.url)
+#             return obj.file.url
+#         except Exception:
+#             return None
+
 class MessageSerializer(serializers.ModelSerializer):
-    """
-    Serializer for Message model.
-    - sender is read-only and taken from request.user in create()
-    - message_type is read-only (computed)
-    - file validation enforced here
-    """
     sender = serializers.PrimaryKeyRelatedField(read_only=True)
     file_url = serializers.SerializerMethodField(read_only=True)
     message_type = serializers.ReadOnlyField()
 
     class Meta:
-        model = Message
-        # Explicit fields help avoid accidentally exposing internal fields.
+        model = Mes sage
         fields = [
-            'id', 'thread', 'sender', 'text', 'file', 'file_url',
-            'message_type', 'created_at' "is_deleted","updated_at",
-        
-            
+            'id',
+            'thread',
+            'sender',
+            'text',
+            'file',          # upload only
+            'file_url',      # response only
+            'message_type',
+            'created_at',
+            'updated_at',
+            'is_deleted',
         ]
-        read_only_fields = ['id', 'sender', 'file_url', 'message_type', 'created_at'"updated_at",'is_deleted']
-
-    def validate_thread(self, value):
-        # Basic check: thread must exist (DRF will already validate PK -> object)
-        if value is None:
-            raise serializers.ValidationError("thread is required.")
-        return value
-
-    def validate_file(self, uploaded_file):
-        """
-        Validate uploaded file:
-        - size
-        - extension allowed
-        - optional image detection
-        """
-        if uploaded_file is None:
-            return None
-
-        if not isinstance(uploaded_file, UploadedFile):
-            # If frontend passes a URL or string, don't attempt file validation here.
-            # We allow None or UploadedFile here. If you want to support remote URLs,
-            # handle them separately.
-            raise serializers.ValidationError("Invalid file object.")
-
-        # size check
-        if uploaded_file.size > MAX_UPLOAD_SIZE:
-            raise serializers.ValidationError(f"File too large. Max size is {MAX_UPLOAD_SIZE} bytes.")
-
-        # extension check
-        ext = get_extension(uploaded_file.name)
-        if ext not in ALLOWED_EXTENSIONS:
-            raise serializers.ValidationError(f"File extension '{ext}' is not allowed.")
-
-        # If the extension looks like an image, verify content is an image.
-        if ext in ('.jpg', '.jpeg', '.png', '.gif'):
-            if not is_image_file(uploaded_file):
-                raise serializers.ValidationError("Uploaded file's content does not match an image format.")
-
-        return uploaded_file
-
-    def validate(self, attrs):
-        """
-        Enforce at least text or file present for a message.
-        """
-        text = attrs.get('text', '') or ''
-        file_obj = attrs.get('file', None)
-
-        if not text.strip() and not file_obj:
-            raise serializers.ValidationError("Either 'text' or 'file' must be provided.")
-
-        return attrs
-
-    def create(self, validated_data):
-        """
-        Create message:
-        - set sender from request.user (do not trust client)
-        - compute message_type automatically
-        - ensure sender belongs to thread
-        """
-        request = self.context.get('request')
-        if not request or not request.user or request.user.is_anonymous:
-            raise serializers.ValidationError("Authentication required to send messages.")
-
-        sender = request.user
-        thread = validated_data.get('thread')
-
-        # Check sender is participant in thread (adjust according to your ChatThread model)
-        # Here we assume ChatThread has client and landscaper foreign keys.
-        if not (thread.client_id == sender.id or thread.landscaper_id == sender.id):
-            raise serializers.ValidationError("You are not a participant of this chat thread.")
-
-        # Decide message_type
-        file_obj = validated_data.get('file', None)
-        text = validated_data.get('text', '') or ''
-
-        if file_obj:
-            ext = get_extension(file_obj.name)
-            if ext in ('.jpg', '.jpeg', '.png', '.gif'):
-                message_type = 'image'
-            else:
-                message_type = 'file'
-        else:
-            # option: if this is a special 'request' message triggered by flow,
-            # the caller/view can set a flag or you can detect via thread state.
-            message_type = 'text'
-
-        # Save message
-        message = Message.objects.create(
-            thread=thread,
-            sender=sender,
-            text=text,
-            file=file_obj,
-        )
-        # if your model has a message_type field, update it
-        # (the example model used a property; if it's a DB field, set it here)
-        if hasattr(message, 'message_type') and not getattr(message, 'message_type'):
-            # If message_type is a real field on model, set it:
-            try:
-                message.message_type = message_type
-                message.save(update_fields=['message_type'])
-            except Exception:
-                # If message_type is a read-only property, ignore
-                pass
-
-        return message
+        read_only_fields = [
+            'id',
+            'sender',
+            'file_url',
+            'message_type',
+            'created_at',
+            'updated_at',
+            'is_deleted',
+        ]
+        extra_kwargs = {
+            'file': {'write_only': True}  # 🔥 THIS FIXES CLOUDINARY ERROR
+        }
 
     def get_file_url(self, obj):
-        request = self.context.get('request', None)
         if not obj.file:
             return None
         try:
-            if request is not None:
-                return request.build_absolute_uri(obj.file.url)
-            return obj.file.url
+            request = self.context.get('request')
+            url = obj.file.url
+            return request.build_absolute_uri(url) if request else url
         except Exception:
             return None
 

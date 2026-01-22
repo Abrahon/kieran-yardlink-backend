@@ -84,6 +84,63 @@ async def connect(sid, environ, auth):
 
 
 # send message
+# @sio.event
+# async def send_message(sid, data):
+#     user_id = connected_users.get(sid)
+#     if not user_id:
+#         return
+
+#     receiver_id = data.get('to_user')
+#     text = data.get('message', '').strip()
+#     file_url = data.get('file_url')
+
+#     if not receiver_id or (not text and not file_url):
+#         await sio.emit('error', {'error': 'Invalid data'}, to=sid)
+#         return
+
+#     try:
+#         sender = await get_user_by_id(user_id)
+#         receiver = await get_user_by_id(int(receiver_id))
+#     except Exception:
+#         await sio.emit('error', {'error': 'User not found'}, to=sid)
+#         return
+
+#     # Find or create thread
+#     thread = await get_thread(sender, receiver)
+#     if not thread:
+#         thread = await create_thread(sender, receiver)
+
+#     # Save message
+#     message = await save_message(thread, sender, text, file_url)
+
+#     payload = {
+#         "id": message.id,
+#         "thread_id": thread.id,
+#         "sender_id": str(sender.id),
+#         "sender_name": sender.get_full_name() or sender.email,
+#         "text": message.text,
+#         "file_url": getattr(message, 'file', None),
+#         "created_at": message.created_at.isoformat(),
+#         "is_me": True
+#     }
+
+
+#      # --- send to receiver ---
+#     receiver_sid = user_sockets.get(str(receiver.id))
+#     if receiver_sid:
+#         await sio.emit('new_message', payload, to=receiver_sid)
+#         # ✅ also emit notification separately
+#         await sio.emit('notification', {
+#             "title": f"New message from {sender.get_full_name()}",
+#             "body": message.text or "Sent a file",
+#             "thread_id": thread.id,
+#             "sender_id": str(sender.id)
+#         }, to=receiver_sid)
+
+
+
+#     # --- SEND CONFIRMATION TO SENDER ---
+#     await sio.emit('message_sent', payload, to=sid)
 @sio.event
 async def send_message(sid, data):
     user_id = connected_users.get(sid)
@@ -91,7 +148,9 @@ async def send_message(sid, data):
         return
 
     receiver_id = data.get('to_user')
-    text = data.get('message', '').strip()
+    text = (data.get('message') or '').strip()
+
+    # file_url is ONLY for frontend display (already uploaded via REST)
     file_url = data.get('file_url')
 
     if not receiver_id or (not text and not file_url):
@@ -110,8 +169,13 @@ async def send_message(sid, data):
     if not thread:
         thread = await create_thread(sender, receiver)
 
-    # Save message
-    message = await save_message(thread, sender, text, file_url)
+    # ✅ SAVE MESSAGE (TEXT ONLY)
+    message = await save_message(
+        thread=thread,
+        sender=sender,
+        text=text
+        # ❌ DO NOT pass file_url here
+    )
 
     payload = {
         "id": message.id,
@@ -119,27 +183,28 @@ async def send_message(sid, data):
         "sender_id": str(sender.id),
         "sender_name": sender.get_full_name() or sender.email,
         "text": message.text,
-        "file_url": getattr(message, 'file', None),
+        "file_url": file_url,  # ✅ frontend-only reference
         "created_at": message.created_at.isoformat(),
         "is_me": True
     }
 
-
-     # --- send to receiver ---
+    # --- send to receiver ---
     receiver_sid = user_sockets.get(str(receiver.id))
     if receiver_sid:
         await sio.emit('new_message', payload, to=receiver_sid)
-        # ✅ also emit notification separately
-        await sio.emit('notification', {
-            "title": f"New message from {sender.get_full_name()}",
-            "body": message.text or "Sent a file",
-            "thread_id": thread.id,
-            "sender_id": str(sender.id)
-        }, to=receiver_sid)
 
+        await sio.emit(
+            'notification',
+            {
+                "title": f"New message from {sender.get_full_name() or sender.email}",
+                "body": message.text or "Sent a file",
+                "thread_id": thread.id,
+                "sender_id": str(sender.id),
+            },
+            to=receiver_sid
+        )
 
-
-    # --- SEND CONFIRMATION TO SENDER ---
+    # --- confirmation to sender ---
     await sio.emit('message_sent', payload, to=sid)
 
 @sio.event

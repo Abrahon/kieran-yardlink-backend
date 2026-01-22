@@ -71,19 +71,92 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
 
 
 # client serializers
+# class ClientProfileSerializer(serializers.ModelSerializer):
+#     email = serializers.EmailField(source="user.email", read_only=True)
+#     image = serializers.SerializerMethodField()  # override image to return URL
+
+#     class Meta:
+#         model = ClientProfile
+#         fields = ["email", "name", "phone", "image"]
+
+#     def get_image(self, obj):
+#         if obj.image:
+#             return obj.image.url
+#         return None
+
+# clinet profile serializers new
+
+# serializers.py
+from rest_framework import serializers
+from .models import ClientProfile
+from services.models import Service
+from property.models import Property
+
 class ClientProfileSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(source="user.email", read_only=True)
-    image = serializers.SerializerMethodField()  # override image to return URL
+    
+    # Change here: use actual field instead of SerializerMethodField
+    image = serializers.ImageField(required=False, allow_null=True)
+
+    services = serializers.SerializerMethodField()
+    properties = serializers.SerializerMethodField()
+    total_service_price = serializers.SerializerMethodField()
 
     class Meta:
         model = ClientProfile
-        fields = ["email", "name", "phone", "image"]
+        fields = [
+            "email",
+            "name",
+            "phone",
+            "image",  # now updatable
+            "services",
+            "total_service_price",
+            "properties",
+           
+        ]
 
-    def get_image(self, obj):
-        if obj.image:
-            return obj.image.url
-        return None
- 
+    # ---------------- Standard Services ----------------
+    def get_services(self, obj):
+        from services.serializers import ServiceSerializer
+
+        services_qs = Service.objects.filter(is_standard=True)
+        data = ServiceSerializer(services_qs, many=True).data
+
+        return [
+            {
+                "category": s["category"],
+                "name": s["name"],
+                "price": s["price"],
+            }
+            for s in data
+        ]
+
+    # ---------------- Total Price ----------------
+    def get_total_service_price(self, obj):
+        services_qs = Service.objects.filter(is_standard=True)
+        total = sum(s.price or 0 for s in services_qs)
+        return total
+
+    # ---------------- Client Properties ----------------
+    def get_properties(self, obj):
+        from property.serializers import PropertySerializer
+
+        properties_qs = Property.objects.filter(owner=obj.user)
+        data = PropertySerializer(properties_qs, many=True).data
+
+        return [
+            {
+                "address": p["address"],
+                "latitude": p["latitude"],
+                "longitude": p["longitude"],
+                "property_size": p["property_size"],
+                "cut_height_inches": p["cut_height_inches"],
+                "grass_types": p["grass_types"],
+                "notes": p["notes"],
+                "images": p["images"],
+            }
+            for p in data
+        ]
 
 class ChangePasswordSerializer(serializers.Serializer):
     current_password = serializers.CharField(
