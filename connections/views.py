@@ -61,3 +61,27 @@ class RespondConnectionRequestAPIView(APIView):
         conn.save()
         return Response({"status": action}, status=status.HTTP_200_OK)
 
+# incoming request 
+class IncomingRequestsAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        qs = ConnectionRequest.objects.filter(
+            receiver=request.user,
+            is_accepted=None
+        )
+        serializer = ConnectionRequestSerializer(qs, many=True)
+        return Response(serializer.data)
+
+# accept connection friend list
+class MyConnectionsAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        qs = ConnectionRequest.objects.filter(
+            models.Q(sender=request.user) |
+            models.Q(receiver=request.user),
+            is_accepted=True
+        )
+        serializer = ConnectionRequestSerializer(qs, many=True)
+        return Response(serializer.data)
