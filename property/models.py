@@ -13,12 +13,10 @@ class Property(models.Model):
     latitude = models.DecimalField(max_digits=9, decimal_places=6)
     longitude = models.DecimalField(max_digits=9, decimal_places=6)
 
-    PROPERTY_SIZE_CHOICES = [
-        ("small", "Small"),
-        ("medium", "Medium"),
-        ("large", "Large"),
-    ]
-    property_size = models.CharField(max_length=10, choices=PROPERTY_SIZE_CHOICES)
+    # Removed choices; now just a text field
+    property_size = models.TextField(
+        help_text="Size of the property (e.g., '1 ac', '120 m²', '5000 ft²')"
+    )
 
     cut_height_inches = models.DecimalField(max_digits=4, decimal_places=2)
 
@@ -30,3 +28,7 @@ class Property(models.Model):
     images = models.JSONField(default=list, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.address} ({self.property_size})"
+

@@ -4,6 +4,8 @@ from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.tokens import UntypedToken
 from channels.db import database_sync_to_async
 from .models import ChatThread, Message
+from django.utils import timezone
+
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -80,6 +82,8 @@ async def connect(sid, environ, auth):
     logger.info(f"Connected: {full_name} ({user.id}) - SID {sid}")
     return True
 
+
+# send message
 @sio.event
 async def send_message(sid, data):
     user_id = connected_users.get(sid)
@@ -120,13 +124,124 @@ async def send_message(sid, data):
         "is_me": True
     }
 
-    # --- SEND TO RECEIVER ---
+
+     # --- send to receiver ---
     receiver_sid = user_sockets.get(str(receiver.id))
     if receiver_sid:
         await sio.emit('new_message', payload, to=receiver_sid)
+        # ✅ also emit notification separately
+        await sio.emit('notification', {
+            "title": f"New message from {sender.get_full_name()}",
+            "body": message.text or "Sent a file",
+            "thread_id": thread.id,
+            "sender_id": str(sender.id)
+        }, to=receiver_sid)
+
+
 
     # --- SEND CONFIRMATION TO SENDER ---
     await sio.emit('message_sent', payload, to=sid)
+
+@sio.event
+async def disconnect(sid):
+    user_id = connected_users.pop(sid, None)
+    if user_id and user_sockets.get(user_id) == sid:
+        user_sockets.pop(user_id)
+    logger.info(f"Disconnected: {user_id}")
+
+
+@sio.event
+async def update_message(sid, data):
+    message_id = data.get("message_id")
+    new_text = data.get("text")
+
+    user_id = connected_users.get(sid)
+
+    @database_sync_to_async
+    def update():
+        msg = Message.objects.get(id=message_id, sender_id=user_id)
+        msg.text = new_text
+        msg.save(update_fields=["text"])
+
+    await update()
+
+    await sio.emit(
+        "message_updated",
+        {"message_id": message_id, "text": new_text},
+        room=f"thread_{data.get('thread_id')}"
+    )
+
+# delete
+@sio.event
+async def delete_message(sid, data):
+    message_id = data.get("message_id")
+    for_all = data.get("for_all", False)
+
+    user_id = connected_users.get(sid)
+
+    @database_sync_to_async
+    def delete():
+        msg = Message.objects.get(id=message_id)
+        user = User.objects.get(id=user_id)
+
+        if for_all and msg.sender_id == user.id:
+            msg.is_deleted_for_all = True
+            msg.text = ""
+            msg.file = None
+            msg.save()
+        else:
+            msg.deleted_for.add(user)
+
+    await delete()
+
+    await sio.emit(
+        "message_deleted",
+        {"message_id": message_id, "for_all": for_all},
+        room=f"thread_{data.get('thread_id')}"
+    )
+
+
+# seen message
+@sio.event
+async def message_seen(sid, data):
+    message_id = data.get("message_id")
+    thread_id = data.get("thread_id")
+
+    @database_sync_to_async
+    def mark_seen():
+        Message.objects.filter(
+            id=message_id,
+            seen_at__isnull=True
+        ).update(seen_at=timezone.now())
+
+    await mark_seen()
+
+    await sio.emit(
+        "message_seen",
+        {"message_id": message_id},
+        room=f"thread_{thread_id}"
+    )
+
+# delivered
+@sio.event
+async def message_delivered(sid, data):
+    message_id = data.get("message_id")
+
+    @database_sync_to_async
+    def mark_delivered():
+        Message.objects.filter(
+            id=message_id,
+            delivered_at__isnull=True
+        ).update(delivered_at=timezone.now())
+
+    await mark_delivered()
+
+# typing
+@sio.event
+async def typing(sid, data):
+    thread_id = data.get("thread_id")
+    user = await get_user_by_id(connected_users.get(sid))
+    await sio.emit("typing", {"user_id": str(user.id), "thread_id": thread_id}, room=f"thread_{thread_id}")
 
 @sio.event
 async def disconnect(sid):

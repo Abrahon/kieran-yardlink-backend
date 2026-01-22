@@ -83,9 +83,7 @@ class ClientProfileSerializer(serializers.ModelSerializer):
         if obj.image:
             return obj.image.url
         return None
-
-
-
+ 
 
 class ChangePasswordSerializer(serializers.Serializer):
     current_password = serializers.CharField(

@@ -13,23 +13,10 @@
 #     path("message/<int:message_id>/update/", UpdateMessageView.as_view(), name="update_message"),
 # ]
 from django.urls import path
-from .views import (
-    MessageCreateView,
-    MessageListView,
-    MessageUpdateView,
-    MessageDeleteView,
-)
+from .views import ConversationListAPIView,ConversationDetailAPIView
 
 urlpatterns = [
-    # Create a new message
-    path("send/messages/", MessageCreateView.as_view(), name="create_message"),
-
-    # Get all messages in a thread (use ?thread=<id>)
-    path("messages/list/", MessageListView.as_view(), name="list_messages"),
-
-    # Update a message by ID
-    path("messages/<int:pk>/update/", MessageUpdateView.as_view(), name="update_message"),
-
-    # Delete a message by ID
-    path("messages/<int:pk>/delete/", MessageDeleteView.as_view(), name="delete_message"),
+    path("conversations/", ConversationListAPIView.as_view(), name="conversation-list"),
+    path("conversations/<int:thread_id>/", ConversationDetailAPIView.as_view(), name="conversation-detail"),
 ]
+

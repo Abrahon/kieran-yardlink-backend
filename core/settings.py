@@ -460,11 +460,21 @@ BACKEND_BASE_URL = "http://localhost:8000"
 # ------------------------------------------------------------------------------
 # CLOUDINARY
 # ------------------------------------------------------------------------------
-CLOUDINARY_STORAGE = {
-    "CLOUD_NAME": config("CLOUDINARY_CLOUD_NAME", default=""),
-    "API_KEY": config("CLOUDINARY_API_KEY", default=""),
-    "API_SECRET": config("CLOUDINARY_API_SECRET", default=""),
+import cloudinary
+import cloudinary.uploader
+import cloudinary.api
+
+CLOUDINARY = {
+    "cloud_name": config("CLOUDINARY_CLOUD_NAME"),
+    "api_key": config("CLOUDINARY_API_KEY"),
+    "api_secret": config("CLOUDINARY_API_SECRET"),
 }
+
+cloudinary.config(
+    cloud_name=CLOUDINARY["cloud_name"],
+    api_key=CLOUDINARY["api_key"],
+    api_secret=CLOUDINARY["api_secret"],
+)
 
 DEFAULT_FILE_STORAGE = "cloudinary_storage.storage.MediaCloudinaryStorage"
 MEDIA_URL = "/media/"
