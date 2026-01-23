@@ -35,7 +35,7 @@ from rest_framework import generics, permissions
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from .models import LandscaperProfile
 from subscriptions.models import Subscription
-
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework import generics, permissions
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from .models import LandscaperProfile
@@ -63,6 +63,18 @@ class CompleteLandscaperProfileView(generics.CreateAPIView):
             profile=profile_file
         )
 
+# update views
+class UpdateLandscaperProfileView(generics.UpdateAPIView):
+    serializer_class = LandscaperProfileSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self):
+        user = self.request.user
+
+        if user.role != "landscaper":
+            raise PermissionDenied("Only landscapers can update profile.")
+
+        return user.landscaper_profile
 
 
 
@@ -79,7 +91,7 @@ class GetLandscaperProfileView(generics.RetrieveAPIView):
 
 # service views
 
-from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+
 
 class CreateServiceView(generics.CreateAPIView):
     serializer_class = ServiceSerializer
