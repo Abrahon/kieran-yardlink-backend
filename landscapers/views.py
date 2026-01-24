@@ -91,8 +91,6 @@ class GetLandscaperProfileView(generics.RetrieveAPIView):
 
 # service views
 
-
-
 class CreateServiceView(generics.CreateAPIView):
     serializer_class = ServiceSerializer
     permission_classes = [permissions.IsAuthenticated]

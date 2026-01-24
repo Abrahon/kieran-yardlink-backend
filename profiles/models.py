@@ -47,7 +47,7 @@ class WorkerProfile(models.Model):
 
         
 # landscaper 
-class LandscaperProfile(models.Model):
+class LandscaperProfilies(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     name = models.CharField(max_length=255, default="Landscaper")
     phone = models.CharField(max_length=20, blank=True, default="")

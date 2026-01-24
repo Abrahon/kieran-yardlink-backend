@@ -193,21 +193,6 @@ class ProLandScaperProfileView(generics.RetrieveUpdateAPIView):
 
 
 
-# class ClientProfileView(generics.RetrieveUpdateAPIView):
-#     serializer_class = ClientProfileSerializer
-#     permission_classes = [IsAuthenticated, IsClient]  # 
-#     parser_classes = [MultiPartParser, FormParser]    # 
-
-#     def get_object(self):
-#         profile, created = ClientProfile.objects.get_or_create(
-#             user=self.request.user
-#         )
-#         return profile
-
-#         return profile
-
-# client profile views 
-
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -345,3 +330,38 @@ class ChangePasswordWorkerView(generics.UpdateAPIView):
         serializer.save()
         update_session_auth_hash(request, serializer.instance)
         return Response({"message": "Password updated successfully"}, status=status.HTTP_200_OK)
+
+from rest_framework import generics, permissions, status
+from rest_framework.response import Response
+from django.contrib.auth import update_session_auth_hash
+from .serializers import ChangePasswordSerializer
+
+
+class ChangePasswordAPIView(generics.UpdateAPIView):
+    """
+    Allows any authenticated user (Admin, Client, Landscaper, Worker)
+    to change their own password.
+    """
+    serializer_class = ChangePasswordSerializer
+    permission_classes = [permissions.IsAuthenticated]  # any logged-in user
+
+    def get_object(self):
+        return self.request.user  # always self
+
+    def update(self, request, *args, **kwargs):
+        user = self.get_object()
+        serializer = self.get_serializer(
+            instance=user,
+            data=request.data,
+            context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        # Keeps the user logged in after password change
+        update_session_auth_hash(request, serializer.instance)
+
+        return Response(
+            {"message": "Password updated successfully"},
+            status=status.HTTP_200_OK
+        )

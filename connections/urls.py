@@ -1,14 +1,18 @@
 from django.urls import path
 from .views import (
     SendConnectionRequestAPIView,
+    InboxConnectionRequestAPIView,
+    SentConnectionRequestAPIView,
     RespondConnectionRequestAPIView,
-    IncomingRequestsAPIView,
-    MyConnectionsAPIView,
+    CancelConnectionRequestAPIView,
+    # AcceptedConnectionsAPIView,
 )
 
 urlpatterns = [
-    path("send/<int:user_id>/", SendConnectionRequestAPIView.as_view()),
-    path("respond/<int:request_id>/", RespondConnectionRequestAPIView.as_view()),
-    path("incoming/", IncomingRequestsAPIView.as_view()),
-    path("my/", MyConnectionsAPIView.as_view()),
+    path("connections/send/", SendConnectionRequestAPIView.as_view()),
+    path("connections/inbox/", InboxConnectionRequestAPIView.as_view()),
+    path("connections/sent/", SentConnectionRequestAPIView.as_view()),
+    path("connections/respond/<int:pk>/", RespondConnectionRequestAPIView.as_view()),
+    path("connections/cancel/<int:pk>/", CancelConnectionRequestAPIView.as_view()),
+    # path("connections/accepted/", AcceptedConnectionsAPIView.as_view()),
 ]

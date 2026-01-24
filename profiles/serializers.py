@@ -1,9 +1,14 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import AdminProfile,ClientProfile,WorkerProfile,ClientProfile,LandscaperProfile
+from .models import AdminProfile,ClientProfile,WorkerProfile,ClientProfile,LandscaperProfilies
 from django.contrib.auth.password_validation import validate_password
 from django.utils.translation import gettext as _
 from .models import WorkerProfile
+from rest_framework import serializers
+from .models import ClientProfile
+from services.models import Service
+from property.models import Property
+
 User = get_user_model()
 
 class AdminProfileSerializer(serializers.ModelSerializer):
@@ -59,39 +64,57 @@ class WorkerProfileSerializer(serializers.ModelSerializer):
 
 
 
-# client serializers
+
+
+from rest_framework import serializers
+from landscapers.models import LandscaperProfile, WorkingHours
+from .models import LandscaperProfilies  # <- use the correct model name
+
 class LandscaperProfileSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(source="user.email", read_only=True)
     image = serializers.ImageField(required=False)
 
+    # Business name from LandscaperProfile model
+    business_name = serializers.SerializerMethodField()
+
+    # Working hours from WorkingHours model
+    working_hours = serializers.SerializerMethodField()
+
     class Meta:
-        model = LandscaperProfile
-        fields = ["email", "name", "phone", "image"]
+        model = LandscaperProfilies  # <- match your actual model
+        fields = [
+            "email",
+            "name",
+            "phone",
+            "image",
+            "business_name",
+            "working_hours",
+        ]
 
+    def get_business_name(self, obj):
+        try:
+            profile = LandscaperProfile.objects.get(user=obj.user)
+            return profile.business_name
+        except LandscaperProfile.DoesNotExist:
+            return None
 
+    def get_working_hours(self, obj):
+        try:
+            profile = LandscaperProfile.objects.get(user=obj.user)
+            hours = profile.working_hours.all().order_by("day")
+            return [
+                {
+                    "day": h.day,
+                    "start_time": h.start_time,
+                    "end_time": h.end_time
+                }
+                for h in hours
+            ]
+        except LandscaperProfile.DoesNotExist:
+            return []
 
-# client serializers
-# class ClientProfileSerializer(serializers.ModelSerializer):
-#     email = serializers.EmailField(source="user.email", read_only=True)
-#     image = serializers.SerializerMethodField()  # override image to return URL
-
-#     class Meta:
-#         model = ClientProfile
-#         fields = ["email", "name", "phone", "image"]
-
-#     def get_image(self, obj):
-#         if obj.image:
-#             return obj.image.url
-#         return None
-
-# clinet profile serializers new
 
 # serializers.py
-from rest_framework import serializers
-from .models import ClientProfile
-from services.models import Service
-from property.models import Property
-
 class ClientProfileSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(source="user.email", read_only=True)
     

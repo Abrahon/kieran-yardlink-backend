@@ -6,6 +6,9 @@ from rest_framework.response import Response
 from django.db.models import Q
 from rest_framework.views import APIView
 from .models import ChatThread, Message
+from django.db.models import Q
+from rest_framework import status
+
 
 
 class ConversationListAPIView(APIView):
@@ -68,22 +71,60 @@ class ConversationDetailAPIView(APIView):
         })
 #  delete user who is send message
 
-class DeleteThreadFromInboxAPIView(APIView):
+# class DeleteThreadFromInboxAPIView(APIView):
+#     permission_classes = [IsAuthenticated]
+
+#     def delete(self, request, thread_id):
+#         """
+#         "Delete" a thread from the inbox of the requesting user.
+#         This just hides the thread for this user.
+#         """
+#         try:
+#             thread = ChatThread.objects.get(id=thread_id)
+#         except ChatThread.DoesNotExist:
+#             return Response({"detail": "Thread not found."}, status=404)
+
+#         if request.user not in thread.participants:
+#             return Response({"detail": "Not allowed."}, status=403)
+
+#         # Hide the thread for this user
+#         thread.hidden_for.add(request.user)
+#         return Response({"detail": "Thread removed from your inbox."}, status=200)
+
+
+
+class DeleteMultipleConversationsAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def delete(self, request, thread_id):
-        """
-        "Delete" a thread from the inbox of the requesting user.
-        This just hides the thread for this user.
-        """
-        try:
-            thread = ChatThread.objects.get(id=thread_id)
-        except ChatThread.DoesNotExist:
-            return Response({"detail": "Thread not found."}, status=404)
+    def delete(self, request):
+        thread_ids = request.data.get("thread_ids")
 
-        if request.user not in thread.participants:
-            return Response({"detail": "Not allowed."}, status=403)
+        if not thread_ids or not isinstance(thread_ids, list):
+            return Response(
+                {"detail": "thread_ids must be a list of IDs."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-        # Hide the thread for this user
-        thread.hidden_for.add(request.user)
-        return Response({"detail": "Thread removed from your inbox."}, status=200)
+        threads = ChatThread.objects.filter(
+            Q(client=request.user) | Q(landscaper=request.user),
+            id__in=thread_ids
+        )
+
+        messages = Message.objects.filter(thread__in=threads)
+
+        for message in messages:
+            message.deleted_for.add(request.user)
+
+        # Optional: exclude deleted messages when returning updated threads
+        remaining_threads = ChatThread.objects.filter(
+            Q(client=request.user) | Q(landscaper=request.user)
+        ).exclude(messages__deleted_for=request.user).distinct()
+
+        return Response(
+            {
+                "detail": "Selected conversations removed from your inbox.",
+                "remaining_threads_count": remaining_threads.count()
+            },
+            status=status.HTTP_200_OK
+        )
+
