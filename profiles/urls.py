@@ -1,18 +1,56 @@
+# from django.urls import path
+# from .views import AdminProfileView,ChangePasswordView,WorkerProfileView,ProLandscaperWorkersView,ClientProfileView,ChangePasswordWorkerView,ChangePasswordLandscaperView,ChangePasswordClientView,ProLandScaperProfileView,ChangePasswordAPIView,LandscaperProfileListView,ClientProfileListView
+
+# urlpatterns = [
+#     # profile for whole role 
+#     path("admin/profile/", AdminProfileView.as_view(), name="admin-profile"),
+#     path("worker/profile/", WorkerProfileView.as_view(), name="worker-profile"),
+#     path("pro-landscaper/workers/", ProLandscaperWorkersView.as_view(), name="pro-landscaper-workers"),
+#     path("landscapers/profile/", ProLandScaperProfileView.as_view(), name="pro-landscaper"),
+#     path("client/profile/", ClientProfileView.as_view(), name="client-profile"),
+#     # change password for whole role 
+#     path('admin/change-password/',ChangePasswordView.as_view(), name="change-password"),
+#     path('client/change-password/',ChangePasswordClientView.as_view(), name="change-password"),
+#     path('landscaper/change-password/',ChangePasswordLandscaperView.as_view(), name="change-password"),
+#     path('worker/change-password/',ChangePasswordWorkerView.as_view(), name="change-password"),
+#     path("change-password/", ChangePasswordAPIView.as_view(), name="change-password"),
+#     # all list of clinet
+#     path('landscapers-list', LandscaperProfileListView.as_view(), name='landscaper-list'),
+#     path('clients-list', ClientProfileListView.as_view(), name='client-list'),
+
+# ]
 from django.urls import path
-from .views import AdminProfileView,ChangePasswordView,WorkerProfileView,ProLandscaperWorkersView,ClientProfileView,ChangePasswordWorkerView,ChangePasswordLandscaperView,ChangePasswordClientView,ProLandScaperProfileView,ChangePasswordAPIView
+from .views import (
+    AdminProfileView,
+    ChangePasswordView,
+    WorkerProfileView,
+    ProLandscaperWorkersView,
+    ClientProfileView,
+    ChangePasswordWorkerView,
+    ChangePasswordLandscaperView,
+    ChangePasswordClientView,
+    ProLandScaperProfileView,
+    ChangePasswordAPIView,
+    AllLandscapersListView,
+    ClientProfileListView
+)
 
 urlpatterns = [
-    # profile for whole role 
+    # -------------------- Profiles -------------------- #
     path("admin/profile/", AdminProfileView.as_view(), name="admin-profile"),
     path("worker/profile/", WorkerProfileView.as_view(), name="worker-profile"),
+    path("landscaper/profile/", ProLandScaperProfileView.as_view(), name="pro-landscaper-profile"),
     path("pro-landscaper/workers/", ProLandscaperWorkersView.as_view(), name="pro-landscaper-workers"),
-    path("landscapers/profile/", ProLandScaperProfileView.as_view(), name="pro-landscaper"),
     path("client/profile/", ClientProfileView.as_view(), name="client-profile"),
-    # change password for whole role 
-    path('admin/change-password/',ChangePasswordView.as_view(), name="change-password"),
-    path('client/change-password/',ChangePasswordClientView.as_view(), name="change-password"),
-    path('landscaper/change-password/',ChangePasswordLandscaperView.as_view(), name="change-password"),
-    path('worker/change-password/',ChangePasswordWorkerView.as_view(), name="change-password"),
-    path("change-password/", ChangePasswordAPIView.as_view(), name="change-password"),
 
+    # -------------------- Change Password -------------------- #
+    path("admin/change-password/", ChangePasswordView.as_view(), name="admin-change-password"),
+    path("worker/change-password/", ChangePasswordWorkerView.as_view(), name="worker-change-password"),
+    path("landscaper/change-password/", ChangePasswordLandscaperView.as_view(), name="landscaper-change-password"),
+    path("client/change-password/", ChangePasswordClientView.as_view(), name="client-change-password"),
+    path("change-password/", ChangePasswordAPIView.as_view(), name="change-password"),  # generic endpoint
+
+    # -------------------- Lists -------------------- #
+    path("landscapers-list/", AllLandscapersListView.as_view(), name="landscaper-list"),
+    path("clients-list/", ClientProfileListView.as_view(), name="client-list"),
 ]
