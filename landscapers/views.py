@@ -184,11 +184,13 @@ class LandscaperFind(generics.ListAPIView):
 
 class WorkingHoursListCreateView(generics.ListCreateAPIView):
     serializer_class = WorkingHoursSerializer
-    permission_classes = [IsAuthenticated, IsLandscaper] 
+    permission_classes = [IsAuthenticated, IsLandscaper]
 
     def get_queryset(self):
         profile = LandscaperProfile.objects.get(user=self.request.user)
-        return WorkingHours.objects.filter(landscaper=profile).order_by("day")
+        return WorkingHours.objects.filter(
+            landscaper=profile
+        ).order_by("day")
 
     def create(self, request, *args, **kwargs):
         try:
@@ -200,93 +202,63 @@ class WorkingHoursListCreateView(generics.ListCreateAPIView):
             )
 
         VALID_DAYS = [choice[0] for choice in DAYS_OF_WEEK]
-
         data = request.data
+
         created_hours = []
         errors = []
 
-        # ===============================
-        # CASE 1: MULTI-DAY SELECT (DICT)
-        # ===============================
-        if isinstance(data, dict):
-            days = data.get("days")
-            start_time = data.get("start_time")
-            end_time = data.get("end_time")
-
-            if not isinstance(days, list):
-                return Response(
-                    {"detail": "`days` must be a list."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-            if not start_time or not end_time:
-                return Response(
-                    {"detail": "start_time and end_time are required."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-            if start_time >= end_time:
-                return Response(
-                    {"detail": "start_time must be before end_time."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-            # Delete only selected days
-            WorkingHours.objects.filter(
-                landscaper=profile,
-                day__in=days
-            ).delete()
-
-            for day in days:
-                if day not in VALID_DAYS:
-                    errors.append({"day": day, "detail": "Invalid day"})
-                    continue
-
-                created_hours.append(
-                    WorkingHours.objects.create(
-                        landscaper=profile,
-                        day=day,
-                        start_time=start_time,
-                        end_time=end_time
-                    )
-                )
-
-        # ===============================
-        # CASE 2: LEGACY LIST PAYLOAD
-        # ===============================
-        elif isinstance(data, list):
-            WorkingHours.objects.filter(landscaper=profile).delete()
-
-            for idx, item in enumerate(data):
-                day = item.get("day")
-                start_time = item.get("start_time")
-                end_time = item.get("end_time")
-
-                if day not in VALID_DAYS:
-                    errors.append({"index": idx, "detail": "Invalid day"})
-                    continue
-
-                if not start_time or not end_time:
-                    errors.append({"index": idx, "detail": "Missing time"})
-                    continue
-
-                if start_time >= end_time:
-                    errors.append({"index": idx, "detail": "start_time must be before end_time"})
-                    continue
-
-                created_hours.append(
-                    WorkingHours.objects.create(
-                        landscaper=profile,
-                        day=day,
-                        start_time=start_time,
-                        end_time=end_time
-                    )
-                )
-
-        else:
+        # Accept only dict payload
+        if not isinstance(data, dict):
             return Response(
-                {"detail": "Invalid payload format."},
+                {"detail": "Payload must be an object."},
                 status=status.HTTP_400_BAD_REQUEST
+            )
+
+        days = data.get("days")
+        start_time = data.get("start_time")
+        end_time = data.get("end_time")
+
+        if not isinstance(days, list) or not days:
+            return Response(
+                {"detail": "`days` must be a non-empty list."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not start_time or not end_time:
+            return Response(
+                {"detail": "start_time and end_time are required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if start_time >= end_time:
+            return Response(
+                {"detail": "start_time must be before end_time."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        for day in days:
+            if day not in VALID_DAYS:
+                errors.append({"day": day, "detail": "Invalid day"})
+                continue
+
+            # Do not overwrite existing records
+            if WorkingHours.objects.filter(
+                landscaper=profile,
+                day=day
+            ).exists():
+                errors.append({
+                    "day": day,
+                    "detail": "Working hours already exist for this day"
+                })
+                continue
+
+            created_hours.append(
+                WorkingHours.objects.create(
+                    landscaper=profile,
+                    day=day,
+                    start_time=start_time,
+                    end_time=end_time
+                )
             )
 
         serializer = self.get_serializer(created_hours, many=True)

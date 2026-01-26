@@ -98,8 +98,96 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
 #                 "At least one standard service must be selected."
 #             )
 #         return value
+# import json
+# from rest_framework import serializers
+
+# class ServiceSerializer(serializers.ModelSerializer):
+#     class Meta:
+#         model = Service
+#         fields = [
+#             "id",
+#             "landscaper",
+#             "standard_services",
+#             "custom_service",
+#             "description",
+#             "category",
+#             "add_ons",
+#             "latitude",
+#             "longitude",
+#             "price",
+#             "per_square_feet",
+#             "created_at",
+#             "updated_at",
+#         ]
+#         read_only_fields = [
+#             "id",
+#             "landscaper",
+#             "created_at",
+#             "updated_at",
+#         ]
+
+#     def to_internal_value(self, data):
+#         """
+#         Allow JSON arrays from multipart/form-data
+#         """
+#         mutable_data = data.copy()
+
+#         for field in ["standard_services", "add_ons"]:
+#             if field in mutable_data and isinstance(mutable_data[field], str):
+#                 try:
+#                     mutable_data[field] = json.loads(mutable_data[field])
+#                 except json.JSONDecodeError:
+#                     raise serializers.ValidationError({
+#                         field: "Invalid JSON format"
+#                     })
+
+#         return super().to_internal_value(mutable_data)
+
+#     def validate_standard_services(self, value):
+#         if not isinstance(value, list) or not value:
+#             raise serializers.ValidationError(
+#                 "At least one standard service must be selected."
+#             )
+#         return value
+
+#     def validate_add_ons(self, value):
+#         if not isinstance(value, list):
+#             raise serializers.ValidationError("Add-ons must be a list.")
+
+#         for addon in value:
+#             if "name" not in addon or "price" not in addon:
+#                 raise serializers.ValidationError(
+#                     "Each add-on must include name and price."
+#                 )
+#         return value
+
+#     def validate(self, attrs):
+#         """
+#         Cross-field validation for service location
+#         """
+#         lat = attrs.get("latitude")
+#         lon = attrs.get("longitude")
+
+#         if lat is None or lon is None:
+#             raise serializers.ValidationError(
+#                 "Service location (latitude and longitude) is required."
+#             )
+
+#         if not (-90 <= lat <= 90):
+#             raise serializers.ValidationError(
+#                 {"latitude": "Latitude must be between -90 and 90."}
+#             )
+
+#         if not (-180 <= lon <= 180):
+#             raise serializers.ValidationError(
+#                 {"longitude": "Longitude must be between -180 and 180."}
+#             )
+
+#         return attrs
 import json
 from rest_framework import serializers
+from .models import Service
+
 
 class ServiceSerializer(serializers.ModelSerializer):
     class Meta:
@@ -132,13 +220,13 @@ class ServiceSerializer(serializers.ModelSerializer):
         """
         mutable_data = data.copy()
 
-        for field in ["standard_services", "add_ons"]:
+        for field in ("standard_services", "add_ons"):
             if field in mutable_data and isinstance(mutable_data[field], str):
                 try:
                     mutable_data[field] = json.loads(mutable_data[field])
                 except json.JSONDecodeError:
                     raise serializers.ValidationError({
-                        field: "Invalid JSON format"
+                        field: "Invalid JSON format."
                     })
 
         return super().to_internal_value(mutable_data)
@@ -155,6 +243,10 @@ class ServiceSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Add-ons must be a list.")
 
         for addon in value:
+            if not isinstance(addon, dict):
+                raise serializers.ValidationError(
+                    "Each add-on must be an object."
+                )
             if "name" not in addon or "price" not in addon:
                 raise serializers.ValidationError(
                     "Each add-on must include name and price."
@@ -162,9 +254,6 @@ class ServiceSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
-        """
-        Cross-field validation for service location
-        """
         lat = attrs.get("latitude")
         lon = attrs.get("longitude")
 
@@ -184,6 +273,8 @@ class ServiceSerializer(serializers.ModelSerializer):
             )
 
         return attrs
+
+
 
 # # landscapers/serializers.py
 from rest_framework import serializers

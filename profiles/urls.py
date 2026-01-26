@@ -51,6 +51,6 @@ urlpatterns = [
     path("change-password/", ChangePasswordAPIView.as_view(), name="change-password"),  # generic endpoint
 
     # -------------------- Lists -------------------- #
-    path("landscapers-list/", AllLandscapersListView.as_view(), name="landscaper-list"),
+     path("landscapers-list/", AllLandscapersListView.as_view()),
     path("clients-list/", ClientProfileListView.as_view(), name="client-list"),
 ]

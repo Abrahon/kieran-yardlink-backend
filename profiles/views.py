@@ -114,18 +114,19 @@ class ProLandscaperWorkersView(generics.ListAPIView):
 
 
 # prolandscaer profile views
+from profiles.models import LandscaperProfilies
+
 class ProLandScaperProfileView(generics.RetrieveUpdateAPIView):
-    serializer_class = LandscaperProfileSerializer  
-    permission_classes = [IsAuthenticated, IsProOrBasicLandscaper]  
-    parser_classes = [MultiPartParser, FormParser]    
+    serializer_class = LandscaperProfileSerializer
+    permission_classes = [IsAuthenticated, IsProOrBasicLandscaper]
+    parser_classes = [MultiPartParser, FormParser]
 
     def get_object(self):
-        profile, created = ClientProfile.objects.get_or_create(
+        profile, created = LandscaperProfilies.objects.get_or_create(
             user=self.request.user
         )
         return profile
 
-        return profile
 
 
 
@@ -304,21 +305,22 @@ from .models import LandscaperProfilies
 
 # ---------------- All Landscapers ----------------
 
-
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
 from .models import LandscaperProfilies
 from .serializers import LandscaperProfileSerializer
 
 class AllLandscapersListView(generics.ListAPIView):
-    """
-    List all landscaper profiles
-    """
-    queryset = LandscaperProfilies.objects.all()
     serializer_class = LandscaperProfileSerializer
-    permission_classes = [IsAuthenticated]  # Or [] if public
+    permission_classes = [IsAuthenticated]
+    # pagination_class = None  # no pagination
 
-
+    def get_queryset(self):
+        return (
+            LandscaperProfilies.objects
+            .select_related("user")
+            .all()
+        )
 
 
 
@@ -328,4 +330,5 @@ class AllLandscapersListView(generics.ListAPIView):
 # ---------------- All Clients ----------------
 class ClientProfileListView(generics.ListAPIView):
     queryset = ClientProfile.objects.all()
+    print("queryset",queryset)
     serializer_class = ClientProfileSerializer

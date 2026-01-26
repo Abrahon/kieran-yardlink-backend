@@ -3,145 +3,108 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Q
-
-from .models import ConnectionRequest
-from .serializers import (
-    ConnectionRequestSerializer,
-    SendConnectionRequestSerializer,
-    RespondConnectionRequestSerializer,
-    # AcceptedConnectionSerializer,
-)
-# connections/views.py
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework import status
 from django.shortcuts import get_object_or_404
+
 from accounts.models import User
 from .models import ConnectionRequest
-from .serializers import ConnectionRequestSerializer
+from .serializers import (
+    ConnectionRequestDetailSerializer,
+    SendConnectionRequestSerializer,
+    RespondConnectionRequestSerializer,
+    AcceptedConnectionSerializer,
+)
+
+from rest_framework import serializers
+from django.contrib.auth import get_user_model
+from .models import ConnectionRequest
+
+User = get_user_model()
 
 class SendConnectionRequestAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    # Get sent requests (optional)
-    def get(self, request):
-        requests = ConnectionRequest.objects.filter(
-            sender=request.user,
-            is_accepted=None
-        ).order_by("-created_at")
-
-        serializer = ConnectionRequestSerializer(
-            requests, many=True, context={"request": request}
-        )
-        return Response(serializer.data)
-
-    # Create/send a connection request
     def post(self, request):
-        receiver_id = request.data.get("receiver_id")
-        if not receiver_id:
-            return Response({"error": "receiver_id is required"}, status=400)
+        serializer = SendConnectionRequestSerializer(
+            data=request.data,
+            context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
 
-        from django.shortcuts import get_object_or_404
-        from accounts.models import User
+        receiver = User.objects.get(
+            id=serializer.validated_data["receiver_id"]
+        )
 
-        receiver = get_object_or_404(User, id=receiver_id)
-
-        if receiver == request.user:
-            return Response({"error": "You cannot send request to yourself"}, status=400)
-
-        # Avoid duplicate requests
-        connection, created = ConnectionRequest.objects.get_or_create(
+        connection = ConnectionRequest.objects.create(
             sender=request.user,
             receiver=receiver
         )
 
-        from .serializers import ConnectionRequestSerializer
-        serializer = ConnectionRequestSerializer(connection, context={"request": request})
-        return Response(serializer.data, status=201 if created else 200)
-
-
-        
-class ConnectionInboxAPIView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        requests = ConnectionRequest.objects.filter(
-            receiver=request.user,
-            is_accepted=None
-        ).order_by("-created_at")
-
-        serializer = ConnectionRequestSerializer(
-            requests, many=True, context={"request": request}
+        return Response(
+            ConnectionRequestDetailSerializer(
+                connection,
+                context={"request": request}
+            ).data,
+            status=status.HTTP_201_CREATED
         )
-        return Response(serializer.data)
 
 
+class ConnectionRequestSerializer(serializers.ModelSerializer):
+    receiver_id = serializers.IntegerField(write_only=True)
+
+    class Meta:
+        model = ConnectionRequest
+        fields = ["id", "receiver_id", "is_accepted", "created_at"]
+
+    def validate_receiver_id(self, value):
+        try:
+            receiver = User.objects.get(id=value)
+        except User.DoesNotExist:
+            raise serializers.ValidationError("User not found.")
+
+        request_user = self.context["request"].user
+
+        if receiver == request_user:
+            raise serializers.ValidationError("You cannot send request to yourself.")
+
+        return receiver
+
+    def create(self, validated_data):
+        receiver = validated_data.pop("receiver_id")
+        sender = self.context["request"].user
+
+        return ConnectionRequest.objects.create(
+            sender=sender,
+            receiver=receiver
+        )
 class InboxConnectionRequestAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        requests = ConnectionRequest.objects.filter(
+        qs = ConnectionRequest.objects.filter(
             receiver=request.user,
             is_accepted=None
         ).order_by("-created_at")
 
-        serializer = ConnectionRequestSerializer(requests, many=True)
-        return Response(serializer.data)
+        return Response(ConnectionRequestSerializer(qs, many=True).data)
+
 
 class SentConnectionRequestAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        requests = ConnectionRequest.objects.filter(
+        qs = ConnectionRequest.objects.filter(
             sender=request.user
         ).order_by("-created_at")
 
-        serializer = ConnectionRequestSerializer(
-            requests, many=True, context={"request": request}
-        )
-        return Response(serializer.data)
+        return Response(ConnectionRequestSerializer(qs, many=True).data)
 
 
-# class RespondConnectionRequestAPIView(APIView):
-#     permission_classes = [IsAuthenticated]
 
-#     def post(self, request, pk):
-#         try:
-#             connection = ConnectionRequest.objects.get(
-#                 id=pk,
-#                 receiver=request.user,
-#                 is_accepted=None
-#             )
-#         except ConnectionRequest.DoesNotExist:
-#             return Response(
-#                 {"error": "Request not found"},
-#                 status=status.HTTP_404_NOT_FOUND
-#             )
-
-#         serializer = RespondConnectionRequestSerializer(
-#             connection,
-#             data=request.data
-#         )
-#         serializer.is_valid(raise_exception=True)
-#         serializer.save()
-
-#         return Response(
-#             ConnectionRequestSerializer(connection).data
-#         )
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework import status
-from django.shortcuts import get_object_or_404
-from .models import ConnectionRequest
-from .serializers import RespondConnectionRequestSerializer, ConnectionRequestSerializer
 
 class RespondConnectionRequestAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, pk):
-        # Only allow pending requests that belong to this user
         connection = get_object_or_404(
             ConnectionRequest,
             id=pk,
@@ -150,27 +113,53 @@ class RespondConnectionRequestAPIView(APIView):
         )
 
         serializer = RespondConnectionRequestSerializer(
-            instance=connection, data=request.data
+            instance=connection,
+            data=request.data
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()
 
-        # Return updated connection request with full sender/receiver info
-        return Response(
-            ConnectionRequestSerializer(connection, context={"request": request}).data
-        )
+        return Response(ConnectionRequestSerializer(connection).data)
 
 
+
+# class CancelConnectionRequestAPIView(APIView):
+#     permission_classes = [IsAuthenticated]
+
+#     def delete(self, request, pk):
+#         try:
+#             connection = ConnectionRequest.objects.get(
+#                 id=pk,
+#                 sender=request.user,
+#                 is_accepted__isnull=True  # fixed here
+#             )
+#         except ConnectionRequest.DoesNotExist:
+#             return Response(
+#                 {"error": "Request not found"},
+#                 status=status.HTTP_404_NOT_FOUND
+#             )
+
+#         connection.delete()
+#         return Response(
+#             {"message": "Request cancelled"},
+#             status=status.HTTP_200_OK  # changed from 204
+#         )
 class CancelConnectionRequestAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def delete(self, request, pk):
         try:
+            # Fetch the connection where user is either sender or receiver
             connection = ConnectionRequest.objects.get(
                 id=pk,
-                sender=request.user,
-                is_accepted=None
+                is_accepted__isnull=True,
             )
+            if request.user != connection.sender:
+                # Only the sender can cancel pending requests
+                return Response(
+                    {"error": "Only sender can cancel this request"},
+                    status=status.HTTP_403_FORBIDDEN
+                )
         except ConnectionRequest.DoesNotExist:
             return Response(
                 {"error": "Request not found"},
@@ -180,21 +169,85 @@ class CancelConnectionRequestAPIView(APIView):
         connection.delete()
         return Response(
             {"message": "Request cancelled"},
-            status=status.HTTP_204_NO_CONTENT
+            status=status.HTTP_200_OK
         )
 
-# class AcceptedConnectionsAPIView(APIView):
-#     permission_classes = [IsAuthenticated]
 
-#     def get(self, request):
-#         connections = ConnectionRequest.objects.filter(
-#             Q(sender=request.user) | Q(receiver=request.user),
-#             is_accepted=True
-#         ).order_by("-created_at")
+# connections/views.py
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from django.db.models import Q
+from connections.models import ConnectionRequest
+from profiles.models import LandscaperProfilies, ClientProfile
+from profiles.serializers import LandscaperProfileSerializer, ClientProfileSerializer
+from profiles.serializers import ConnectedUserSerializer
 
-#         serializer = AcceptedConnectionSerializer(
-#             connections,
-#             many=True,
-#             context={"request": request}
-#         )
-#         return Response(serializer.data)
+class AcceptedConnectionsAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        # Get all accepted connections where the current user is sender or receiver
+        connections = ConnectionRequest.objects.filter(
+            Q(sender=request.user) | Q(receiver=request.user),
+            is_accepted=True
+        ).order_by("-created_at")
+
+        response_data = []
+
+        for conn in connections:
+            # Determine the connected user (not the current user)
+            connected_user = conn.receiver if conn.sender == request.user else conn.sender
+
+            # Try to get landscaper profile
+            try:
+                profile = LandscaperProfilies.objects.get(user=connected_user)
+                profile_data = LandscaperProfileSerializer(profile).data
+                profile_data["type"] = "landscaper"
+            except LandscaperProfilies.DoesNotExist:
+                # Try to get client profile
+                try:
+                    profile = ClientProfile.objects.get(user=connected_user)
+                    profile_data = ClientProfileSerializer(profile).data
+                    profile_data["type"] = "client"
+                except ClientProfile.DoesNotExist:
+                    # If no profile, return basic info
+                    profile_data = {
+                        "user_id": connected_user.id,
+                        "email": connected_user.email,
+                        "name": getattr(connected_user, "name", ""),
+                        "type": "unknown"
+                    }
+
+            response_data.append({
+                "connection_id": conn.id,
+                "connected_profile": profile_data,
+                "created_at": conn.created_at
+            })
+
+        # Serialize using ConnectedUserSerializer (optional but keeps structure consistent)
+        serializer = ConnectedUserSerializer(response_data, many=True)
+        return Response(serializer.data)
+
+
+
+class RemoveConnectionAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, pk):
+        connection = get_object_or_404(
+            ConnectionRequest,
+            id=pk,
+            is_accepted=True
+        )
+
+        if request.user not in [connection.sender, connection.receiver]:
+            return Response(
+                {"detail": "Permission denied"},
+                status=403
+            )
+
+        connection.delete()
+        return Response(
+            {"message": "Connection removed"}
+        )

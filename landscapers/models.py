@@ -55,7 +55,13 @@ class Service(models.Model):
         User,
         on_delete=models.CASCADE,
         related_name="services"
-    )
+)
+    # landscaper = models.ForeignKey(
+    #         LandscaperProfile,
+    #         on_delete=models.CASCADE,
+    #         related_name="services"
+    #     )
+
 
     # Multi-select standard services (array of choice strings)
     standard_services = models.JSONField(default=list, blank=True)
@@ -110,6 +116,7 @@ DAYS_OF_WEEK = [
 ]
 
 class WorkingHours(models.Model):
+    # landscaper = models.ForeignKey(LandscaperProfile, on_delete=models.CASCADE, related_name='working_hours')
     landscaper = models.ForeignKey(LandscaperProfile, on_delete=models.CASCADE, related_name='working_hours')
     start_time = models.TimeField()
     end_time = models.TimeField()
