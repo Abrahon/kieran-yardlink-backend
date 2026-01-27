@@ -84,3 +84,17 @@ class AddOrUpdateReviewAPIView(APIView):
             "message": "Review submitted successfully",
             "review": serializer.data
         })
+
+
+# delete 
+class DeleteReviewAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, review_id):
+        review = get_object_or_404(
+            LandscaperReview,
+            id=review_id,
+            client=request.user
+        )
+        review.delete()
+        return Response({"message": "Review deleted"})
