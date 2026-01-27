@@ -158,6 +158,8 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
     user_id = serializers.IntegerField(source="user.id", read_only=True)
     email = serializers.EmailField(source="user.email", read_only=True)
     image = serializers.ImageField(required=False, allow_null=True)
+   
+
 
     business_name = serializers.CharField(
         source="user.landscaper_profile.business_name",
@@ -167,6 +169,7 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
     working_hours = serializers.SerializerMethodField()
     services = serializers.SerializerMethodField()
     already_sent = serializers.SerializerMethodField()  # ✅ ADD THIS
+    connection_request_id = serializers.SerializerMethodField()
 
     class Meta:
         model = LandscaperProfilies
@@ -181,6 +184,7 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
             "working_hours",
             "services",
             "already_sent",
+            "connection_request_id",
         ]
 
     def to_representation(self, instance):
@@ -219,6 +223,20 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
             }
             for s in services
         ]
+    def get_connection_request_id(self, obj):
+
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            return None
+
+        connection = ConnectionRequest.objects.filter(
+            Q(sender=request.user, receiver=obj.user) |
+            Q(sender=obj.user, receiver=request.user),
+            is_accepted__isnull=True  # pending only
+        ).first()
+
+        return connection.id if connection else None
+
 
     def get_already_sent(self, obj):
         """
@@ -247,6 +265,8 @@ class ClientProfileSerializer(serializers.ModelSerializer):
     properties = serializers.SerializerMethodField()
     total_service_price = serializers.SerializerMethodField()
     already_sent = serializers.SerializerMethodField()  # ✅ ADD THIS
+    connection_request_id = serializers.SerializerMethodField()
+
 
     class Meta:
         model = ClientProfile
@@ -261,6 +281,7 @@ class ClientProfileSerializer(serializers.ModelSerializer):
             "total_service_price",
             "properties",
             "already_sent",
+            "connection_request_id",
         ]
 
     def get_services(self, obj):
@@ -309,6 +330,20 @@ class ClientProfileSerializer(serializers.ModelSerializer):
                 Q(sender=request.user, receiver=obj.user) |
                 Q(sender=obj.user, receiver=request.user)
             ).exists()
+            
+    def get_connection_request_id(self, obj):
+            
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            return None
+
+        connection = ConnectionRequest.objects.filter(
+            Q(sender=request.user, receiver=obj.user) |
+            Q(sender=obj.user, receiver=request.user),
+            is_accepted__isnull=True
+        ).first()
+
+        return connection.id if connection else None
 
 
 

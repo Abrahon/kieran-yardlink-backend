@@ -35,5 +35,6 @@ urlpatterns = [
     path("api/", include("connections.urls")),
     # path("api/", include("jobs.urls")),
     path("api/qr/", include("qr.urls")),
+    # path("api/", include("reviews.urls")),
 ]
 #

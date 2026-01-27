@@ -270,3 +270,55 @@ class WorkingHoursListCreateView(generics.ListCreateAPIView):
             },
             status=status.HTTP_201_CREATED if created_hours else status.HTTP_400_BAD_REQUEST
         )
+# search by kim
+class LandscaperSearchByKMAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            user_lat = float(request.GET.get("lat"))
+            user_lng = float(request.GET.get("lng"))
+            km = float(request.GET.get("km", 10))
+        except (TypeError, ValueError):
+            return Response(
+                {"error": "lat, lng and km must be valid numbers"},
+                status=400
+            )
+
+        EARTH_RADIUS = 6371  # KM
+
+        landscapers = (
+            User.objects
+            .filter(
+                role=RoleChoices.LANDSCAPER,
+                latitude__isnull=False,
+                longitude__isnull=False,
+                landscaperprofilies__isnull=False  # ✅ DB-level filter
+            )
+            .annotate(
+                distance=EARTH_RADIUS * ACos(
+                    Cos(Radians(user_lat)) *
+                    Cos(Radians(F("latitude"))) *
+                    Cos(Radians(F("longitude")) - Radians(user_lng)) +
+                    Sin(Radians(user_lat)) *
+                    Sin(Radians(F("latitude")))
+                )
+            )
+            .filter(distance__lte=km)
+            .order_by("distance")
+            .select_related("landscaperprofilies")
+        )
+
+        profiles = [u.landscaperprofilies for u in landscapers]
+
+        serializer = LandscaperProfileSerializer(
+            profiles,
+            many=True,
+            context={"request": request}
+        )
+
+        return Response({
+            "count": len(serializer.data),  # ✅ accurate
+            "km": km,
+            "results": serializer.data
+        })
