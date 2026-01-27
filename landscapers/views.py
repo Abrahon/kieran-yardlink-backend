@@ -1,6 +1,6 @@
 from rest_framework import generics, permissions
 from rest_framework.exceptions import PermissionDenied
-from .serializers import LandscaperProfileSerializer
+from .serializers import BusinessLandscaperProfileSerializer
 from subscriptions.models import Subscription
 
 from rest_framework.exceptions import ValidationError
@@ -42,7 +42,7 @@ from .models import LandscaperProfile
 
 
 class CompleteLandscaperProfileView(generics.CreateAPIView):
-    serializer_class = LandscaperProfileSerializer
+    serializer_class = BusinessLandscaperProfileSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def perform_create(self, serializer):
@@ -65,7 +65,7 @@ class CompleteLandscaperProfileView(generics.CreateAPIView):
 
 # update views
 class UpdateLandscaperProfileView(generics.UpdateAPIView):
-    serializer_class = LandscaperProfileSerializer
+    serializer_class = BusinessLandscaperProfileSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self):
@@ -79,7 +79,7 @@ class UpdateLandscaperProfileView(generics.UpdateAPIView):
 
 
 class GetLandscaperProfileView(generics.RetrieveAPIView):
-    serializer_class = LandscaperProfileSerializer
+    serializer_class = BusinessLandscaperProfileSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self):
@@ -143,7 +143,7 @@ class LandscaperFind(generics.ListAPIView):
     - service: filter by service ID
     - previous_work: 'true' or 'false' to show only landscapers the client worked with
     """
-    serializer_class = LandscaperProfileSerializer
+    serializer_class = BusinessLandscaperProfileSerializer
     permission_classes = [permissions.IsAuthenticated]  # client must be logged in
 
     def get_queryset(self):

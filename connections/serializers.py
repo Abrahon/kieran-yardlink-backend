@@ -140,7 +140,7 @@
 from rest_framework import serializers
 from .models import ConnectionRequest
 from profiles.serializers import ClientProfileSerializer
-from landscapers.serializers import LandscaperProfileSerializer
+from landscapers.serializers import BusinessLandscaperProfileSerializer
 from accounts.models import User
 
 
@@ -153,47 +153,168 @@ class UserMiniSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "email", "role"]
 
 
+
+
+# class ConnectionRequestDetailSerializer(serializers.ModelSerializer):
+#     sender_profile = serializers.SerializerMethodField()
+#     receiver_profile = serializers.SerializerMethodField()
+#     is_accepted = serializers.SerializerMethodField()  # override to convert null → false
+
+#     class Meta:
+#         model = ConnectionRequest
+#         fields = ['id', 'is_accepted', 'created_at', 'sender_profile', 'receiver_profile']
+
+#     def get_is_accepted(self, obj):
+#         """
+#         Convert None (pending) → False for API responses
+#         """
+#         return bool(obj.is_accepted)
+
+#     def _get_profile(self, user):
+#         """
+#         Return only necessary profile info depending on user type.
+#         """
+#         # Check if user is a landscaper
+#         try:
+#             profile = LandscaperProfilies.objects.get(user=user)
+#             data = LandscaperProfileSerializer(profile).data
+#             data["type"] = "landscaper"
+#             return data
+#         except LandscaperProfilies.DoesNotExist:
+#             pass
+
+#         # Check if user is a client
+#         try:
+#             profile = ClientProfile.objects.get(user=user)
+#             data = ClientProfileSerializer(profile).data
+#             data["type"] = "client"
+#             return data
+#         except ClientProfile.DoesNotExist:
+#             pass
+
+#         # Fallback minimal info
+#         return {"user_id": user.id, "email": user.email, "type": "unknown"}
+
+#     def get_sender_profile(self, obj):
+#         return self._get_profile(obj.sender)
+
+#     def get_receiver_profile(self, obj):
+#         return self._get_profile(obj.receiver)
+
+# from rest_framework import serializers
+# from profiles.models import LandscaperProfilies, ClientProfile
+# from connections.models import ConnectionRequest
+# from profiles.serializers import LandscaperProfileSerializer, ClientProfileSerializer
+
+
+# class ConnectionRequestDetailSerializer(serializers.ModelSerializer):
+#     sender_profile = serializers.SerializerMethodField()
+#     receiver_profile = serializers.SerializerMethodField()
+#     is_accepted = serializers.SerializerMethodField()  # override to convert null → false
+
+#     class Meta:
+#         model = ConnectionRequest
+#         fields = ['id', 'is_accepted', 'created_at', 'sender_profile', 'receiver_profile']
+
+#     def get_is_accepted(self, obj):
+#         """
+#         Convert None (pending) → False for API responses
+#         """
+#         return bool(obj.is_accepted)
+
+#     def _get_profile(self, user):
+#         """
+#         Return only necessary profile info depending on user type.
+#         """
+#         # Check if user is a landscaper
+#         try:
+#             profile = LandscaperProfilies.objects.get(user=user)
+#             data = LandscaperProfileSerializer(profile).data
+#             data["type"] = "landscaper"
+#             return data
+#         except LandscaperProfilies.DoesNotExist:
+#             pass
+
+#         # Check if user is a client
+#         try:
+#             profile = ClientProfile.objects.get(user=user)
+#             data = ClientProfileSerializer(profile).data
+#             data["type"] = "client"
+#             return data
+#         except ClientProfile.DoesNotExist:
+#             pass
+
+#         # Fallback minimal info
+#         return {"user_id": user.id, "email": user.email, "type": "unknown"}
+
+#     def get_sender_profile(self, obj):
+#         return self._get_profile(obj.sender)
+
+#     def get_receiver_profile(self, obj):
+#         return self._get_profile(obj.receiver)
+from rest_framework import serializers
+from profiles.models import LandscaperProfilies, ClientProfile
+from connections.models import ConnectionRequest
+from profiles.serializers import LandscaperProfileSerializer, ClientProfileSerializer
+from django.db.models import Q
+
 class ConnectionRequestDetailSerializer(serializers.ModelSerializer):
-    """
-    Full detail for connection requests with full sender and receiver profile.
-    """
     sender_profile = serializers.SerializerMethodField()
     receiver_profile = serializers.SerializerMethodField()
+    is_accepted = serializers.SerializerMethodField()  # override to convert null → false
+    already_sent = serializers.SerializerMethodField()  # NEW FIELD
 
     class Meta:
         model = ConnectionRequest
-        fields = [
-            "id",
-            "is_accepted",
-            "created_at",
-            "sender_profile",
-            "receiver_profile",
-        ]
+        fields = ['id', 'is_accepted', 'created_at', 'sender_profile', 'receiver_profile', 'already_sent']
 
-    def _build_profile(self, user):
+    def get_is_accepted(self, obj):
         """
-        Return full profile data depending on user type (client or landscaper).
-        Adds a "type" key to distinguish.
+        Convert None (pending) → False for API responses
         """
-        if hasattr(user, "clientprofile"):
-            data = ClientProfileSerializer(user.clientprofile, context=self.context).data
-            data["type"] = "client"
-            return data
+        return bool(obj.is_accepted)
 
-        if hasattr(user, "landscaperprofilies"):
-            data = LandscaperProfileSerializer(user.landscaperprofilies, context=self.context).data
+    def _get_profile(self, user):
+        """
+        Return only necessary profile info depending on user type.
+        """
+        # Check if user is a landscaper
+        try:
+            profile = LandscaperProfilies.objects.get(user=user)
+            data = LandscaperProfileSerializer(profile).data
             data["type"] = "landscaper"
             return data
+        except LandscaperProfilies.DoesNotExist:
+            pass
 
-        # fallback minimal info
-        return UserMiniSerializer(user, context=self.context).data
+        # Check if user is a client
+        try:
+            profile = ClientProfile.objects.get(user=user)
+            data = ClientProfileSerializer(profile).data
+            data["type"] = "client"
+            return data
+        except ClientProfile.DoesNotExist:
+            pass
+
+        # Fallback minimal info
+        return {"user_id": user.id, "email": user.email, "type": "unknown"}
 
     def get_sender_profile(self, obj):
-        return self._build_profile(obj.sender)
+        return self._get_profile(obj.sender)
 
     def get_receiver_profile(self, obj):
-        return self._build_profile(obj.receiver)
+        return self._get_profile(obj.receiver)
 
+    def get_already_sent(self, obj):
+        """
+        Returns True if a request already exists between sender and receiver.
+        Includes all statuses: pending, accepted, rejected.
+        """
+        exists = ConnectionRequest.objects.filter(
+            Q(sender=obj.sender, receiver=obj.receiver) |
+            Q(sender=obj.receiver, receiver=obj.sender)
+        ).exists()
+        return exists
 
 class SendConnectionRequestSerializer(serializers.Serializer):
     """

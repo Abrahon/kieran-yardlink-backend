@@ -114,6 +114,8 @@ class ProLandscaperWorkersView(generics.ListAPIView):
 
 
 # prolandscaer profile views
+
+# prolandscaer profile views
 from profiles.models import LandscaperProfilies
 
 class ProLandScaperProfileView(generics.RetrieveUpdateAPIView):
@@ -126,8 +128,6 @@ class ProLandScaperProfileView(generics.RetrieveUpdateAPIView):
             user=self.request.user
         )
         return profile
-
-
 
 
 

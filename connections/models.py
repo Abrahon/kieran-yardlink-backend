@@ -1,8 +1,8 @@
 from django.db import models
-
 # Create your models here.
 from django.db import models
 from accounts.models import User
+
 
 class ConnectionRequest(models.Model):
     sender = models.ForeignKey(
@@ -16,8 +16,10 @@ class ConnectionRequest(models.Model):
         related_name="received_requests"
     )
 
-    is_accepted = models.BooleanField(null=True)  
+    is_accepted = models.BooleanField(null=True)
+      
     # None = pending | True = accepted | False = rejected
+    already_sent = models.BooleanField(default=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
 

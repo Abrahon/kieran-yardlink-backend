@@ -76,16 +76,37 @@ class ConnectionRequestSerializer(serializers.ModelSerializer):
             sender=sender,
             receiver=receiver
         )
+
+
+# inbox/views.py
+
+# class InboxConnectionRequestAPIView(APIView):
+#     permission_classes = [IsAuthenticated]
+
+#     def get(self, request):
+#         # Get all pending connection requests for the logged-in user
+#         qs = ConnectionRequest.objects.filter(
+#             receiver=request.user,
+#             is_accepted__isnull=True
+#         ).order_by("-created_at")
+
+#         serializer = ConnectionRequestDetailSerializer(qs, many=True, context={"request": request})
+#         print("serializer",serializer)
+#         return Response(serializer.data)
+
 class InboxConnectionRequestAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         qs = ConnectionRequest.objects.filter(
             receiver=request.user,
-            is_accepted=None
+            is_accepted__isnull=True  # Only pending
         ).order_by("-created_at")
 
-        return Response(ConnectionRequestSerializer(qs, many=True).data)
+        print("Queryset:", qs)  # Debug: check what it returns
+        serializer = ConnectionRequestDetailSerializer(qs, many=True, context={"request": request})
+        print("Serialized data:", serializer.data)  # Debug: check serialized output
+        return Response(serializer.data)
 
 
 class SentConnectionRequestAPIView(APIView):
@@ -182,6 +203,10 @@ from connections.models import ConnectionRequest
 from profiles.models import LandscaperProfilies, ClientProfile
 from profiles.serializers import LandscaperProfileSerializer, ClientProfileSerializer
 from profiles.serializers import ConnectedUserSerializer
+class AcceptedConnectionsAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+
 
 class AcceptedConnectionsAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -228,7 +253,6 @@ class AcceptedConnectionsAPIView(APIView):
         # Serialize using ConnectedUserSerializer (optional but keeps structure consistent)
         serializer = ConnectedUserSerializer(response_data, many=True)
         return Response(serializer.data)
-
 
 
 class RemoveConnectionAPIView(APIView):
