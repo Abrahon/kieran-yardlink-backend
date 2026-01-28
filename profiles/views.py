@@ -428,7 +428,6 @@ class LandscaperSearchByKMAPIView(APIView):
 
 
 # client search views
-
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from rest_framework.permissions import IsAuthenticated
@@ -440,7 +439,7 @@ class ClientSearchByKMAPIView(APIView):
     - Distance from lat/lng within km
     Always includes 'address', 'latitude', 'longitude' in response
     """
-    authentication_classes = [JWTAuthentication]  # ✅ use JWT here
+    authentication_classes = [JWTAuthentication] 
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
