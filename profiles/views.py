@@ -19,11 +19,32 @@ from common.permissions import IsClient,IsAdmin,IsLandscaper,IsWorker
 # from services.permissions import IsLandscaper
 from invitations.models import TeamInvitation, InvitationStatus
 from invitations.permissions import IsProLandscaper, IsProOrBasicLandscaper
-
+# search by kim
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from django.db.models import F, Avg
+from django.db.models.functions import ACos, Cos, Sin, Radians
+from django.db.models import Q
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from rest_framework import status
+from message.models import ChatThread
+from .models import ClientProfile
+from .serializers import ClientProfileSerializer
+from accounts.models import User
+from accounts.enums import RoleChoices
+from profiles.models import LandscaperProfilies
+from reviews.models import LandscaperReview
+from connections.models import ConnectionRequest
+from profiles.serializers import LandscaperProfileSerializer
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from django.contrib.auth import update_session_auth_hash
 from .serializers import ChangePasswordSerializer
+from django.db.models import F, FloatField, Q, ExpressionWrapper
+from django.db.models.functions import ACos, Cos, Sin, Radians
 
 
 # admin profile
@@ -132,13 +153,7 @@ class ProLandScaperProfileView(generics.RetrieveUpdateAPIView):
 
 
 
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from rest_framework import status
 
-from .models import ClientProfile
-from .serializers import ClientProfileSerializer
 
 # If you have a custom permission for client users
 try:
@@ -324,11 +339,249 @@ class AllLandscapersListView(generics.ListAPIView):
 
 
 
-
-
-
 # ---------------- All Clients ----------------
 class ClientProfileListView(generics.ListAPIView):
     queryset = ClientProfile.objects.all()
     print("queryset",queryset)
     serializer_class = ClientProfileSerializer
+
+# search landscaers
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from django.db.models import Q, Avg, F
+from django.db.models.functions import ACos, Cos, Sin, Radians
+
+from accounts.models import User
+from accounts.enums import RoleChoices
+from profiles.serializers import LandscaperProfileSerializer
+
+class LandscaperSearchByKMAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        q = request.GET.get("q", "").strip()
+        try:
+            user_lat = request.GET.get("lat")
+            user_lng = request.GET.get("lng")
+            km = float(request.GET.get("km", 10))
+            min_rating = float(request.GET.get("min_rating", 0))
+        except ValueError:
+            return Response(
+                {"error": "lat, lng, km, and min_rating must be valid numbers"},
+                status=400
+            )
+
+        landscapers = User.objects.filter(role=RoleChoices.LANDSCAPER)
+
+        # Filter by search query
+        if q:
+            landscapers = landscapers.filter(
+                Q(name__icontains=q) | Q(email__icontains=q)
+            )
+
+        # Filter by min rating
+        if min_rating > 0:
+            landscapers = landscapers.annotate(
+                avg_rating=Avg("received_reviews__rating")  # ✅ correct related_name
+            ).filter(avg_rating__gte=min_rating)
+
+        # Filter by distance if lat/lng provided
+        if user_lat and user_lng:
+            try:
+                user_lat = float(user_lat)
+                user_lng = float(user_lng)
+            except ValueError:
+                return Response(
+                    {"error": "lat and lng must be valid numbers"},
+                    status=400
+                )
+
+            EARTH_RADIUS = 6371  # KM
+            landscapers = landscapers.annotate(
+                distance=EARTH_RADIUS * ACos(
+                    Cos(Radians(user_lat)) *
+                    Cos(Radians(F("latitude"))) *
+                    Cos(Radians(F("longitude")) - Radians(user_lng)) +
+                    Sin(Radians(user_lat)) *
+                    Sin(Radians(F("latitude")))
+                )
+            ).filter(distance__lte=km).order_by("distance")
+
+        # Get profiles
+        profiles = [
+            u.landscaperprofilies
+            for u in landscapers
+            if hasattr(u, "landscaperprofilies")
+        ]
+
+        serializer = LandscaperProfileSerializer(
+            profiles,
+            many=True,
+            context={"request": request}
+        )
+
+        return Response({
+            "count": len(serializer.data),
+            "results": serializer.data
+        })
+
+
+# client search views
+
+from rest_framework_simplejwt.authentication import JWTAuthentication
+
+from rest_framework.permissions import IsAuthenticated
+
+class ClientSearchByKMAPIView(APIView):
+    """
+    Search clients by:
+    - Name/email (q)
+    - Distance from lat/lng within km
+    Always includes 'address', 'latitude', 'longitude' in response
+    """
+    authentication_classes = [JWTAuthentication]  # ✅ use JWT here
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        q = request.GET.get("q", "").strip()
+        lat = request.GET.get("lat")
+        lng = request.GET.get("lng")
+        km = request.GET.get("km", 10)  # default 10 km
+
+        try:
+            km = float(km)
+        except ValueError:
+            return Response({"error": "km must be a valid number"}, status=400)
+
+        clients = User.objects.filter(role="client")
+
+        # Filter by name/email if q provided
+        if q:
+            clients = clients.filter(Q(name__icontains=q) | Q(email__icontains=q))
+    
+
+        # Filter by distance if lat/lng provided
+        if lat and lng:
+            try:
+                lat = float(lat)
+                lng = float(lng)
+            except ValueError:
+                return Response({"error": "lat and lng must be valid numbers"}, status=400)
+
+            # Exclude clients without lat/lng
+            clients = clients.exclude(latitude__isnull=True).exclude(longitude__isnull=True)
+
+            EARTH_RADIUS = 6371  # km
+
+            distance_expr = ExpressionWrapper(
+                EARTH_RADIUS * ACos(
+                    Cos(Radians(lat)) *
+                    Cos(Radians(F("latitude"))) *
+                    Cos(Radians(F("longitude")) - Radians(lng)) +
+                    Sin(Radians(lat)) *
+                    Sin(Radians(F("latitude")))
+                ),
+                output_field=FloatField()
+            )
+
+            clients = clients.annotate(distance=distance_expr)\
+                             .filter(distance__lte=km)\
+                             .order_by("distance")
+
+        # Serialize client profiles manually (include address)
+        results = []
+        for u in clients:
+            profile = getattr(u, "clientprofile", None)
+            results.append({
+                "id": u.id,
+                "name": getattr(u, "username", ""),
+                "email": u.email,
+                "phone": getattr(u, "phone", None),
+                "role": u.role,
+                "address": getattr(u, "address", None),        # ✅ always include address
+                "latitude": float(u.latitude) if u.latitude else None,
+                "longitude": float(u.longitude) if u.longitude else None,
+                "profile": ClientProfileSerializer(profile, context={"request": request}).data if profile else None
+            })
+
+        return Response({
+            "count": len(results),
+            "results": results
+        })
+# user list detaisl
+
+from message.models import ChatThread
+class LandscaperDetailWithChatView(generics.RetrieveAPIView):
+    """
+    Returns detailed landscaper info including:
+    - Services, working hours, reviews
+    - Message info (chat thread id if exists)
+    """
+    serializer_class = LandscaperProfileSerializer
+    permission_classes = [IsAuthenticated]
+    lookup_field = "id"  # send landscaper profile id in URL
+
+    def get_object(self):
+        landscaper_id = self.kwargs.get("id")
+        return get_object_or_404(LandscaperProfilies, id=landscaper_id)
+
+    def get(self, request, *args, **kwargs):
+        landscaper = self.get_object()
+        serializer = self.get_serializer(landscaper, context={"request": request})
+        data = serializer.data
+
+        # Message / chat info
+        client = request.user
+        landscaper_user = landscaper.user
+
+        thread = ChatThread.objects.filter(
+            Q(client=client, landscaper=landscaper_user) |
+            Q(client=landscaper_user, landscaper=client)
+        ).first()
+
+        data["message_info"] = {
+            "can_message": True,  # optionally, add rules like 'only if connected'
+            "thread_id": thread.id if thread else None
+        }
+
+        return Response(data, status=status.HTTP_200_OK)
+
+# client details
+
+class ClientDetailWithChatView(generics.RetrieveAPIView):
+    """
+    Returns detailed client info including:
+    - Services, properties
+    - Message info (chat thread with landscaper if exists)
+    """
+    serializer_class = ClientProfileSerializer
+    permission_classes = [IsAuthenticated]
+    lookup_field = "id"  # provide client profile id in URL
+
+    def get_object(self):
+        client_id = self.kwargs.get("id")
+        return get_object_or_404(ClientProfile, id=client_id)
+
+    def get(self, request, *args, **kwargs):
+        client_profile = self.get_object()
+        serializer = self.get_serializer(client_profile, context={"request": request})
+        data = serializer.data
+
+        # Optional: if logged-in user is a landscaper, check chat thread
+        if request.user.role == "landscaper":
+            landscaper_user = request.user
+            client_user = client_profile.user
+            thread = ChatThread.objects.filter(
+                Q(client=client_user, landscaper=landscaper_user) |
+                Q(client=landscaper_user, landscaper=client_user)
+            ).first()
+            data["message_info"] = {
+                "can_message": True,
+                "thread_id": thread.id if thread else None
+            }
+        else:
+            # client viewing another client (optional)
+            data["message_info"] = None
+
+        return Response(data, status=status.HTTP_200_OK)

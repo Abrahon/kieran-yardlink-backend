@@ -1,4 +1,5 @@
 from django.shortcuts import render
+from rest_framework_simplejwt.tokens import RefreshToken
 
 # Create your views here.
 from urllib.parse import urlencode, unquote
@@ -89,6 +90,55 @@ def get_tokens_for_user(user):
         'access': str(refresh.access_token)
     }
 
+# class LoginView(generics.GenericAPIView):
+#     serializer_class = LoginSerializer
+#     permission_classes = [AllowAny]
+#     parser_classes = (MultiPartParser, FormParser)
+
+#     def post(self, request, *args, **kwargs):
+#         serializer = self.get_serializer(data=request.data)
+#         serializer.is_valid(raise_exception=True)
+#         user = serializer.validated_data['user']
+#         print("user", user)
+
+#         # ---------------------------------------------------------
+#         # 🔥 Check if user is NOT verified
+#         # ---------------------------------------------------------
+#         if not user.is_active:
+#             return Response(
+#                 {"message": "Please verify your email first."},
+#                 status=status.HTTP_400_BAD_REQUEST
+#             )
+
+#         # ---------------------------------------------------------
+#         # 🔥 Login allowed only if email is verified
+#         # ---------------------------------------------------------
+#         tokens = get_tokens_for_user(user)
+#         print("tokens", tokens)
+
+#         return Response({
+#             "message": "Login successful",
+#             "token": tokens,
+#             "user": {
+#                 "id": user.id,
+#                 "email": user.email,
+#                 "name": getattr(user, "name", ""),
+#                 "role": user.role,
+#                 "phone": getattr(user, 'phone', None),
+#                 "address": getattr(user, 'address', None),
+#                 # ✅ Add latitude & longitude
+#                 "latitude": float(user.latitude) if user.latitude else None,
+#                 "longitude": float(user.longitude) if user.longitude else None,
+#             }
+#         }, status=status.HTTP_200_OK)
+
+
+def get_tokens_for_user(user):
+    refresh = RefreshToken.for_user(user)
+    return {
+        'refresh': str(refresh),
+        'access': str(refresh.access_token),
+    }
 
 class LoginView(generics.GenericAPIView):
     serializer_class = LoginSerializer
@@ -125,10 +175,12 @@ class LoginView(generics.GenericAPIView):
                 "name": user.name,
                 "role": user.role,
                 "phone": getattr(user, 'phone', None),      
-                "address": getattr(user, 'address', None),  
+                "address": getattr(user, 'address', None), 
+                # ✅ Add latitude & longitude
+                "latitude": float(user.latitude) if getattr(user, "latitude", None) else None,
+                "longitude": float(user.longitude) if getattr(user, "longitude", None) else None, 
             }
         }, status=status.HTTP_200_OK)
-
 
 
 

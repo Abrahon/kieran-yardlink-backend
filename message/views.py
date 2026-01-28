@@ -128,3 +128,4 @@ class DeleteMultipleConversationsAPIView(APIView):
             status=status.HTTP_200_OK
         )
 
+# user details 

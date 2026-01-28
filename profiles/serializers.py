@@ -6,12 +6,19 @@ from django.utils.translation import gettext as _
 from .models import WorkerProfile
 from rest_framework import serializers
 from .models import ClientProfile
-from services.models import Service
 from property.models import Property
 from rest_framework import serializers
 from .models import ClientProfile
-from services.models import Service
 from property.models import Property
+from reviews.models import LandscaperReview
+from reviews.serializers import LandscaperReviewSerializer
+from rest_framework import serializers
+from django.db.models import Q
+from connections.models import ConnectionRequest
+from landscapers.models import Service
+from django.db.models import Avg
+# from profiles.models import LandscaperProfilies
+
 User = get_user_model()
 
 class AdminProfileSerializer(serializers.ModelSerializer):
@@ -72,92 +79,13 @@ from connections.models import ConnectionRequest
 from django.db.models import Q
 
 
-# class LandscaperProfileSerializer(serializers.ModelSerializer):
-#     user_id = serializers.IntegerField(source="user.id", read_only=True)
-#     email = serializers.EmailField(source="user.email", read_only=True)
-#     image = serializers.ImageField(required=False, allow_null=True)
-#     # already_sent = serializers.SerializerMethodField()  # NEW FIELD
-    
-
-#     # ✅ CORRECT & SIMPLE
-#     business_name = serializers.CharField(
-#         source="user.landscaper_profile.business_name",
-#         read_only=True
-#     )
-
-#     working_hours = serializers.SerializerMethodField()
-#     services = serializers.SerializerMethodField()
-
-#     class Meta:
-#         model = LandscaperProfilies
-#         fields = [
-#             "id",
-#             # "already_sent", 
-#             "user_id",
-#             "email",
-#             "name",
-#             "phone",
-#             "image",
-#             "business_name",
-#             "working_hours",
-#             "services",
-#         ]
-
-#     def to_representation(self, instance):
-#         data = super().to_representation(instance)
-#         data["image"] = instance.image.url if instance.image else None
-#         return data
-#     def get_working_hours(self, obj):
-#         profile = getattr(obj.user, "landscaper_profile", None)
-#         if not profile:
-#             return []
-
-#         return [
-#             {
-#                 "day": h.day,
-#                 "start_time": h.start_time,
-#                 "end_time": h.end_time,
-#             }
-#             for h in profile.working_hours.all().order_by("day")
-#         ]
-#     def get_services(self, obj):
-#         services = Service.objects.filter(landscaper=obj.user)
-#         return [
-#             {
-#                 "id": s.id,
-#                 "category": s.category,
-#                 "standard_services": s.standard_services,
-#                 "custom_service": s.custom_service,
-#                 "description": s.description,
-#                 "price": float(s.price),
-#                 "per_square_feet": float(s.per_square_feet),
-#                 "latitude": float(s.latitude),
-#                 "longitude": float(s.longitude),
-#                 "add_ons": s.add_ons,
-#             }
-#             for s in services
-#         ]
-#     # def get_already_sent(self, obj):
-#     #         """
-#     #         Returns True if a request already exists between sender and receiver.
-#     #         Includes all statuses: pending, accepted, rejected.
-#     #         """
-#     #         exists = ConnectionRequest.objects.filter(
-#     #             Q(sender=obj.sender, receiver=obj.receiver) |
-#     #             Q(sender=obj.receiver, receiver=obj.sender)
-#     #         ).exists()
-#     #         return exists
-from rest_framework import serializers
-from django.db.models import Q
-from connections.models import ConnectionRequest
-from landscapers.models import Service
-from profiles.models import LandscaperProfilies
-
 
 class LandscaperProfileSerializer(serializers.ModelSerializer):
     user_id = serializers.IntegerField(source="user.id", read_only=True)
     email = serializers.EmailField(source="user.email", read_only=True)
     image = serializers.ImageField(required=False, allow_null=True)
+    latitude = serializers.DecimalField(source="user.latitude", max_digits=20, decimal_places=14, read_only=True)
+    longitude = serializers.DecimalField(source="user.longitude", max_digits=20, decimal_places=14, read_only=True)
    
 
 
@@ -168,8 +96,11 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
 
     working_hours = serializers.SerializerMethodField()
     services = serializers.SerializerMethodField()
-    already_sent = serializers.SerializerMethodField()  # ✅ ADD THIS
+    already_sent = serializers.SerializerMethodField() 
     connection_request_id = serializers.SerializerMethodField()
+    average_rating = serializers.SerializerMethodField()
+    total_reviews = serializers.SerializerMethodField()
+    reviews = serializers.SerializerMethodField()  # optional: full review list
 
     class Meta:
         model = LandscaperProfilies
@@ -179,12 +110,17 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
             "email",
             "name",
             "phone",
+            "latitude",
+            "longitude",
             "image",
             "business_name",
             "working_hours",
             "services",
             "already_sent",
             "connection_request_id",
+            "average_rating",
+            "total_reviews",
+            "reviews",
         ]
 
     def to_representation(self, instance):
@@ -252,20 +188,41 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
             Q(sender=obj.user, receiver=request.user)
         ).exists()
 
+    # reviews
+    def get_average_rating(self, obj):
+        avg = LandscaperReview.objects.filter(
+            landscaper=obj.user
+        ).aggregate(avg=Avg("rating"))["avg"] or 0
+        return round(avg, 1)
+
+    def get_total_reviews(self, obj):
+        return LandscaperReview.objects.filter(
+            landscaper=obj.user
+        ).count()
+
+    def get_reviews(self, obj):
+        reviews = LandscaperReview.objects.filter(
+            landscaper=obj.user
+        ).select_related("client").order_by("-created_at")
+        return LandscaperReviewSerializer(reviews, many=True).data
+
+
+
 # serializers.py
-
-
 class ClientProfileSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(read_only=True)
     user_id = serializers.IntegerField(source="user.id", read_only=True)
     email = serializers.EmailField(source="user.email", read_only=True)
     image = serializers.ImageField(required=False, allow_null=True)
+    latitude = serializers.DecimalField(source="user.latitude", max_digits=20, decimal_places=14, read_only=True)
+    longitude = serializers.DecimalField(source="user.longitude", max_digits=20, decimal_places=14, read_only=True)
 
     services = serializers.SerializerMethodField()
     properties = serializers.SerializerMethodField()
     total_service_price = serializers.SerializerMethodField()
     already_sent = serializers.SerializerMethodField()  # ✅ ADD THIS
     connection_request_id = serializers.SerializerMethodField()
+  
 
 
     class Meta:
@@ -276,6 +233,8 @@ class ClientProfileSerializer(serializers.ModelSerializer):
             "email",
             "name",
             "phone",
+            "latitude",
+            "longitude",
             "image",
             "services",
             "total_service_price",
@@ -330,7 +289,7 @@ class ClientProfileSerializer(serializers.ModelSerializer):
                 Q(sender=request.user, receiver=obj.user) |
                 Q(sender=obj.user, receiver=request.user)
             ).exists()
-            
+
     def get_connection_request_id(self, obj):
             
         request = self.context.get("request")

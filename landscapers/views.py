@@ -24,21 +24,23 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework import generics, permissions
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from .models import Service
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from django.db.models import F, Avg
+from django.db.models.functions import ACos, Cos, Sin, Radians
+from django.db.models import Q
 
-    
-from rest_framework import generics, permissions
+from accounts.models import User
+from accounts.enums import RoleChoices
+from profiles.models import LandscaperProfilies
+from reviews.models import LandscaperReview
+from connections.models import ConnectionRequest
+from profiles.serializers import LandscaperProfileSerializer
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from .models import LandscaperProfile
-from subscriptions.models import Subscription
-
-from rest_framework import generics, permissions
-from rest_framework.exceptions import PermissionDenied, ValidationError
-from .models import LandscaperProfile
-from subscriptions.models import Subscription
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework import generics, permissions
-from rest_framework.exceptions import PermissionDenied, ValidationError
-from .models import LandscaperProfile
 
 
 class CompleteLandscaperProfileView(generics.CreateAPIView):
@@ -269,56 +271,5 @@ class WorkingHoursListCreateView(generics.ListCreateAPIView):
                 "errors": errors
             },
             status=status.HTTP_201_CREATED if created_hours else status.HTTP_400_BAD_REQUEST
-        )
-# search by kim
-class LandscaperSearchByKMAPIView(APIView):
-    permission_classes = [IsAuthenticated]
 
-    def get(self, request):
-        try:
-            user_lat = float(request.GET.get("lat"))
-            user_lng = float(request.GET.get("lng"))
-            km = float(request.GET.get("km", 10))
-        except (TypeError, ValueError):
-            return Response(
-                {"error": "lat, lng and km must be valid numbers"},
-                status=400
-            )
-
-        EARTH_RADIUS = 6371  # KM
-
-        landscapers = (
-            User.objects
-            .filter(
-                role=RoleChoices.LANDSCAPER,
-                latitude__isnull=False,
-                longitude__isnull=False,
-                landscaperprofilies__isnull=False  # ✅ DB-level filter
-            )
-            .annotate(
-                distance=EARTH_RADIUS * ACos(
-                    Cos(Radians(user_lat)) *
-                    Cos(Radians(F("latitude"))) *
-                    Cos(Radians(F("longitude")) - Radians(user_lng)) +
-                    Sin(Radians(user_lat)) *
-                    Sin(Radians(F("latitude")))
-                )
-            )
-            .filter(distance__lte=km)
-            .order_by("distance")
-            .select_related("landscaperprofilies")
-        )
-
-        profiles = [u.landscaperprofilies for u in landscapers]
-
-        serializer = LandscaperProfileSerializer(
-            profiles,
-            many=True,
-            context={"request": request}
-        )
-
-        return Response({
-            "count": len(serializer.data),  # ✅ accurate
-            "km": km,
-            "results": serializer.data
-        })
+      )

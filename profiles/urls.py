@@ -32,7 +32,11 @@ from .views import (
     ProLandScaperProfileView,
     ChangePasswordAPIView,
     AllLandscapersListView,
-    ClientProfileListView
+    ClientProfileListView,
+    LandscaperSearchByKMAPIView,
+    ClientSearchByKMAPIView,
+    LandscaperDetailWithChatView,
+    ClientDetailWithChatView
 )
 
 urlpatterns = [
@@ -51,6 +55,12 @@ urlpatterns = [
     path("change-password/", ChangePasswordAPIView.as_view(), name="change-password"),  # generic endpoint
 
     # -------------------- Lists -------------------- #
-     path("landscapers-list/", AllLandscapersListView.as_view()),
+    path("landscapers-list/", AllLandscapersListView.as_view()),
     path("clients-list/", ClientProfileListView.as_view(), name="client-list"),
+    path("landscapers/search/", LandscaperSearchByKMAPIView.as_view()),
+    path("clients/search/", ClientSearchByKMAPIView.as_view()),
+    # user details
+    path("landscaper/profile/<int:id>/", LandscaperDetailWithChatView.as_view(), name="landscaper_detail_chat"),
+    path("client/profile/<int:id>/", ClientDetailWithChatView.as_view(), name="client_detail_chat"),
+
 ]

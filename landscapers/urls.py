@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import CompleteLandscaperProfileView,GetLandscaperProfileView,LandscaperFind,WorkingHoursListCreateView,CreateServiceView,ListServicesView,UpdateLandscaperProfileView,LandscaperSearchByKMAPIView
+from .views import CompleteLandscaperProfileView,GetLandscaperProfileView,LandscaperFind,WorkingHoursListCreateView,CreateServiceView,ListServicesView,UpdateLandscaperProfileView
 
 
 urlpatterns = [
@@ -14,5 +14,5 @@ urlpatterns = [
     path("services/", ListServicesView.as_view(), name="list-services"),
     path("landscapers/search/", LandscaperFind.as_view(), name="landscaper-search"),
     path('working-hours/', WorkingHoursListCreateView.as_view(), name='working-hours'),
-    path("landscapers/search/", LandscaperSearchByKMAPIView.as_view()),
+  
 ]
