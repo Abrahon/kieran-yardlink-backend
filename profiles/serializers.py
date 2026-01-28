@@ -18,8 +18,11 @@ from connections.models import ConnectionRequest
 from landscapers.models import Service
 from django.db.models import Avg
 # from profiles.models import LandscaperProfilies
-
+from landscapers.models import WorkingHours, LandscaperProfile, Service
+from connections.models import ConnectionRequest
+from django.db.models import Q
 User = get_user_model()
+
 
 class AdminProfileSerializer(serializers.ModelSerializer):
     # Read-only fields from User model
@@ -74,15 +77,13 @@ class WorkerProfileSerializer(serializers.ModelSerializer):
 
 
 
-from landscapers.models import WorkingHours, LandscaperProfile, Service
-from connections.models import ConnectionRequest
-from django.db.models import Q
-
 
 
 class LandscaperProfileSerializer(serializers.ModelSerializer):
     user_id = serializers.IntegerField(source="user.id", read_only=True)
+    name = serializers.CharField(source="user.name", read_only=True)
     email = serializers.EmailField(source="user.email", read_only=True)
+    phone = serializers.CharField(source="user.phone", read_only=True)
     image = serializers.ImageField(required=False, allow_null=True)
     latitude = serializers.DecimalField(source="user.latitude", max_digits=20, decimal_places=14, read_only=True)
     longitude = serializers.DecimalField(source="user.longitude", max_digits=20, decimal_places=14, read_only=True)
@@ -208,11 +209,13 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
 
 
 
-# serializers.py
+# serializers.py for client
 class ClientProfileSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(read_only=True)
     user_id = serializers.IntegerField(source="user.id", read_only=True)
+    name = serializers.CharField(source="user.name", read_only=True)
     email = serializers.EmailField(source="user.email", read_only=True)
+    phone = serializers.CharField(source="user.phone", read_only=True)
     image = serializers.ImageField(required=False, allow_null=True)
     latitude = serializers.DecimalField(source="user.latitude", max_digits=20, decimal_places=14, read_only=True)
     longitude = serializers.DecimalField(source="user.longitude", max_digits=20, decimal_places=14, read_only=True)
@@ -220,7 +223,7 @@ class ClientProfileSerializer(serializers.ModelSerializer):
     services = serializers.SerializerMethodField()
     properties = serializers.SerializerMethodField()
     total_service_price = serializers.SerializerMethodField()
-    already_sent = serializers.SerializerMethodField()  # ✅ ADD THIS
+    already_sent = serializers.SerializerMethodField()  
     connection_request_id = serializers.SerializerMethodField()
   
 
@@ -342,7 +345,8 @@ class ChangePasswordSerializer(serializers.Serializer):
         user.set_password(self.validated_data['new_password'])
         user.save()
         return user
-    
+
+
 # profiles/serializers.py
 from rest_framework import serializers
 from profiles.models import LandscaperProfilies
@@ -352,5 +356,5 @@ class ConnectedUserSerializer(serializers.Serializer):
     Serializer to return a connected user's profile and connection id.
     """
     connection_id = serializers.IntegerField()
-    connected_profile = serializers.DictField()  # serialized profile data
+    connected_profile = serializers.DictField()  
     created_at = serializers.DateTimeField()

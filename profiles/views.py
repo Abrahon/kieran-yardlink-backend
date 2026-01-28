@@ -508,9 +508,9 @@ class ClientSearchByKMAPIView(APIView):
             "count": len(results),
             "results": results
         })
-# user list detaisl
 
-from message.models import ChatThread
+
+# user list detaisl
 class LandscaperDetailWithChatView(generics.RetrieveAPIView):
     """
     Returns detailed landscaper info including:
@@ -519,7 +519,7 @@ class LandscaperDetailWithChatView(generics.RetrieveAPIView):
     """
     serializer_class = LandscaperProfileSerializer
     permission_classes = [IsAuthenticated]
-    lookup_field = "id"  # send landscaper profile id in URL
+    lookup_field = "id"  
 
     def get_object(self):
         landscaper_id = self.kwargs.get("id")
@@ -540,14 +540,15 @@ class LandscaperDetailWithChatView(generics.RetrieveAPIView):
         ).first()
 
         data["message_info"] = {
-            "can_message": True,  # optionally, add rules like 'only if connected'
+            "can_message": True, 
             "thread_id": thread.id if thread else None
         }
 
         return Response(data, status=status.HTTP_200_OK)
 
-# client details
 
+
+# client details
 class ClientDetailWithChatView(generics.RetrieveAPIView):
     """
     Returns detailed client info including:
