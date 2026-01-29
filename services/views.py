@@ -65,28 +65,6 @@ class ClientServicePreferenceAPIView(generics.RetrieveUpdateAPIView):
   
         return ClientServicePreferenceWriteSerializer
 
-# ---------------- Client Service Overview ----------------
-# class ClientServiceOverviewAPIView(APIView):
-#     permission_classes = [IsAuthenticated]
-
-#     def get(self, request):
-#         client = ClientProfile.objects.get(user=request.user)
-#         preference, _ = ClientServicePreference.objects.get_or_create(client=client)
-#         serializer = ClientServicePreferenceReadSerializer(preference)
-
-#         return Response({
-#             "service_overview": serializer.data,
-#             "next_schedule": {
-#                 "day": "Saturday",
-#                 "time": "10:00 AM"
-#             },
-#             "previous_job": {
-#                 "status": "completed",
-#                 "total": serializer.data["total_price"]
-#             },
-#             "payment_status": "pending"
-#         })
-
 
 
 class ClientServiceOverviewAPIView(APIView):

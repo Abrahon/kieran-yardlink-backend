@@ -3,6 +3,7 @@
 from django.db import models
 from landscapers.models import LandscaperProfile
 from profiles.models import ClientProfile
+from cloudinary.models import CloudinaryField
 
 class Service(models.Model):
     landscaper = models.ForeignKey(
@@ -18,6 +19,7 @@ class Service(models.Model):
     price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     square_feet = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     is_standard = models.BooleanField(default=False)
+    image = CloudinaryField("worker_profile", blank=True, null=True) 
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -27,6 +29,14 @@ class Service(models.Model):
     def __str__(self):
         return self.name
 
+
+class ServiceImage(models.Model):
+    service = models.ForeignKey(Service, on_delete=models.CASCADE, related_name="images")
+    image = CloudinaryField("service-images", blank=True, null=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.service.name} Image"
 
 
 # from profiles.models import ClientProfile

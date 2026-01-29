@@ -33,7 +33,7 @@ urlpatterns = [
     path("api/", include("invitations.urls")),
     path("accept-invite/<uuid:token>/", accept_invite_page, name="accept-invite-page"),
     path("api/", include("connections.urls")),
-    # path("api/", include("jobs.urls")),
+    path("api/", include("jobs.urls")),
     path("api/qr/", include("qr.urls")),
     path("api/", include("reviews.urls")),
 ]

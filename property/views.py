@@ -59,6 +59,8 @@ class PropertyMultipleImageUploadView(APIView):
             },
             status=status.HTTP_200_OK
         )
+
+
 class PropertyImagesListView(APIView):
     permission_classes = [IsAuthenticated]
 

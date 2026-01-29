@@ -1,6 +1,6 @@
 from django.shortcuts import render
 from rest_framework_simplejwt.tokens import RefreshToken
-
+from django.contrib.auth.hashers import check_password
 # Create your views here.
 from urllib.parse import urlencode, unquote
 from .serializers import UserSerializer
@@ -569,17 +569,44 @@ class UserListView(APIView):
 
 
 # delete user for admin views 
+
+
+
+
+
 class AdminDeleteUserView(generics.DestroyAPIView):
     """
-    Admin can delete any user by ID safely.
+    Admin can delete any user by ID.
+    Users can delete their own account by confirming their password.
     Only superusers can delete other superusers.
     """
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAuthenticated]
     queryset = User.objects.all()
     lookup_field = "id"
 
     def delete(self, request, *args, **kwargs):
         user_to_delete = self.get_object()
+
+        # Check if the user is deleting their own account
+        if request.user == user_to_delete:
+            password = request.data.get("password")
+            if not password:
+                return Response(
+                    {"detail": "Password is required to delete your account."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if not check_password(password, user_to_delete.password):
+                return Response(
+                    {"detail": "Incorrect password."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        # Admin deletion rules
+        elif not request.user.is_staff:
+            return Response(
+                {"detail": "You do not have permission to delete this user."},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
         # Only superuser can delete another superuser
         if user_to_delete.is_superuser and not request.user.is_superuser:
@@ -588,7 +615,6 @@ class AdminDeleteUserView(generics.DestroyAPIView):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        # Delete the user
         email = user_to_delete.email
         user_to_delete.delete()
 
@@ -596,6 +622,7 @@ class AdminDeleteUserView(generics.DestroyAPIView):
             {"detail": f"User {email} deleted successfully."},
             status=status.HTTP_200_OK
         )
+
 
 # user puse 
 
