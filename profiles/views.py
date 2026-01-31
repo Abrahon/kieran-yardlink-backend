@@ -137,7 +137,6 @@ class ProLandscaperWorkersView(generics.ListAPIView):
 # prolandscaer profile views
 
 # prolandscaer profile views
-from profiles.models import LandscaperProfilies
 
 class ProLandScaperProfileView(generics.RetrieveUpdateAPIView):
     serializer_class = LandscaperProfileSerializer
@@ -145,13 +144,8 @@ class ProLandScaperProfileView(generics.RetrieveUpdateAPIView):
     parser_classes = [MultiPartParser, FormParser]
 
     def get_object(self):
-        profile, created = LandscaperProfilies.objects.get_or_create(
-            user=self.request.user
-        )
+        profile, _ = LandscaperProfilies.objects.get_or_create(user=self.request.user)
         return profile
-
-
-
 
 
 

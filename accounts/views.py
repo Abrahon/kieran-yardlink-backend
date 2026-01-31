@@ -33,6 +33,55 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 
 # signup views 
+# class SignupView(generics.GenericAPIView):
+#     serializer_class = SignupSerializer
+#     permission_classes = [AllowAny]
+#     parser_classes = (MultiPartParser, FormParser)
+
+#     def post(self, request):
+#         serializer = self.get_serializer(data=request.data)
+#         serializer.is_valid(raise_exception=True)
+
+#         data = serializer.validated_data
+#         email = data["email"]
+
+#         if User.objects.filter(email=email).exists():
+#             return Response(
+#                 {"detail": "User with this email already exists."},
+#                 status=400
+#             )
+
+#         # ✅ STORE SESSION
+#         request.session["pending_user"] = {
+#             "email": email,
+#             "name": data["name"],
+#             "password": data["password"],
+#             "phone": data.get("phone"),
+#             "address": data.get("address"),
+#             "role": data["role"],
+#         }
+#         request.session.modified = True
+
+#         # ✅ EMAIL-BASED OTP
+#         OTP.objects.filter(email=email).delete()
+
+#         otp_code = generate_otp()
+#         OTP.objects.create(email=email, code=otp_code)
+
+#         send_otp_email(email, otp_code, data["name"])
+
+#         return Response(
+#             {"detail": "Verification OTP sent to email."},
+#             status=200
+#         )
+
+# from rest_framework import generics
+# from rest_framework import generics
+# from rest_framework.permissions import AllowAny
+# from rest_framework.parsers import MultiPartParser, FormParser
+# from rest_framework.response import Response
+
+
 class SignupView(generics.GenericAPIView):
     serializer_class = SignupSerializer
     permission_classes = [AllowAny]
@@ -41,40 +90,33 @@ class SignupView(generics.GenericAPIView):
     def post(self, request):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-
         data = serializer.validated_data
         email = data["email"]
 
-        if User.objects.filter(email=email).exists():
-            return Response(
-                {"detail": "User with this email already exists."},
-                status=400
-            )
-
-        # ✅ STORE SESSION
         request.session["pending_user"] = {
             "email": email,
             "name": data["name"],
-            "password": data["password"],
-            "phone": data.get("phone"),
-            "address": data.get("address"),
+            "password": data["password"],  # OK (string)
+            "phone": data.get("phone", ""),
+            "address": data.get("address", ""),
+            "latitude": str(data["latitude"]) if data.get("latitude") is not None else None,
+            "longitude": str(data["longitude"]) if data.get("longitude") is not None else None,
             "role": data["role"],
         }
+
         request.session.modified = True
 
-        # ✅ EMAIL-BASED OTP
+        # OTP handling
         OTP.objects.filter(email=email).delete()
-
         otp_code = generate_otp()
         OTP.objects.create(email=email, code=otp_code)
 
         send_otp_email(email, otp_code, data["name"])
 
         return Response(
-            {"detail": "Verification OTP sent to email."},
+            {"detail": f"Verification OTP sent to {data['role']} email."},
             status=200
         )
-
 
 def get_tokens_for_user(user):
     refresh = RefreshToken.for_user(user)
@@ -334,7 +376,6 @@ class ResendForgotOTPView(generics.GenericAPIView):
 #             status=200
 #         )
 
-
 class VerifyOTPView(APIView):
     permission_classes = [AllowAny]
 
@@ -356,22 +397,21 @@ class VerifyOTPView(APIView):
                 status=400
             )
 
-        # ✅ CREATE USER
+        # ✅ CREATE USER with correct role from session
         user = User.objects.create_user(
             email=pending_user["email"],
             name=pending_user["name"],
             password=pending_user["password"],
             phone=pending_user.get("phone"),
             address=pending_user.get("address"),
-            role="user"   
+            role=pending_user["role"]   # <-- fixed
         )
-
 
         # cleanup
         OTP.objects.filter(email=email).delete()
         request.session.flush()
 
-        # ✅ GENERATE TOKENS (CORRECT PLACE)
+        # ✅ GENERATE TOKENS
         refresh = RefreshToken.for_user(user)
 
         return Response({
@@ -380,7 +420,7 @@ class VerifyOTPView(APIView):
             "user": {
                 "id": user.id,
                 "email": user.email,
-                "role": user.role
+                "role": user.role   # now correctly shows "client", "landscaper", etc.
             }
         }, status=201)
 
@@ -623,6 +663,38 @@ class AdminDeleteUserView(generics.DestroyAPIView):
             status=status.HTTP_200_OK
         )
 
+
+
+class SelfDeleteUserView(generics.DestroyAPIView):
+    """
+    Authenticated user can delete their own account
+    by providing their password.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, *args, **kwargs):
+        user = request.user
+        password = request.data.get("password")
+
+        if not password:
+            return Response(
+                {"detail": "Password is required to delete your account."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not check_password(password, user.password):
+            return Response(
+                {"detail": "Incorrect password."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        email = user.email
+        user.delete()
+
+        return Response(
+            {"detail": f"Account {email} deleted successfully."},
+            status=status.HTTP_200_OK
+        )
 
 # user puse 
 

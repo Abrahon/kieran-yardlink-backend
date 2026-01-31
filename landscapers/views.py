@@ -43,6 +43,7 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework import generics, permissions
 
 
+# views.py
 class CompleteLandscaperProfileView(generics.CreateAPIView):
     serializer_class = BusinessLandscaperProfileSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -56,14 +57,11 @@ class CompleteLandscaperProfileView(generics.CreateAPIView):
         if hasattr(user, "landscaper_profile"):
             raise ValidationError("Profile already exists.")
 
-        # Get uploaded file from request
-        profile_file = self.request.FILES.get("profile")
+        # Pass user via serializer context instead of invalid 'profile' kwarg
+        serializer.context["user"] = user
 
-        serializer.save(
-            user=user,
-            is_profile_completed=True,
-            profile=profile_file
-        )
+        serializer.save()
+
 
 # update views
 class UpdateLandscaperProfileView(generics.UpdateAPIView):
@@ -183,7 +181,6 @@ class LandscaperFind(generics.ListAPIView):
 
 
 # working houser set
-
 class WorkingHoursListCreateView(generics.ListCreateAPIView):
     serializer_class = WorkingHoursSerializer
     permission_classes = [IsAuthenticated, IsLandscaper]

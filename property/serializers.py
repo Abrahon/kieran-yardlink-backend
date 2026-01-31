@@ -22,4 +22,3 @@ class PropertySerializer(serializers.ModelSerializer):
             "notes",
             "created_at",
         ]
-

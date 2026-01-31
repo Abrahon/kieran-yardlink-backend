@@ -27,7 +27,6 @@ urlpatterns = [
     ),
 
 
-
     # path(
     #     "payments/history/",
     #     views.user_payment_history,

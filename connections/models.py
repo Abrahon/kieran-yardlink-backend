@@ -15,6 +15,15 @@ class ConnectionRequest(models.Model):
         on_delete=models.CASCADE,
         related_name="received_requests"
     )
+      
+    schedule = models.OneToOneField(
+        "services.ServiceSchedule",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="connection"
+    )
+
 
     is_accepted = models.BooleanField(null=True)
       

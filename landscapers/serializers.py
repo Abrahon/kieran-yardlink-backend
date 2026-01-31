@@ -37,7 +37,10 @@ from .models import LandscaperProfile
 from rest_framework import serializers
 from .models import LandscaperProfile
 
+# serializers.py
 class BusinessLandscaperProfileSerializer(serializers.ModelSerializer):
+    profile_image = serializers.ImageField(required=False)  # make writable
+
     class Meta:
         model = LandscaperProfile
         fields = [
@@ -49,10 +52,24 @@ class BusinessLandscaperProfileSerializer(serializers.ModelSerializer):
             "profile_image",
         ]
 
+    def create(self, validated_data):
+        # user will come from view
+        user = self.context["user"]  # pass via context
+        profile_file = validated_data.pop("profile_image", None)
+
+        instance = LandscaperProfile.objects.create(user=user, **validated_data)
+
+        if profile_file:
+            instance.profile_image = profile_file
+            instance.save()
+
+        return instance
+
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data["profile_image"] = instance.profile_image.url if instance.profile_image else None
         return data
+
 
 
 import json

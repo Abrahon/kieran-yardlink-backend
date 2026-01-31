@@ -1,140 +1,4 @@
-# # connections/serializers.py
-# # connections/serializers.py
-# from rest_framework import serializers
-# from .models import ConnectionRequest
-# from profiles.serializers import ClientProfileSerializer
-# from landscapers.serializers import LandscaperProfileSerializer
-# from accounts.models import User
-# from connections.serializers import ConnectedUserSerializer
 
-
-# # class ConnectionRequestSerializer(serializers.ModelSerializer):
-# #     sender_profile = serializers.SerializerMethodField()
-# #     receiver_profile = serializers.SerializerMethodField()
-
-# #     class Meta:
-# #         model = ConnectionRequest
-# #         fields = [
-# #             "id",
-# #             "is_accepted",
-# #             "created_at",
-# #             "sender_profile",
-# #             "receiver_profile",
-# #         ]
-
-# #     def get_sender_profile(self, obj):
-# #         user = obj.sender
-# #         if hasattr(user, "clientprofile"):
-# #             return ClientProfileSerializer(user.clientprofile).data
-# #         if hasattr(user, "landscaperprofilies"):
-# #             return LandscaperProfileSerializer(user.landscaperprofilies).data
-# #         return None
-
-# #     def get_receiver_profile(self, obj):
-# #         user = obj.receiver
-# #         if hasattr(user, "clientprofile"):
-# #             return ClientProfileSerializer(user.clientprofile).data
-# #         if hasattr(user, "landscaperprofilies"):
-# #             return LandscaperProfileSerializer(user.landscaperprofilies).data
-# #         return None
-# from rest_framework import serializers
-# from .models import ConnectionRequest
-# from profiles.serializers import ClientProfileSerializer
-# from landscapers.serializers import LandscaperProfileSerializer
-
-
-# class ConnectionRequestDetailSerializer(serializers.ModelSerializer):
-#     sender_profile = serializers.SerializerMethodField()
-#     receiver_profile = serializers.SerializerMethodField()
-
-#     class Meta:
-#         model = ConnectionRequest
-#         fields = [
-#             "id",
-#             "is_accepted",
-#             "created_at",
-#             "sender_profile",
-#             "receiver_profile",
-#         ]
-
-#     def _build_profile(self, user):
-#         # CLIENT
-#         if hasattr(user, "clientprofile"):
-#             data = ClientProfileSerializer(
-#                 user.clientprofile,
-#                 context=self.context
-#             ).data
-#             data["type"] = "client"
-#             return data
-
-#         # LANDSCAPER
-#         if hasattr(user, "landscaperprofilies"):
-#             data = LandscaperProfileSerializer(
-#                 user.landscaperprofilies,
-#                 context=self.context
-#             ).data
-#             data["type"] = "landscaper"
-#             return data
-
-#         return None
-
-#     def get_sender_profile(self, obj):
-#         return self._build_profile(obj.sender)
-
-#     def get_receiver_profile(self, obj):
-#         return self._build_profile(obj.receiver)
-
-        
-# class SendConnectionRequestSerializer(serializers.Serializer):
-#     receiver_id = serializers.IntegerField()
-
-#     def validate_receiver_id(self, value):
-#         request_user = self.context["request"].user
-
-#         try:
-#             receiver = User.objects.get(id=value)
-#         except User.DoesNotExist:
-#             raise serializers.ValidationError("User not found.")
-
-#         if receiver == request_user:
-#             raise serializers.ValidationError("You cannot send request to yourself.")
-
-#         # Prevent duplicates (both directions)
-#         if ConnectionRequest.objects.filter(
-#             sender=request_user,
-#             receiver=receiver
-#         ).exists() or ConnectionRequest.objects.filter(
-#             sender=receiver,
-#             receiver=request_user
-#         ).exists():
-#             raise serializers.ValidationError("Connection already exists.")
-
-#         return value
-
-        
-
-# class RespondConnectionRequestSerializer(serializers.Serializer):
-#     action = serializers.ChoiceField(choices=["accept", "reject"])
-
-#     def update(self, instance, validated_data):
-#         instance.is_accepted = validated_data["action"] == "accept"
-#         instance.save(update_fields=["is_accepted"])
-#         return instance
-
-
-# class UserMiniSerializer(serializers.ModelSerializer):
-#     class Meta:
-#         model = User
-#         fields = ["id", "name", "email", "role"]
-
-
-# class AcceptedConnectionSerializer(serializers.ModelSerializer):
-#     sender = UserMiniSerializer(read_only=True)
-#     receiver = UserMiniSerializer(read_only=True)
-
-#     class Meta:
-#         model = ConnectionRequest
-#         fields = ["id", "sender", "receiver", "created_at"]
 
 # connections/serializers.py
 from rest_framework import serializers
@@ -142,6 +6,14 @@ from .models import ConnectionRequest
 from profiles.serializers import ClientProfileSerializer
 from landscapers.serializers import BusinessLandscaperProfileSerializer
 from accounts.models import User
+from rest_framework import serializers
+from services.models import ServiceSchedule
+from profiles.models import LandscaperProfilies
+from rest_framework import serializers
+from profiles.models import LandscaperProfilies, ClientProfile
+from connections.models import ConnectionRequest
+from profiles.serializers import LandscaperProfileSerializer, ClientProfileSerializer
+from django.db.models import Q
 
 
 class UserMiniSerializer(serializers.ModelSerializer):
@@ -154,119 +26,18 @@ class UserMiniSerializer(serializers.ModelSerializer):
 
 
 
-
-# class ConnectionRequestDetailSerializer(serializers.ModelSerializer):
-#     sender_profile = serializers.SerializerMethodField()
-#     receiver_profile = serializers.SerializerMethodField()
-#     is_accepted = serializers.SerializerMethodField()  # override to convert null → false
-
-#     class Meta:
-#         model = ConnectionRequest
-#         fields = ['id', 'is_accepted', 'created_at', 'sender_profile', 'receiver_profile']
-
-#     def get_is_accepted(self, obj):
-#         """
-#         Convert None (pending) → False for API responses
-#         """
-#         return bool(obj.is_accepted)
-
-#     def _get_profile(self, user):
-#         """
-#         Return only necessary profile info depending on user type.
-#         """
-#         # Check if user is a landscaper
-#         try:
-#             profile = LandscaperProfilies.objects.get(user=user)
-#             data = LandscaperProfileSerializer(profile).data
-#             data["type"] = "landscaper"
-#             return data
-#         except LandscaperProfilies.DoesNotExist:
-#             pass
-
-#         # Check if user is a client
-#         try:
-#             profile = ClientProfile.objects.get(user=user)
-#             data = ClientProfileSerializer(profile).data
-#             data["type"] = "client"
-#             return data
-#         except ClientProfile.DoesNotExist:
-#             pass
-
-#         # Fallback minimal info
-#         return {"user_id": user.id, "email": user.email, "type": "unknown"}
-
-#     def get_sender_profile(self, obj):
-#         return self._get_profile(obj.sender)
-
-#     def get_receiver_profile(self, obj):
-#         return self._get_profile(obj.receiver)
-
-# from rest_framework import serializers
-# from profiles.models import LandscaperProfilies, ClientProfile
-# from connections.models import ConnectionRequest
-# from profiles.serializers import LandscaperProfileSerializer, ClientProfileSerializer
-
-
-# class ConnectionRequestDetailSerializer(serializers.ModelSerializer):
-#     sender_profile = serializers.SerializerMethodField()
-#     receiver_profile = serializers.SerializerMethodField()
-#     is_accepted = serializers.SerializerMethodField()  # override to convert null → false
-
-#     class Meta:
-#         model = ConnectionRequest
-#         fields = ['id', 'is_accepted', 'created_at', 'sender_profile', 'receiver_profile']
-
-#     def get_is_accepted(self, obj):
-#         """
-#         Convert None (pending) → False for API responses
-#         """
-#         return bool(obj.is_accepted)
-
-#     def _get_profile(self, user):
-#         """
-#         Return only necessary profile info depending on user type.
-#         """
-#         # Check if user is a landscaper
-#         try:
-#             profile = LandscaperProfilies.objects.get(user=user)
-#             data = LandscaperProfileSerializer(profile).data
-#             data["type"] = "landscaper"
-#             return data
-#         except LandscaperProfilies.DoesNotExist:
-#             pass
-
-#         # Check if user is a client
-#         try:
-#             profile = ClientProfile.objects.get(user=user)
-#             data = ClientProfileSerializer(profile).data
-#             data["type"] = "client"
-#             return data
-#         except ClientProfile.DoesNotExist:
-#             pass
-
-#         # Fallback minimal info
-#         return {"user_id": user.id, "email": user.email, "type": "unknown"}
-
-#     def get_sender_profile(self, obj):
-#         return self._get_profile(obj.sender)
-
-#     def get_receiver_profile(self, obj):
-#         return self._get_profile(obj.receiver)
-from rest_framework import serializers
-from profiles.models import LandscaperProfilies, ClientProfile
-from connections.models import ConnectionRequest
-from profiles.serializers import LandscaperProfileSerializer, ClientProfileSerializer
-from django.db.models import Q
-
 class ConnectionRequestDetailSerializer(serializers.ModelSerializer):
     sender_profile = serializers.SerializerMethodField()
     receiver_profile = serializers.SerializerMethodField()
     is_accepted = serializers.SerializerMethodField()  # override to convert null → false
     already_sent = serializers.SerializerMethodField()  # NEW FIELD
+    scheduled_job = serializers.SerializerMethodField()
+
 
     class Meta:
         model = ConnectionRequest
-        fields = ['id', 'is_accepted', 'created_at', 'sender_profile', 'receiver_profile', 'already_sent']
+        fields = ['id', 'is_accepted', 'created_at', 'sender_profile', 'receiver_profile', 'already_sent', 'scheduled_job']
+
 
     def get_is_accepted(self, obj):
         """
@@ -304,6 +75,29 @@ class ConnectionRequestDetailSerializer(serializers.ModelSerializer):
 
     def get_receiver_profile(self, obj):
         return self._get_profile(obj.receiver)
+    
+    def get_scheduled_job(self, obj):
+
+        if not obj.is_accepted:
+            return None
+        # Determine landscaper vs client
+        landscaper = obj.receiver if hasattr(obj.receiver, 'landscaper_profile') else obj.sender
+        client = obj.sender if hasattr(obj.sender, 'clientprofile') else obj.receiver
+        schedule = ServiceSchedule.objects.filter(
+            landscaper=landscaper.landscaper_profile,
+            client=client.clientprofile,
+            is_completed=False
+        ).order_by("scheduled_date", "scheduled_time").first()
+        if not schedule:
+            return None
+            
+        return {
+            "service_name": schedule.service.name,
+            "date": schedule.scheduled_date,
+            "time": schedule.scheduled_time,
+            "price": schedule.service.price
+        }
+
 
     def get_already_sent(self, obj):
         """
@@ -315,6 +109,7 @@ class ConnectionRequestDetailSerializer(serializers.ModelSerializer):
             Q(sender=obj.receiver, receiver=obj.sender)
         ).exists()
         return exists
+
 
 class SendConnectionRequestSerializer(serializers.Serializer):
     """
@@ -363,3 +158,93 @@ class AcceptedConnectionSerializer(serializers.ModelSerializer):
     class Meta:
         model = ConnectionRequest
         fields = ["id", "sender", "receiver", "created_at"]
+
+
+class ConnectedUserSerializer(serializers.Serializer):
+    connection_id = serializers.IntegerField()
+    connected_profile = serializers.DictField()
+    created_at = serializers.DateTimeField()
+    upcoming_job = serializers.SerializerMethodField()  # <-- add this
+
+    def get_upcoming_job(self, obj):
+        try:
+            client_profile = getattr(obj['connected_profile']['user'], 'clientprofile', None)
+            landscaper_profile = getattr(obj['connected_profile']['user'], 'landscaper_profile', None)
+            if not client_profile or not landscaper_profile:
+                return None
+
+            job = ServiceSchedule.objects.filter(
+                client=client_profile,
+                landscaper=landscaper_profile,
+                is_completed=False
+            ).order_by("scheduled_date", "scheduled_time").first()
+
+            if not job:
+                return None
+
+            return {
+                "service_name": job.service.name,
+                "date": job.scheduled_date,
+                "time": job.scheduled_time,
+                "price": job.service.price
+            }
+        except:
+            return None
+
+            
+
+
+class ConnectedUserSerializer(serializers.Serializer):
+    connection_id = serializers.IntegerField()
+    connected_profile = serializers.DictField()  # client profile dict
+    created_at = serializers.DateTimeField()
+    upcoming_job = serializers.SerializerMethodField()
+
+    def get_upcoming_job(self, obj):
+        """
+        Fetch the upcoming job for this connection.
+        Use the client info from connected_profile and fetch landscaper from job.
+        """
+        try:
+            # Get the client user ID from the connected profile
+            client_user_id = obj['connected_profile'].get('user_id')
+            if not client_user_id:
+                return None
+
+            # Get client profile object
+            from profiles.models import ClientProfile
+            client_profile = ClientProfile.objects.filter(user_id=client_user_id).first()
+            if not client_profile:
+                return None
+
+            # Get the first upcoming scheduled job for this client
+            job = ServiceSchedule.objects.filter(
+                client=client_profile,
+                is_completed=False
+            ).order_by("scheduled_date", "scheduled_time").first()
+
+            if not job:
+                return None
+
+            # Prepare landscaper data if available
+            landscaper_data = None
+            if job.landscaper:
+                landscaper_user = job.landscaper.user
+                landscaper_data = {
+                    "id": landscaper_user.id,
+                    "name": getattr(landscaper_user, "name", ""),
+                    "email": landscaper_user.email,
+                    "phone": getattr(landscaper_user, "phone", ""),
+                }
+
+            return {
+                "service_name": job.service.category or job.service.name,
+                "date": job.scheduled_date,
+                "time": job.scheduled_time,
+                "price": float(job.service.price or 0),
+                "landscaper": landscaper_data
+            }
+
+        except Exception as e:
+            # Optionally log e here
+            return None

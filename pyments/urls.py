@@ -1,8 +1,12 @@
 from django.urls import path
-from .views import create_checkout_session, CashPaymentAPIView, stripe_webhook
+from .views import (
+    create_schedule_checkout_session,
+    CashPaymentScheduleAPIView,
+    stripe_webhook
+)
 
 urlpatterns = [
-    path("bookings/<int:booking_id>/pay-online/", create_checkout_session),
-    path("bookings/<int:booking_id>/pay-cash/", CashPaymentAPIView.as_view()),
+    path("schedule/<int:schedule_id>/pay-online/", create_schedule_checkout_session),
+    path("schedule/<int:schedule_id>/pay-cash/", CashPaymentScheduleAPIView.as_view()),
     path("stripe/webhook/", stripe_webhook),
 ]
