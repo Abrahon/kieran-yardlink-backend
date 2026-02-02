@@ -3,6 +3,7 @@ from django.db import models
 from django.contrib.auth import get_user_model
 from cloudinary.models import CloudinaryField
 from django.utils.translation import gettext_lazy as _
+# from profiles.models import LandscaperProfilies
 
 User = get_user_model()
 
@@ -32,6 +33,7 @@ class LandscaperProfile(models.Model):
 
     def __str__(self):
         return self.business_name
+
 
 
 # Service model
@@ -73,7 +75,7 @@ class Service(models.Model):
         return self.custom_service if self.custom_service else ", ".join(self.standard_services)
 
 
-# Working Hours model
+# working_hours/models.py
 DAYS_OF_WEEK = [
     ('SUNDAY', 'Sunday'),
     ('MONDAY', 'Monday'),
@@ -86,16 +88,18 @@ DAYS_OF_WEEK = [
 
 class WorkingHours(models.Model):
     landscaper = models.ForeignKey(
-        LandscaperProfile,
+        LandscaperProfile,  
         on_delete=models.CASCADE,
-        related_name='working_hours'
+        related_name="working_hours"
     )
+
+    day = models.CharField(max_length=10, choices=DAYS_OF_WEEK)
     start_time = models.TimeField()
     end_time = models.TimeField()
-    day = models.CharField(max_length=10, choices=DAYS_OF_WEEK)
 
     class Meta:
         unique_together = ('landscaper', 'day')
 
     def __str__(self):
-        return f"{self.landscaper.business_name} - {self.day}"
+        return f"{self.landscaper.name} - {self.day}"
+

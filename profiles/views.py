@@ -138,22 +138,39 @@ class ProLandscaperWorkersView(generics.ListAPIView):
 
 # prolandscaer profile views
 
-class ProLandScaperProfileView(generics.RetrieveUpdateAPIView):
+# class ProLandScaperProfileView(generics.RetrieveUpdateAPIView):
+#     serializer_class = LandscaperProfileSerializer
+#     permission_classes = [IsAuthenticated, IsProOrBasicLandscaper]
+#     parser_classes = [MultiPartParser, FormParser]
+
+#     def get_object(self):
+#         profile, _ = LandscaperProfilies.objects.get_or_create(user=self.request.user)
+#         return profile
+
+
+
+# # If you have a custom permission for client users
+# try:
+#     from .permissions import IsClient
+# except ImportError:
+#     IsClient = IsAuthenticated  # fallback if not created yet
+from rest_framework import generics
+from rest_framework.permissions import IsAuthenticated
+from .models import LandscaperProfilies
+from .serializers import LandscaperProfileSerializer
+from common.permissions import IsLandscaper
+
+class LandScaperProfileView(generics.RetrieveUpdateAPIView):
     serializer_class = LandscaperProfileSerializer
-    permission_classes = [IsAuthenticated, IsProOrBasicLandscaper]
-    parser_classes = [MultiPartParser, FormParser]
+    permission_classes = [IsAuthenticated, IsLandscaper]
 
     def get_object(self):
-        profile, _ = LandscaperProfilies.objects.get_or_create(user=self.request.user)
+        #  PROFILE CREATED USING TOKEN (request.user)
+        profile, created = LandscaperProfilies.objects.get_or_create(
+            user=self.request.user,
+            defaults={"plan": LandscaperProfilies.BASIC}
+        )
         return profile
-
-
-
-# If you have a custom permission for client users
-try:
-    from .permissions import IsClient
-except ImportError:
-    IsClient = IsAuthenticated  # fallback if not created yet
 
 
 
@@ -322,13 +339,12 @@ from .serializers import LandscaperProfileSerializer
 class AllLandscapersListView(generics.ListAPIView):
     serializer_class = LandscaperProfileSerializer
     permission_classes = [IsAuthenticated]
-    # pagination_class = None  # no pagination
 
     def get_queryset(self):
         return (
             LandscaperProfilies.objects
             .select_related("user")
-            .all()
+            .filter(plan__in=["basic", "pro"])  
         )
 
 

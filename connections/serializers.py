@@ -29,8 +29,8 @@ class UserMiniSerializer(serializers.ModelSerializer):
 class ConnectionRequestDetailSerializer(serializers.ModelSerializer):
     sender_profile = serializers.SerializerMethodField()
     receiver_profile = serializers.SerializerMethodField()
-    is_accepted = serializers.SerializerMethodField()  # override to convert null → false
-    already_sent = serializers.SerializerMethodField()  # NEW FIELD
+    is_accepted = serializers.SerializerMethodField()
+    already_sent = serializers.SerializerMethodField()  
     scheduled_job = serializers.SerializerMethodField()
 
 

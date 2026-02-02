@@ -41,21 +41,34 @@ class WorkerProfile(models.Model):
     def __str__(self):
         return self.name
 
-
-
-    
-
         
 # landscaper 
-# Inside profiles app
+
+
+# profiles/models.py
 class LandscaperProfilies(models.Model):
+
+    BASIC = "basic"
+    PRO = "pro"
+
+    PLAN_CHOICES = (
+        (BASIC, "Basic"),
+        (PRO, "Pro"),
+    )
+
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     name = models.CharField(max_length=255, default="Landscaper")
     phone = models.CharField(max_length=20, blank=True, default="")
     image = CloudinaryField("landscaper_profile", blank=True, null=True)
 
+    plan = models.CharField(
+        max_length=10,
+        choices=PLAN_CHOICES,
+        default=BASIC
+    )
+
     def __str__(self):
-        return self.name
+        return f"{self.name} ({self.plan})"
 
 
 

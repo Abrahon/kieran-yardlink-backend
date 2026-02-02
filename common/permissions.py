@@ -2,19 +2,19 @@
 from rest_framework.permissions import BasePermission
 from accounts.models import RoleChoices  
 
+# common/permissions.py
+from rest_framework.permissions import BasePermission
+from accounts.models import RoleChoices
+from profiles.models import LandscaperProfilies  
+
+
 class IsAdmin(BasePermission):
-    """
-    Allows access only to admin users.
-    """
     def has_permission(self, request, view):
         user = request.user
         return bool(user.is_authenticated and user.role == RoleChoices.ADMIN)
 
 
 class IsClient(BasePermission):
-    """
-    Allows access only to clients.
-    """
     def has_permission(self, request, view):
         user = request.user
         return bool(user.is_authenticated and user.role == RoleChoices.CLIENT)
@@ -22,17 +22,46 @@ class IsClient(BasePermission):
 
 class IsLandscaper(BasePermission):
     """
-    Allows access only to landscapers.
+    Allows access only to landscapers (Basic + Pro)
     """
     def has_permission(self, request, view):
         user = request.user
         return bool(user.is_authenticated and user.role == RoleChoices.LANDSCAPER)
 
 
+# NEW — PRO LANDSCAPER ONLY
+class IsProLandscaper(BasePermission):
+    """
+    Allows access only to PRO landscapers
+    """
+    def has_permission(self, request, view):
+        user = request.user
+        if not (user.is_authenticated and user.role == RoleChoices.LANDSCAPER):
+            return False
+
+        return LandscaperProfilies.objects.filter(
+            user=user,
+            plan=LandscaperProfilies.PRO
+        ).exists()
+
+
+#  OPTIONAL — BASIC LANDSCAPER ONLY
+class IsBasicLandscaper(BasePermission):
+    """
+    Allows access only to BASIC landscapers
+    """
+    def has_permission(self, request, view):
+        user = request.user
+        if not (user.is_authenticated and user.role == RoleChoices.LANDSCAPER):
+            return False
+
+        return LandscaperProfilies.objects.filter(
+            user=user,
+            plan=LandscaperProfilies.BASIC
+        ).exists()
+
+
 class IsWorker(BasePermission):
-    """
-    Allows access only to workers.
-    """
     def has_permission(self, request, view):
         user = request.user
         return bool(user.is_authenticated and user.role == RoleChoices.WORKER)

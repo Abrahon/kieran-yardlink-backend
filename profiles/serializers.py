@@ -17,10 +17,13 @@ from django.db.models import Q
 from connections.models import ConnectionRequest
 from landscapers.models import Service
 from django.db.models import Avg
-# from profiles.models import LandscaperProfilies
+from landscapers.models import WorkingHours, LandscaperProfile
+from landscapers.serializers import WorkingHoursSerializer as WHSerializer
 from landscapers.models import WorkingHours, LandscaperProfile, Service
 from connections.models import ConnectionRequest
 from django.db.models import Q
+from subscriptions.models import Plan
+# from subscriptions.models import Plan
 User = get_user_model()
 
 
@@ -71,8 +74,11 @@ class WorkerProfileSerializer(serializers.ModelSerializer):
         return obj.user.email
 
     def get_image(self, obj):
+
         if obj.image:
-            return obj.image.url  # return full Cloudinary URL
+
+            return obj.image.url
+              # return full Cloudinary URL
         return None
 
 
@@ -211,6 +217,7 @@ class WorkerProfileSerializer(serializers.ModelSerializer):
 class LandscaperProfileSerializer(serializers.ModelSerializer):
     user_id = serializers.IntegerField(source="user.id", read_only=True)
     email = serializers.EmailField(source="user.email", read_only=True)
+    plan = serializers.CharField(read_only=True) 
 
     # Model fields for writable
     name = serializers.CharField(required=False)
@@ -218,9 +225,11 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
     image = serializers.ImageField(required=False, allow_null=True)
 
     # Read-only/derived fields
-    latitude = serializers.DecimalField(source="user.latitude", max_digits=20, decimal_places=14, read_only=True)
-    longitude = serializers.DecimalField(source="user.longitude", max_digits=20, decimal_places=14, read_only=True)
-    business_name = serializers.CharField(read_only=True)
+    # Fix latitude & longitude to fallback if null
+    latitude = serializers.SerializerMethodField()
+    longitude = serializers.SerializerMethodField()
+    business_name = serializers.SerializerMethodField() 
+   
     working_hours = serializers.SerializerMethodField()
     services = serializers.SerializerMethodField()
     already_sent = serializers.SerializerMethodField() 
@@ -235,6 +244,7 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
             "id",
             "user_id",
             "email",
+            "plan",
             "name",
             "phone",
             "latitude",
@@ -255,14 +265,53 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
         data["image"] = instance.image.url if instance.image else None
         return data
 
+
     def get_working_hours(self, obj):
-        profile = getattr(obj, "working_hours", None)
-        if not profile:
+
+        try:
+            # Map your business profile to the landscaper profile
+            profile = LandscaperProfile.objects.get(user=obj.user)
+        except LandscaperProfile.DoesNotExist:
+
             return []
-        return [
-            {"day": h.day, "start_time": h.start_time, "end_time": h.end_time}
-            for h in profile.all().order_by("day")
-        ]
+
+        hours = WorkingHours.objects.filter(landscaper=profile).order_by("day")
+        return WHSerializer(hours, many=True).data
+    
+    
+    def get_business_profile(self, obj):
+        """
+        Return the corresponding LandscaperProfile (business model) for this user
+        """
+        try:
+            return LandscaperProfile.objects.get(user=obj.user)
+        except LandscaperProfile.DoesNotExist:
+            return None
+    
+    def get_business_name(self, obj):
+        business = self.get_business_profile(obj)
+        return business.business_name if business else None
+    
+        # lat and lng from business profile 
+    def get_latitude(self, obj):
+        """
+        Return latitude from the business profile if exists
+        """
+        business = self.get_business_profile(obj)
+        if business:
+            return business.latitude
+        return None
+
+    def get_longitude(self, obj):
+        """
+        Return longitude from the business profile if exists
+        """
+        business = self.get_business_profile(obj)
+        if business:
+            return business.longitude
+        return None
+
+
 
     def get_services(self, obj):
         services = Service.objects.filter(landscaper=obj.user)
@@ -317,6 +366,9 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
             landscaper=obj.user
         ).select_related("client").order_by("-created_at")
         return LandscaperReviewSerializer(reviews, many=True).data
+
+ 
+
 
 
 

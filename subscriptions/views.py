@@ -4,13 +4,9 @@ from django.http import JsonResponse, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import generics, permissions
-from django.utils import timezone
-from datetime import timedelta
-from rest_framework.response import Response
-from .models import Plan, Subscription
+from django.http import HttpResponse
 from .serializers import PlanSerializer, SubscriptionSerializer,AdminSubscriptionSerializer
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from rest_framework.exceptions import ValidationError
 from django.db.models import Count, Sum
@@ -19,8 +15,15 @@ from common.permissions import IsLandscaper
 from rest_framework import status
 from django.db.models import Q
 stripe.api_key = settings.STRIPE_SECRET_KEY
-
-
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from subscriptions.models import Subscription
+from subscriptions.serializers import SubscriptionSerializer
+from common.permissions import IsAdmin
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from datetime import timedelta
 
 
 class IsAdmin(permissions.BasePermission):
@@ -85,8 +88,6 @@ def create_checkout_session(request):
     session = stripe.checkout.Session.create(
         mode="subscription",
 
-        # ❌ REMOVE THIS
-        # customer_email=request.user.email,
 
         # ✅ ADD THIS (MOST IMPORTANT LINE)
         customer=request.user.stripe_customer_id,
@@ -191,7 +192,7 @@ def stripe_webhook(request):
 
 
 # Optional success/cancel pages
-from django.http import HttpResponse
+
 
 def success(request):
     session_id = request.GET.get("session_id")
@@ -205,8 +206,6 @@ def cancel(request):
     if session_id:
         return HttpResponse(f"Payment canceled! Session ID: {session_id}")
     return HttpResponse("Payment canceled!")
-
-
 
 
 
@@ -274,84 +273,92 @@ class AdminPlanDeleteView(generics.DestroyAPIView):
 
 
 
-# admin delete subscriptions
-# class AdminSubscriptionDeleteView(generics.DestroyAPIView):
-#     queryset = Subscription.objects.all()
-#     permission_classes = [IsAuthenticated, IsAdmin]
 
+
+# class AdminSubscriptionDeleteView(APIView):
+#     permission_classes = [IsAdmin]
+
+#     def delete(self, request, subscription_id):
+#         # 1️⃣ Get subscription
+#         subscription = get_object_or_404(Subscription, id=subscription_id)
+
+#         # 2️⃣ Cancel Stripe subscription if linked
+#         if subscription.plan.stripe_price_id:  # optional check
+#             # If you stored Stripe subscription ID, cancel via API
+#             stripe_subscription_id = getattr(subscription, 'stripe_subscription_id', None)
+#             if stripe_subscription_id:
+#                 try:
+#                     stripe.Subscription.delete(stripe_subscription_id)
+#                 except stripe.error.StripeError as e:
+#                     return Response(
+#                         {"detail": f"Stripe error: {str(e)}"},
+#                         status=status.HTTP_400_BAD_REQUEST
+#                     )
+
+#         # 3️⃣ Update subscription in DB
+#         subscription.status = "canceled"
+#         subscription.is_active = False
+#         subscription.end_date = timezone.now()
+#         subscription.save(update_fields=["status", "is_active", "end_date"])
+
+#         # 4️⃣ Downgrade user role if no other active subscriptions
+#         user = subscription.user
+#         active_subs = Subscription.objects.filter(user=user, is_active=True, status="active").exists()
+#         if not active_subs and user.role == "landscaper":
+#             user.role = "user"
+#             user.save(update_fields=["role"])
+
+#         return Response(
+#             {"detail": "Subscription canceled and role updated if necessary."},
+#             status=status.HTTP_200_OK
+#         )
 
 
 class AdminSubscriptionDeleteView(APIView):
     permission_classes = [IsAdmin]
 
     def delete(self, request, subscription_id):
-        # 1️⃣ Get subscription
         subscription = get_object_or_404(Subscription, id=subscription_id)
 
-        # 2️⃣ Cancel Stripe subscription if linked
-        if subscription.plan.stripe_price_id:  # optional check
-            # If you stored Stripe subscription ID, cancel via API
-            stripe_subscription_id = getattr(subscription, 'stripe_subscription_id', None)
-            if stripe_subscription_id:
-                try:
-                    stripe.Subscription.delete(stripe_subscription_id)
-                except stripe.error.StripeError as e:
-                    return Response(
-                        {"detail": f"Stripe error: {str(e)}"},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
+        # 1️⃣ Cancel Stripe subscription
+        stripe_subscription_id = subscription.stripe_subscription_id
+        if stripe_subscription_id:
+            try:
+                stripe.Subscription.delete(stripe_subscription_id)
+            except stripe.error.StripeError as e:
+                return Response(
+                    {"detail": f"Stripe error: {str(e)}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
-        # 3️⃣ Update subscription in DB
-        subscription.status = "canceled"
+        # 2️⃣ Update subscription in DB
+        subscription.status = SubscriptionStatus.CANCELED
         subscription.is_active = False
         subscription.end_date = timezone.now()
         subscription.save(update_fields=["status", "is_active", "end_date"])
 
-        # 4️⃣ Downgrade user role if no other active subscriptions
+        # 3️⃣ Check active subscriptions
         user = subscription.user
-        active_subs = Subscription.objects.filter(user=user, is_active=True, status="active").exists()
-        if not active_subs and user.role == "landscaper":
-            user.role = "user"
-            user.save(update_fields=["role"])
+        has_active = Subscription.objects.filter(
+            user=user,
+            is_active=True,
+            status=SubscriptionStatus.ACTIVE
+        ).exists()
+
+        # 4️⃣ DOWNGRADE landscaper profile
+        if not has_active:
+            profile = LandscaperProfilies.objects.filter(user=user).first()
+            if profile:
+                profile.plan = LandscaperProfilies.BASIC
+                profile.save(update_fields=["plan"])
 
         return Response(
-            {"detail": "Subscription canceled and role updated if necessary."},
+            {"detail": "Subscription canceled and landscaper downgraded to BASIC"},
             status=status.HTTP_200_OK
         )
 
 
-# extend subscriptions
-# class ExtendSubscriptionView(APIView):
-#     permission_classes = [IsAuthenticated, IsAdmin]
 
-#     def post(self, request, pk):
-#         days = request.data.get("days")
-
-#         if not days or int(days) <= 0:
-#             return Response(
-#                 {"detail": "Valid number of days required"},
-#                 status=400
-#             )
-
-#         subscription = get_object_or_404(Subscription, pk=pk)
-
-#         if subscription.end_date < timezone.now():
-#             subscription.end_date = timezone.now()
-
-#         subscription.end_date += timedelta(days=int(days))
-#         subscription.status = "active"
-#         subscription.save()
-
-#         return Response({
-#             "message": "Subscription extended successfully",
-#             "new_end_date": subscription.end_date
-#         })
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from django.shortcuts import get_object_or_404
-from django.utils import timezone
-from datetime import timedelta
 
 class ExtendSubscriptionView(APIView):
     permission_classes = [IsAuthenticated, IsAdmin]
@@ -391,14 +398,7 @@ class ExtendSubscriptionView(APIView):
 # views.py
 
 # subscriptions/views.py
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework import status
-from django.db.models import Q
-from subscriptions.models import Subscription
-from subscriptions.serializers import SubscriptionSerializer
-from common.permissions import IsAdmin
+
 
 class SubscriptionListAPIView(APIView):
     """

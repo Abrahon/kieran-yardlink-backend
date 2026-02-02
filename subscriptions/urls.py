@@ -26,7 +26,6 @@ urlpatterns = [
         name="extend-subscription"
     ),
 
-
     # path(
     #     "payments/history/",
     #     views.user_payment_history,

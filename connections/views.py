@@ -147,84 +147,189 @@ class SentConnectionRequestAPIView(APIView):
 
 #         return Response(ConnectionRequestSerializer(connection).data)
 
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+# from rest_framework.views import APIView
+# from rest_framework.response import Response
+# from rest_framework.permissions import IsAuthenticated
+# from django.db.models import Q
+# from connections.models import ConnectionRequest
+# from profiles.models import LandscaperProfilies, ClientProfile
+# # from .serializers import ConnectedUserSerializer, RespondConnectionRequestSerializer
+# from services.models import ServiceSchedule
+
+
+# class RespondConnectionRequestAPIView(APIView):
+#     permission_classes = [IsAuthenticated]
+
+#     def post(self, request, pk):
+#         # 1️⃣ Get the pending connection request
+#         try:
+#             connection = ConnectionRequest.objects.get(
+#                 id=pk,
+#                 receiver=request.user,
+#                 is_accepted=None
+#             )
+#         except ConnectionRequest.DoesNotExist:
+#             return Response(
+#                 {"detail": "Connection request not found or already responded."},
+#                 status=404
+#             )
+
+#         # 2️⃣ Update connection request (accept/reject)
+#         serializer = RespondConnectionRequestSerializer(
+#             instance=connection,
+#             data=request.data
+#         )
+#         serializer.is_valid(raise_exception=True)
+#         serializer.save()
+
+#         # 3️⃣ Get the connected user (other side)
+#         connected_user = connection.receiver if connection.sender == request.user else connection.sender
+
+#         # 4️⃣ Get profile data
+#         profile_data = self.get_profile_data(connected_user)
+
+#         # 5️⃣ Get all upcoming jobs if connection was accepted
+#         upcoming_jobs = []
+#         if connection.is_accepted:
+#             upcoming_jobs = self.get_upcoming_jobs(request.user, connected_user)
+
+#         # 6️⃣ Build response
+#         response_data = {
+#             "connection_id": connection.id,
+#             "connected_profile": profile_data,
+#             "created_at": connection.created_at,
+#             "upcoming_jobs": upcoming_jobs  # changed from single "upcoming_job"
+#         }
+
+#         serializer = ConnectedUserSerializer(response_data)
+#         return Response(serializer.data)
+
+#     # ----------------------
+#     def get_profile_data(self, user):
+#         try:
+#             profile = LandscaperProfilies.objects.get(user=user)
+#             data = ConnectedUserSerializer(profile).data
+#             data["type"] = "landscaper"
+#             return data
+#         except LandscaperProfilies.DoesNotExist:
+#             try:
+#                 profile = ClientProfile.objects.get(user=user)
+#                 data = ConnectedUserSerializer(profile).data
+#                 data["type"] = "client"
+#                 return data
+#             except ClientProfile.DoesNotExist:
+#                 return {
+#                     "user_id": user.id,
+#                     "email": user.email,
+#                     "name": getattr(user, "name", ""),
+#                     "type": "unknown"
+#                 }
+from django.db import transaction
 from django.db.models import Q
+from django.utils import timezone
+from django.shortcuts import get_object_or_404
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied
+
 from connections.models import ConnectionRequest
-from profiles.models import LandscaperProfilies, ClientProfile
-# from .serializers import ConnectedUserSerializer, RespondConnectionRequestSerializer
+from connections.serializers import RespondConnectionRequestSerializer
+from profiles.models import ClientProfile, LandscaperProfilies
 from services.models import ServiceSchedule
 
 
 class RespondConnectionRequestAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @transaction.atomic
     def post(self, request, pk):
-        # 1️⃣ Get the pending connection request
-        try:
-            connection = ConnectionRequest.objects.get(
-                id=pk,
-                receiver=request.user,
-                is_accepted=None
-            )
-        except ConnectionRequest.DoesNotExist:
-            return Response(
-                {"detail": "Connection request not found or already responded."},
-                status=404
-            )
+        user = request.user
 
-        # 2️⃣ Update connection request (accept/reject)
-        serializer = RespondConnectionRequestSerializer(
-            instance=connection,
-            data=request.data
+        # 🔒 Only CLIENT can respond
+        try:
+            client_profile = user.clientprofile
+        except ClientProfile.DoesNotExist:
+            raise PermissionDenied("Only clients can respond to connection requests.")
+
+        # 🔍 Fetch pending request
+        connection = get_object_or_404(
+            ConnectionRequest,
+            id=pk,
+            is_accepted=None
         )
+
+        if user not in (connection.sender, connection.receiver):
+            raise PermissionDenied("You are not part of this request.")
+
+        # 🌿 Identify landscaper PROFILE (SAFE)
+        if hasattr(connection.sender, "landscaperprofilies"):
+            landscaper_profile = connection.sender.landscaperprofilies
+        elif hasattr(connection.receiver, "landscaperprofilies"):
+            landscaper_profile = connection.receiver.landscaperprofilies
+        else:
+            raise PermissionDenied("No landscaper found in this connection.")
+
+        serializer = RespondConnectionRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        action = serializer.validated_data["action"]
 
-        # 3️⃣ Get the connected user (other side)
-        connected_user = connection.receiver if connection.sender == request.user else connection.sender
+        # ❌ REJECT
+        if action == "reject":
+            connection.is_accepted = False
+            connection.save(update_fields=["is_accepted"])
+            return Response({
+                "connection_id": connection.id,
+                "status": "rejected"
+            })
 
-        # 4️⃣ Get profile data
-        profile_data = self.get_profile_data(connected_user)
+        # ✅ ACCEPT
+        connection.is_accepted = True
+        connection.save(update_fields=["is_accepted"])
 
-        # 5️⃣ Get all upcoming jobs if connection was accepted
-        upcoming_jobs = []
-        if connection.is_accepted:
-            upcoming_jobs = self.get_upcoming_jobs(request.user, connected_user)
+        # 🔥 ENFORCE: CLIENT → ONLY ONE LANDSCAPER
+        ConnectionRequest.objects.filter(
+            is_accepted=True
+        ).filter(
+            Q(sender=user) | Q(receiver=user)
+        ).exclude(
+            id=connection.id
+        ).delete()
 
-        # 6️⃣ Build response
-        response_data = {
+        # 📅 UPCOMING JOB (CLIENT ONLY)
+        job = ServiceSchedule.objects.filter(
+            client=client_profile,
+            landscaper=landscaper_profile,
+            is_completed=False
+        ).order_by(
+            "scheduled_date", "scheduled_time"
+        ).first()
+
+        # 🆕 Create job if not exists
+        if not job:
+            now = timezone.now()
+            job = ServiceSchedule.objects.create(
+                client=client_profile,
+                landscaper=landscaper_profile,
+                scheduled_date=now.date(),
+                scheduled_time=now.time(),
+            )
+
+        # 🔗 Attach schedule
+        connection.schedule = job
+        connection.save(update_fields=["schedule"])
+
+        return Response({
             "connection_id": connection.id,
-            "connected_profile": profile_data,
-            "created_at": connection.created_at,
-            "upcoming_jobs": upcoming_jobs  # changed from single "upcoming_job"
-        }
-
-        serializer = ConnectedUserSerializer(response_data)
-        return Response(serializer.data)
-
-    # ----------------------
-    def get_profile_data(self, user):
-        try:
-            profile = LandscaperProfilies.objects.get(user=user)
-            data = ConnectedUserSerializer(profile).data
-            data["type"] = "landscaper"
-            return data
-        except LandscaperProfilies.DoesNotExist:
-            try:
-                profile = ClientProfile.objects.get(user=user)
-                data = ConnectedUserSerializer(profile).data
-                data["type"] = "client"
-                return data
-            except ClientProfile.DoesNotExist:
-                return {
-                    "user_id": user.id,
-                    "email": user.email,
-                    "name": getattr(user, "name", ""),
-                    "type": "unknown"
-                }
-
+            "status": "accepted",
+            "client_id": client_profile.id,
+            "landscaper_id": landscaper_profile.id,
+            "upcoming_job": {
+                "job_id": job.id,
+                "date": job.scheduled_date,
+                "time": job.scheduled_time,
+            }
+        })
 
 class CancelConnectionRequestAPIView(APIView):
     permission_classes = [IsAuthenticated]
