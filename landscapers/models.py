@@ -54,6 +54,8 @@ class Service(models.Model):
         on_delete=models.CASCADE,
         related_name="services"
     )
+    # landscaper = models.ForeignKey(LandscaperProfilies, on_delete=models.CASCADE)
+    
 
     standard_services = models.JSONField(default=list, blank=True)
     custom_service = models.CharField(max_length=150, blank=True, null=True)

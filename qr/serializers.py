@@ -10,29 +10,36 @@ class PublicServiceSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "price"]
 
 
+
+
+# --- Weekly Availability ---
 class WeeklyAvailabilitySerializer(serializers.ModelSerializer):
-    day = serializers.CharField(source="get_day_of_week_display")
+    day = serializers.CharField(source="get_day_display")
 
     class Meta:
         model = WorkingHours
         fields = ["day", "start_time", "end_time"]
 
 
+# # --- Public Landscaper Serializer ---
 class PublicLandscaperSerializer(serializers.ModelSerializer):
-    # from accounts.User
+    # From User
     user_id = serializers.IntegerField(source="user.id", read_only=True)
     name = serializers.CharField(source="user.name", read_only=True)
     email = serializers.EmailField(source="user.email", read_only=True)
     address = serializers.CharField(source="user.address", read_only=True)
 
-    # from profiles app
+    # From Profiles
     phone = serializers.SerializerMethodField()
     image = serializers.SerializerMethodField()
+    business_name = serializers.SerializerMethodField()
+    latitude = serializers.SerializerMethodField()
+    longitude = serializers.SerializerMethodField()
 
-    services = PublicServiceSerializer(many=True, read_only=True)
-
+    # Related objects
+    services = serializers.SerializerMethodField()
     weekly_schedule = WeeklyAvailabilitySerializer(
-        source="weekly_availability",
+        source="working_hours",
         many=True,
         read_only=True
     )
@@ -52,24 +59,63 @@ class PublicLandscaperSerializer(serializers.ModelSerializer):
             "services",
             "weekly_schedule",
         ]
-        
-    # Helper methods
 
-    def get_profile(self, obj):
-        """
-        Fetch LandscaperProfilies safely
-        """
+    # --- Helpers ---
+    def get_basic_profile(self, obj):
+        """Return basic profile (LandscaperProfilies)"""
         try:
             return LandscaperProfilies.objects.get(user=obj.user)
         except LandscaperProfilies.DoesNotExist:
             return None
 
+    def get_business_profile(self, obj):
+        """Return business profile (LandscaperProfile)"""
+        try:
+            return LandscaperProfile.objects.get(user=obj.user)
+        except LandscaperProfile.DoesNotExist:
+            return None
+
+    # --- Serializer Methods ---
     def get_phone(self, obj):
-        profile = self.get_profile(obj)
+        profile = self.get_basic_profile(obj)
         return profile.phone if profile else None
 
     def get_image(self, obj):
-        profile = self.get_profile(obj)
-        if profile and profile.image:
-            return profile.image.url
-        return None
+        profile = self.get_basic_profile(obj)
+        return profile.image.url if profile and profile.image else None
+
+    def get_business_name(self, obj):
+        profile = self.get_business_profile(obj)
+        return profile.business_name if profile else None
+
+    def get_latitude(self, obj):
+        profile = self.get_business_profile(obj)
+        return float(profile.latitude) if profile and profile.latitude else None
+
+    def get_longitude(self, obj):
+        profile = self.get_business_profile(obj)
+        return float(profile.longitude) if profile and profile.longitude else None
+
+    def get_services(self, obj):
+        """
+        Fetch all services for this landscaper.
+        obj must be a LandscaperProfile instance.
+        """
+        # obj is LandscaperProfile
+        services = Service.objects.filter(landscaper=obj)  # use obj directly
+
+        return [
+            {
+                "id": s.id,
+                "category": s.category,
+                "standard_services": s.standard_services,
+                "custom_service": s.custom_service,
+                "description": s.description,
+                "price": float(s.price),
+                "per_square_feet": float(s.per_square_feet),
+                "latitude": float(s.latitude),
+                "longitude": float(s.longitude),
+                "add_ons": s.add_ons,
+            }
+            for s in services
+        ]
