@@ -225,7 +225,6 @@ def landscaper_payment_history(request):
 # for admin 
 
 # Admin: Stripe Overview by Day
-
 @api_view(["GET"])
 @permission_classes([IsAdminUser])
 def admin_daily_income_overview(request):
@@ -417,3 +416,120 @@ def stripe_all_payments(request):
         "payments": data
     })
 
+# delete views
+
+@api_view(["DELETE"])
+@permission_classes([IsAdminUser])
+def delete_single_payment(request, source, pk):
+    """
+    Admin: Delete a specific payment record
+
+    source:
+      - job_payment
+      - subscription
+    """
+
+    # =========================
+    # Client Job Payment
+    # =========================
+    if source == "job_payment":
+        schedule = get_object_or_404(
+            ServiceSchedule,
+            id=pk,
+            payment_status=PaymentStatus.PAID
+        )
+
+        schedule.payment_status = PaymentStatus.PENDING
+        schedule.stripe_payment_id = None
+        schedule.save(update_fields=["payment_status", "stripe_payment_id"])
+
+        return Response({
+            "message": "Client job payment reset successfully",
+            "source": "job_payment",
+            "schedule_id": schedule.id
+        })
+
+    # =========================
+    # Subscription Payment
+    # =========================
+    elif source == "subscription":
+        subscription = get_object_or_404(
+            Subscription,
+            id=pk,
+            stripe_subscription_id__isnull=False
+        )
+
+        subscription.stripe_subscription_id = None
+        subscription.is_active = False
+        subscription.status = "inactive"
+        subscription.save(
+            update_fields=["stripe_subscription_id", "is_active", "status"]
+        )
+
+        return Response({
+            "message": "Subscription payment reset successfully",
+            "source": "subscription",
+            "subscription_id": subscription.id
+        })
+
+    # =========================
+    # Invalid source
+    # =========================
+    return Response(
+        {"error": "Invalid source. Use job_payment or subscription."},
+        status=400
+    )
+
+
+# revenue overviw for pro landscapers
+
+from django.db.models import Sum, FloatField
+from django.db.models.functions import TruncMonth
+from common .permissions import IsProLandscaper
+from subscriptions.models import Plan
+
+
+
+class ProLandscaperMonthlyRevenueView(APIView):
+    """
+    PRO Landscaper:
+    Shows total revenue per month from client-paid completed jobs
+    """
+
+    permission_classes = [IsProLandscaper]
+
+    def get(self, request):
+        user = request.user
+
+        # Get landscaper profile
+        landscaper = getattr(user, "landscaperprofilies", None)
+        if not landscaper:
+            return Response({"error": "No landscaper profile found"}, status=404)
+
+        # Filter completed and client-paid jobs
+        jobs = ServiceSchedule.objects.filter(
+            landscaper=landscaper,
+            is_completed=True,
+            payment_status=PaymentStatus.PAID
+        )
+
+        # Aggregate total revenue per month
+        monthly_revenue = (
+            jobs.annotate(month=TruncMonth("scheduled_date"))
+            .values("month")
+            .annotate(total_amount=Sum(F("service__price") * 1.02, output_field=FloatField()))
+            .order_by("month")
+        )
+
+        data = [
+            {
+                "month": item["month"].strftime("%Y-%m"),
+                "total_amount": round(item["total_amount"], 2)
+            }
+            for item in monthly_revenue
+        ]
+
+        return Response({
+            "role": "pro_landscaper",
+            "monthly_revenue": data
+        })
