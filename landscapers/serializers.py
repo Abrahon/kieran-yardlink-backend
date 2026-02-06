@@ -4,31 +4,16 @@
 from rest_framework import serializers
 from django.db import transaction
 from .models import LandscaperProfile
-from services.models import Service
 from services.serializers import ServiceSerializer
-
+import json
+from rest_framework import serializers
+from .models import Service
 from .models import Service
 import json
 
 from rest_framework import serializers
 from .models import LandscaperProfile
 
-# class LandscaperProfileSerializer(serializers.ModelSerializer):
-#     class Meta:
-#         model = LandscaperProfile
-#         fields = [
-#             "business_name",
-#             "business_email",
-#             "business_phone",
-#             "latitude",
-#             "longitude",
-#             "profile",  # this will automatically give the Cloudinary URL
-#         ]
-#     def get_profile(self, obj):
-#         """Return Cloudinary URL"""
-#         if obj.image:
-#             return obj.profile.url
-#         return None
 from rest_framework import serializers
 from .models import LandscaperProfile
 from rest_framework import serializers
@@ -70,11 +55,6 @@ class BusinessLandscaperProfileSerializer(serializers.ModelSerializer):
         data["profile_image"] = instance.profile_image.url if instance.profile_image else None
         return data
 
-
-
-import json
-from rest_framework import serializers
-from .models import Service
 
 
 class ServiceSerializer(serializers.ModelSerializer):

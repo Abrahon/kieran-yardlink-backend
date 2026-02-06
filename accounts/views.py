@@ -28,7 +28,7 @@ from .utils import generate_otp, send_otp_email
 from .serializers import (
     SendOTPSerializer, VerifyOTPSerializer, ResetPasswordSerializer,VerifyOTPForgetSerializer
 )
-from rest_framework_simplejwt.tokens import RefreshToken
+
 
 
 
@@ -93,14 +93,16 @@ class SignupView(generics.GenericAPIView):
         data = serializer.validated_data
         email = data["email"]
 
+
         request.session["pending_user"] = {
-            "email": email,
+
+            "email": data["email"],
             "name": data["name"],
-            "password": data["password"],  # OK (string)
-            "phone": data.get("phone", ""),
-            "address": data.get("address", ""),
-            "latitude": str(data["latitude"]) if data.get("latitude") is not None else None,
-            "longitude": str(data["longitude"]) if data.get("longitude") is not None else None,
+            "password": data["password"],
+            "phone": data.get("phone"),
+            "address": data.get("address"),
+            "latitude": str(data["latitude"]) if data.get("latitude") else None,
+            "longitude": str(data["longitude"]) if data.get("longitude") else None,
             "role": data["role"],
         }
 
@@ -194,7 +196,7 @@ class LoginView(generics.GenericAPIView):
         print("user", user)
 
         # ---------------------------------------------------------
-        # 🔥 CHANGE ADDED HERE → Check if user is NOT verified
+        #  CHANGE ADDED HERE → Check if user is NOT verified
         # ---------------------------------------------------------
         if not user.is_active:
             return Response(
@@ -203,7 +205,7 @@ class LoginView(generics.GenericAPIView):
             )
 
         # ---------------------------------------------------------
-        # 🔥 Login allowed only if email is verified
+        #  Login allowed only if email is verified
         # ---------------------------------------------------------
         tokens = get_tokens_for_user(user)
         print("tokens", tokens)
@@ -315,67 +317,54 @@ class ResendForgotOTPView(generics.GenericAPIView):
 
 
 # verify otpo for email
+
 # class VerifyOTPView(APIView):
 #     permission_classes = [AllowAny]
 
 #     def post(self, request):
 #         email = request.data.get("email")
-#         otp_code = request.data.get("otp")
+#         otp = request.data.get("otp")
 
-#         if not email or not otp_code:
+#         otp_obj = OTP.objects.filter(email=email, code=otp).first()
+#         if not otp_obj:
 #             return Response(
-#                 {"detail": "Email and OTP are required."},
+#                 {"detail": "Invalid or expired OTP"},
 #                 status=400
 #             )
 
-#         try:
-#             otp_instance = OTP.objects.filter(
-#                 email=email,
-#                 code=otp_code
-                
-#             ).latest("created_at")
-#             # print(email,code)
-#         except OTP.DoesNotExist:
+#         pending_user = request.session.get("pending_user")
+#         if not pending_user or pending_user["email"] != email:
 #             return Response(
-#                 {"detail": "OTP not found."},
+#                 {"detail": "Session expired. Please signup again."},
 #                 status=400
 #             )
 
-#         if otp_instance.is_expired():
-#             otp_instance.delete()
-#             return Response(
-#                 {"detail": "OTP expired."},
-#                 status=400
-#             )
-
-#         pending = request.session.get("pending_user")
-#         print("pending", pending)
-#         if not pending or pending["email"] != email:
-#             return Response(
-#                 {"detail": "Signup data missing. Restart signup."},
-#                 status=400
-#             )
-
-#         # ✅ CREATE USER
-#         User.objects.create_user(
-#             email=pending["email"],
-#             name=pending["name"],
-#             password=pending["password"],
-#             phone=pending["phone"],
-#             address=pending["address"],
-#             role=pending["role"],
-#             is_active=True
+#         # ✅ CREATE USER with correct role from session
+#         user = User.objects.create_user(
+#             email=pending_user["email"],
+#             name=pending_user["name"],
+#             password=pending_user["password"],
+#             phone=pending_user.get("phone"),
+#             address=pending_user.get("address"),
+#             role=pending_user["role"]   # <-- fixed
 #         )
 
-#         # Cleanup
-#         otp_instance.delete()
-#         del request.session["pending_user"]
+#         # cleanup
+#         OTP.objects.filter(email=email).delete()
+#         request.session.flush()
 
-#         return Response(
-#             {"message": "Email verified and account created successfully."},
-#             status=200
-#         )
+#         # ✅ GENERATE TOKENS
+#         refresh = RefreshToken.for_user(user)
 
+#         return Response({
+#             "access": str(refresh.access_token),
+#             "refresh": str(refresh),
+#             "user": {
+#                 "id": user.id,
+#                 "email": user.email,
+#                 "role": user.role   # now correctly shows "client", "landscaper", etc.
+#             }
+#         }, status=201)
 class VerifyOTPView(APIView):
     permission_classes = [AllowAny]
 
@@ -397,21 +386,24 @@ class VerifyOTPView(APIView):
                 status=400
             )
 
-        # ✅ CREATE USER with correct role from session
+        # ✅ CREATE USER WITH LAT & LNG SAVED
         user = User.objects.create_user(
             email=pending_user["email"],
             name=pending_user["name"],
             password=pending_user["password"],
             phone=pending_user.get("phone"),
             address=pending_user.get("address"),
-            role=pending_user["role"]   # <-- fixed
+            role=pending_user["role"],
+            latitude=pending_user.get("latitude"),     
+            longitude=pending_user.get("longitude"),
+            is_active=True
         )
 
         # cleanup
         OTP.objects.filter(email=email).delete()
         request.session.flush()
 
-        # ✅ GENERATE TOKENS
+        # tokens
         refresh = RefreshToken.for_user(user)
 
         return Response({
@@ -420,7 +412,12 @@ class VerifyOTPView(APIView):
             "user": {
                 "id": user.id,
                 "email": user.email,
-                "role": user.role   # now correctly shows "client", "landscaper", etc.
+                "name": user.name,
+                "role": user.role,
+                "phone": user.phone,
+                "address": user.address,
+                "latitude": float(user.latitude) if user.latitude else None,
+                "longitude": float(user.longitude) if user.longitude else None,
             }
         }, status=201)
 

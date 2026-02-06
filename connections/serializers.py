@@ -77,26 +77,37 @@ class ConnectionRequestDetailSerializer(serializers.ModelSerializer):
         return self._get_profile(obj.receiver)
     
     def get_scheduled_job(self, obj):
-
-        if not obj.is_accepted:
+        if obj.is_accepted is None or obj.is_accepted is False:
             return None
-        # Determine landscaper vs client
-        landscaper = obj.receiver if hasattr(obj.receiver, 'landscaper_profile') else obj.sender
-        client = obj.sender if hasattr(obj.sender, 'clientprofile') else obj.receiver
+
+        # Determine landscaper and client
+        try:
+            if hasattr(obj.sender, "clientprofile"):
+                client = obj.sender.clientprofile
+                landscaper = obj.receiver.landscaperprofilies
+            else:
+                client = obj.receiver.clientprofile
+                landscaper = obj.sender.landscaperprofilies
+        except (ClientProfile.DoesNotExist, LandscaperProfilies.DoesNotExist):
+            return None
+
+        # Fetch pending (upcoming) job
         schedule = ServiceSchedule.objects.filter(
-            landscaper=landscaper.landscaper_profile,
-            client=client.clientprofile,
+            landscaper=landscaper,
+            client=client,
             is_completed=False
         ).order_by("scheduled_date", "scheduled_time").first()
+
         if not schedule:
             return None
-            
+
         return {
             "service_name": schedule.service.name,
             "date": schedule.scheduled_date,
             "time": schedule.scheduled_time,
-            "price": schedule.service.price
+            "price": float(schedule.service.price or 0)
         }
+
 
 
     def get_already_sent(self, obj):

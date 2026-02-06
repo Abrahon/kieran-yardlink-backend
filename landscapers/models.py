@@ -7,7 +7,7 @@ from django.utils.translation import gettext_lazy as _
 
 User = get_user_model()
 
-# Landscaper Profile (basic info + business info)
+# Landscaper Profile (business info)
 class LandscaperProfile(models.Model):
     user = models.OneToOneField(
         User,
@@ -25,8 +25,8 @@ class LandscaperProfile(models.Model):
     business_email = models.EmailField()
     business_phone = models.CharField(max_length=20)
 
-    latitude = models.DecimalField(max_digits=20, decimal_places=14)
-    longitude = models.DecimalField(max_digits=20, decimal_places=14)
+    latitude = models.DecimalField(max_digits=20, decimal_places=18)
+    longitude = models.DecimalField(max_digits=20, decimal_places=18)
 
     is_profile_completed = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -66,8 +66,8 @@ class Service(models.Model):
         default=CategoryChoices.STANDARD
     )
     add_ons = models.JSONField(default=list, blank=True)
-    latitude = models.DecimalField(max_digits=20, decimal_places=14)
-    longitude = models.DecimalField(max_digits=20, decimal_places=14)
+    latitude = models.DecimalField(max_digits=20, decimal_places=18)
+    longitude = models.DecimalField(max_digits=20, decimal_places=18)
     price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     per_square_feet = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     created_at = models.DateTimeField(auto_now_add=True)

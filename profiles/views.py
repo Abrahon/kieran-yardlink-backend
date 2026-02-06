@@ -1,4 +1,4 @@
-from rest_framework.generics import RetrieveUpdateAPIView
+
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from .models import AdminProfile
@@ -21,14 +21,9 @@ from invitations.models import TeamInvitation, InvitationStatus
 from invitations.permissions import IsProLandscaper, IsProOrBasicLandscaper
 # search by kim
 from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
 from django.db.models import F, Avg
-from django.db.models.functions import ACos, Cos, Sin, Radians
+
 from django.db.models import Q
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from message.models import ChatThread
 from .models import ClientProfile
@@ -40,11 +35,17 @@ from reviews.models import LandscaperReview
 from connections.models import ConnectionRequest
 from profiles.serializers import LandscaperProfileSerializer
 from rest_framework import generics, permissions, status
-from rest_framework.response import Response
 from django.contrib.auth import update_session_auth_hash
 from .serializers import ChangePasswordSerializer
 from django.db.models import F, FloatField, Q, ExpressionWrapper
 from django.db.models.functions import ACos, Cos, Sin, Radians
+from rest_framework.views import APIView
+from django.db.models import Q, Avg, F
+from rest_framework.permissions import IsAuthenticated
+from common.permissions import IsLandscaper
+from subscriptions.models import Subscription
+from subscriptions.enums import SubscriptionStatus
+from django.db.models import OuterRef, Subquery
 
 
 # admin profile
@@ -136,43 +137,57 @@ class ProLandscaperWorkersView(generics.ListAPIView):
 
 # prolandscaer profile views
 
-# prolandscaer profile views
-
-# class ProLandScaperProfileView(generics.RetrieveUpdateAPIView):
-#     serializer_class = LandscaperProfileSerializer
-#     permission_classes = [IsAuthenticated, IsProOrBasicLandscaper]
-#     parser_classes = [MultiPartParser, FormParser]
-
-#     def get_object(self):
-#         profile, _ = LandscaperProfilies.objects.get_or_create(user=self.request.user)
-#         return profile
-
-
-
-# # If you have a custom permission for client users
-# try:
-#     from .permissions import IsClient
-# except ImportError:
-#     IsClient = IsAuthenticated  # fallback if not created yet
-from rest_framework import generics
-from rest_framework.permissions import IsAuthenticated
-from .models import LandscaperProfilies
-from .serializers import LandscaperProfileSerializer
-from common.permissions import IsLandscaper
-
 class LandScaperProfileView(generics.RetrieveUpdateAPIView):
     serializer_class = LandscaperProfileSerializer
     permission_classes = [IsAuthenticated, IsLandscaper]
 
     def get_object(self):
-        #  PROFILE CREATED USING TOKEN (request.user)
+        # Get or create profile (plan is now from subscription)
         profile, created = LandscaperProfilies.objects.get_or_create(
-            user=self.request.user,
-            defaults={"plan": LandscaperProfilies.BASIC}
+            user=self.request.user
         )
         return profile
 
 
+# class LandScaperProfileView(generics.RetrieveUpdateAPIView):
+#     serializer_class = LandscaperProfileSerializer
+#     permission_classes = [IsAuthenticated, IsLandscaper]
+
+#     def get_object(self):
+#         #  PROFILE CREATED USING TOKEN (request.user)
+#         profile, created = LandscaperProfilies.objects.get_or_create(
+#             user=self.request.user,
+#             defaults={"plan": LandscaperProfilies.BASIC}
+#         )
+#         return profile
+
+
+
+class AllLandscapersListView(generics.ListAPIView):
+    serializer_class = LandscaperProfileSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        # Subquery to filter users with active subscription
+        active_sub = Subscription.objects.filter(
+            user=OuterRef("user"),
+            is_active=True,
+            status=SubscriptionStatus.ACTIVE
+        )
+
+        return LandscaperProfilies.objects.annotate(
+            has_active_sub=Subquery(active_sub.values('id')[:1])
+        ).filter(has_active_sub__isnull=False).select_related("user")
+
+
+
+
+# from rest_framework.views import APIView
+# from rest_framework.response import Response
+# from rest_framework.permissions import IsAuthenticated
+# from .models import ClientProfile
+# from .serializers import ClientProfileSerializer
+# from .permissions import IsClient  # assuming you have this
 
 class ClientProfileView(APIView):
     permission_classes = [IsAuthenticated, IsClient]
@@ -185,31 +200,24 @@ class ClientProfileView(APIView):
     # ---------------- GET profile ----------------
     def get(self, request):
         client_profile = self.get_object(request.user)
-        serializer = ClientProfileSerializer(client_profile)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        serializer = ClientProfileSerializer(client_profile, context={"request": request})
+        return Response(serializer.data, status=200)
 
     # ---------------- PUT (full update) ----------------
     def put(self, request):
         client_profile = self.get_object(request.user)
-        serializer = ClientProfileSerializer(
-            client_profile,
-            data=request.data  # all required fields must be sent
-        )
+        serializer = ClientProfileSerializer(client_profile, data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.data, status=200)
 
     # ---------------- PATCH (partial update) ----------------
     def patch(self, request):
         client_profile = self.get_object(request.user)
-        serializer = ClientProfileSerializer(
-            client_profile,
-            data=request.data,
-            partial=True  # only fields you want to change
-        )
+        serializer = ClientProfileSerializer(client_profile, data=request.data, partial=True, context={"request": request})
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.data, status=200)
 
 
 # ---------------------- Change Password for---------------------- #
@@ -327,44 +335,45 @@ class ChangePasswordAPIView(generics.UpdateAPIView):
         )
 
 
-from .models import LandscaperProfilies
+# from .models import LandscaperProfilies
 
-# ---------------- All Landscapers ----------------
+# # ---------------- All Landscapers ----------------
 
-from rest_framework import generics
-from rest_framework.permissions import IsAuthenticated
-from .models import LandscaperProfilies
-from .serializers import LandscaperProfileSerializer
+# from rest_framework import generics
+# from rest_framework.permissions import IsAuthenticated
+# from .models import LandscaperProfilies
+# from .serializers import LandscaperProfileSerializer
 
-class AllLandscapersListView(generics.ListAPIView):
-    serializer_class = LandscaperProfileSerializer
-    permission_classes = [IsAuthenticated]
+# class AllLandscapersListView(generics.ListAPIView):
+#     serializer_class = LandscaperProfileSerializer
+#     permission_classes = [IsAuthenticated]
 
-    def get_queryset(self):
-        return (
-            LandscaperProfilies.objects
-            .select_related("user")
-            .filter(plan__in=["basic", "pro"])  
-        )
+#     def get_queryset(self):
+#         return (
+#             LandscaperProfilies.objects
+#             .select_related("user")
+#             .filter(plan__in=["basic", "pro"])  
+#         )
 
 
 
 # ---------------- All Clients ----------------
+
+# class ClientProfileListView(generics.ListAPIView):
+#     queryset = ClientProfile.objects.all()
+#     print("queryset",queryset)
+#     serializer_class = ClientProfileSerializer
+
+
 class ClientProfileListView(generics.ListAPIView):
-    queryset = ClientProfile.objects.all()
-    print("queryset",queryset)
     serializer_class = ClientProfileSerializer
 
-# search landscaers
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from django.db.models import Q, Avg, F
-from django.db.models.functions import ACos, Cos, Sin, Radians
+    def get_queryset(self):
+        queryset = ClientProfile.objects.all()  
+        
+        return queryset
 
-from accounts.models import User
-from accounts.enums import RoleChoices
-from profiles.serializers import LandscaperProfileSerializer
+# search landscaers
 
 class LandscaperSearchByKMAPIView(APIView):
     permission_classes = [IsAuthenticated]

@@ -192,8 +192,6 @@ def stripe_webhook(request):
 
 
 # Optional success/cancel pages
-
-
 def success(request):
     session_id = request.GET.get("session_id")
     if session_id:
@@ -270,48 +268,6 @@ class AdminPlanDeleteView(generics.DestroyAPIView):
             })
 
         instance.delete()
-
-
-
-
-
-# class AdminSubscriptionDeleteView(APIView):
-#     permission_classes = [IsAdmin]
-
-#     def delete(self, request, subscription_id):
-#         # 1️⃣ Get subscription
-#         subscription = get_object_or_404(Subscription, id=subscription_id)
-
-#         # 2️⃣ Cancel Stripe subscription if linked
-#         if subscription.plan.stripe_price_id:  # optional check
-#             # If you stored Stripe subscription ID, cancel via API
-#             stripe_subscription_id = getattr(subscription, 'stripe_subscription_id', None)
-#             if stripe_subscription_id:
-#                 try:
-#                     stripe.Subscription.delete(stripe_subscription_id)
-#                 except stripe.error.StripeError as e:
-#                     return Response(
-#                         {"detail": f"Stripe error: {str(e)}"},
-#                         status=status.HTTP_400_BAD_REQUEST
-#                     )
-
-#         # 3️⃣ Update subscription in DB
-#         subscription.status = "canceled"
-#         subscription.is_active = False
-#         subscription.end_date = timezone.now()
-#         subscription.save(update_fields=["status", "is_active", "end_date"])
-
-#         # 4️⃣ Downgrade user role if no other active subscriptions
-#         user = subscription.user
-#         active_subs = Subscription.objects.filter(user=user, is_active=True, status="active").exists()
-#         if not active_subs and user.role == "landscaper":
-#             user.role = "user"
-#             user.save(update_fields=["role"])
-
-#         return Response(
-#             {"detail": "Subscription canceled and role updated if necessary."},
-#             status=status.HTTP_200_OK
-#         )
 
 
 class AdminSubscriptionDeleteView(APIView):

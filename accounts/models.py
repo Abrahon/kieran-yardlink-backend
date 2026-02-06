@@ -54,8 +54,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     email = models.EmailField(unique=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
     address = models.CharField(max_length=255, blank=True, null=True)
-    latitude = models.DecimalField(max_digits=20, decimal_places=14, blank=True, null=True)
-    longitude = models.DecimalField(max_digits=20, decimal_places=14, blank=True, null=True)
+    latitude = models.DecimalField(max_digits=20, decimal_places=18, blank=True, null=True)
+    longitude = models.DecimalField(max_digits=20, decimal_places=18, blank=True, null=True)
   
 
     # NOTE: no default role. Must be provided.

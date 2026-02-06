@@ -1,15 +1,31 @@
-# properties/urls.py
 from django.urls import path
 from .views import (
     PropertyListCreateView,
     PropertyDetailView,
     PropertyMultipleImageUploadView,
-    PropertyImagesListView)
-
+)
 
 urlpatterns = [
-    path("properties/", PropertyListCreateView.as_view()),
-    path("properties/<int:pk>/", PropertyDetailView.as_view()),
-    path("properties/images/", PropertyMultipleImageUploadView.as_view()),
-    path("properties/images/<int:property_id>/", PropertyImagesListView.as_view()),
+    # --------------------------
+    # Properties
+    # --------------------------
+    path(
+        "properties/",
+        PropertyListCreateView.as_view(),
+        name="property-list-create"
+    ),
+    path(
+        "properties/<int:pk>/",
+        PropertyDetailView.as_view(),
+        name="property-detail"
+    ),
+
+    # --------------------------
+    # Upload multiple images for a property
+    # --------------------------
+    path(
+        "properties/<int:property_id>/images/",
+        PropertyMultipleImageUploadView.as_view(),
+        name="property-image-upload"
+    ),
 ]

@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from landscapers.models import LandscaperProfile, WorkingHours
-from services.models import Service
+from services.models import ClientService
+from landscapers.models import Service
+
 from profiles.models import LandscaperProfilies
 
 
@@ -102,7 +104,7 @@ class PublicLandscaperSerializer(serializers.ModelSerializer):
         obj must be a LandscaperProfile instance.
         """
         # obj is LandscaperProfile
-        services = Service.objects.filter(landscaper=obj)  # use obj directly
+        services = Service.objects.filter(landscaper=obj)  
 
         return [
             {

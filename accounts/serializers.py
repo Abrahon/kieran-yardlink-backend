@@ -60,14 +60,14 @@ class SignupSerializer(serializers.Serializer):
 
     latitude = serializers.DecimalField(
         max_digits=20,
-        decimal_places=14,
+        decimal_places=18,
         required=False,
         allow_null=True
     )
 
     longitude = serializers.DecimalField(
         max_digits=20,
-        decimal_places=14,
+        decimal_places=18,
         required=False,
         allow_null=True
     )

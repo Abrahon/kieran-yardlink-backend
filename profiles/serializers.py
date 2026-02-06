@@ -6,7 +6,6 @@ from django.utils.translation import gettext as _
 from .models import WorkerProfile
 from rest_framework import serializers
 from .models import ClientProfile
-from property.models import Property
 from rest_framework import serializers
 from .models import ClientProfile
 from property.models import Property
@@ -15,15 +14,15 @@ from reviews.serializers import LandscaperReviewSerializer
 from rest_framework import serializers
 from django.db.models import Q
 from connections.models import ConnectionRequest
-from landscapers.models import Service
 from django.db.models import Avg
 from landscapers.models import WorkingHours, LandscaperProfile
 from landscapers.serializers import WorkingHoursSerializer as WHSerializer
 from landscapers.models import WorkingHours, LandscaperProfile, Service
+from services.models import ClientService 
 from connections.models import ConnectionRequest
-from django.db.models import Q
-from subscriptions.models import Plan
-# from subscriptions.models import Plan
+from subscriptions.models import Plan,Subscription
+from subscriptions.enums import SubscriptionStatus
+# from subscr.models import Plan
 User = get_user_model()
 
 
@@ -217,7 +216,7 @@ class WorkerProfileSerializer(serializers.ModelSerializer):
 class LandscaperProfileSerializer(serializers.ModelSerializer):
     user_id = serializers.IntegerField(source="user.id", read_only=True)
     email = serializers.EmailField(source="user.email", read_only=True)
-    plan = serializers.CharField(read_only=True) 
+    plan = serializers.SerializerMethodField()
 
     # Model fields for writable
     name = serializers.CharField(required=False)
@@ -264,6 +263,26 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
         data = super().to_representation(instance)
         data["image"] = instance.image.url if instance.image else None
         return data
+
+    def get_plan(self, obj):
+        """
+        Plan is derived from ACTIVE subscription (Stripe-controlled)
+        """
+        subscription = (
+            Subscription.objects
+            .filter(
+                user=obj.user,
+                is_active=True,
+                status=SubscriptionStatus.ACTIVE
+            )
+            .select_related("plan")
+            .first()
+        )
+
+        if subscription:
+            return subscription.plan.name.lower()  # e.g. "basic", "pro"
+
+        return "free"
 
 
     def get_working_hours(self, obj):
@@ -367,9 +386,6 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
         ).select_related("client").order_by("-created_at")
         return LandscaperReviewSerializer(reviews, many=True).data
 
- 
-
-
 
 
 # serializers.py for client
@@ -402,29 +418,42 @@ class ClientProfileSerializer(serializers.ModelSerializer):
             "latitude",
             "longitude",
             "image",
-            "services",
+            "services", 
             "total_service_price",
             "properties",
             "already_sent",
             "connection_request_id",
         ]
 
+
+
     def get_services(self, obj):
-        services = Service.objects.filter(standard_services=True)
+        """
+        Return all standard services to the client.
+        """
+        services_qs = ClientService.objects.filter(is_standard=True) 
+
         return [
             {
                 "id": s.id,
+                "name": s.name,
+                "description": s.description,
                 "category": s.category,
-                "standard_services": s.standard_services,
-                "custom_service": s.custom_service,
-                "price": float(s.price) if s.price else 0,
+                "price": str(s.price) if s.price else None,
+                "square_feet": float(s.square_feet) if s.square_feet else None,
+                "is_standard": s.is_standard,
+                "image": s.image.url if s.image else None,
             }
-            for s in services
+            for s in services_qs
         ]
 
+
+
+    #  Add this method to calculate total service price
     def get_total_service_price(self, obj):
-        services = Service.objects.filter(standard_services=True)
-        return sum(float(s.price or 0) for s in services)
+        services_qs = ClientService.objects.filter(is_standard=True)
+        return sum(float(service.price or 0) for service in services_qs)
+
 
     def get_properties(self, obj):
         properties = Property.objects.filter(owner=obj.user)

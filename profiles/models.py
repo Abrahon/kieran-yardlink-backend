@@ -46,29 +46,40 @@ class WorkerProfile(models.Model):
 
 
 # profiles/models.py
+# class LandscaperProfilies(models.Model):
+#     user = models.OneToOneField(User, on_delete=models.CASCADE)
+#     # user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="landscaper_profile")
+#     name = models.CharField(max_length=255, default="Landscaper")
+#     phone = models.CharField(max_length=20, blank=True, default="")
+#     image = CloudinaryField("landscaper_profile", blank=True, null=True)
+#     stripe_account_id = models.CharField(max_length=255, blank=True, null=True) 
+
+
+#     def __str__(self):
+#         return self.name
+
+
+# profiles/models.py
 class LandscaperProfilies(models.Model):
-
-    BASIC = "basic"
-    PRO = "pro"
-
-    PLAN_CHOICES = (
-        (BASIC, "Basic"),
-        (PRO, "Pro"),
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name="landscaperprofilies"  # explicitly name the reverse accessor
     )
-
-    user = models.OneToOneField(User, on_delete=models.CASCADE)
     name = models.CharField(max_length=255, default="Landscaper")
     phone = models.CharField(max_length=20, blank=True, default="")
     image = CloudinaryField("landscaper_profile", blank=True, null=True)
+    stripe_account_id = models.CharField(max_length=255, blank=True, null=True)
 
-    plan = models.CharField(
-        max_length=10,
-        choices=PLAN_CHOICES,
-        default=BASIC
+# landscapers/models.py
+class LandscaperProfile(models.Model):
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name="landscaper_profile_extra"  # give a unique reverse name
     )
 
-    def __str__(self):
-        return f"{self.name} ({self.plan})"
+
 
 
 

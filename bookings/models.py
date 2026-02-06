@@ -3,7 +3,7 @@ from django.db import models
 from django.utils import timezone
 from accounts.models import User
 from landscapers.models import LandscaperProfile
-from services.models import Service
+from services.models import ClientService
 
 
 class BookingStatus(models.TextChoices):
@@ -34,7 +34,7 @@ class ServiceBooking(models.Model):
     )
 
     service = models.ForeignKey(
-        Service,
+        ClientService,
         on_delete=models.PROTECT,
         related_name="bookings"
     )

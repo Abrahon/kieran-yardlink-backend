@@ -78,21 +78,22 @@
 #     created_at = models.DateTimeField(auto_now_add=True)
 
 
+
 # models.py
 from django.db import models
 from landscapers.models import LandscaperProfile
-from profiles.models import ClientProfile
+from profiles.models import ClientProfile,LandscaperProfilies
 from cloudinary.models import CloudinaryField
 
 
 # ---------------- Service (Template, NEVER completed) ----------------
-class Service(models.Model):
+
+
+# ---------------- Client Service (Client-facing services) ----------------
+class ClientService(models.Model):
     landscaper = models.ForeignKey(
-        LandscaperProfile,
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="services"
+        LandscaperProfilies,
+        on_delete=models.CASCADE
     )
     name = models.CharField(max_length=120)
     description = models.TextField(blank=True)
@@ -111,6 +112,7 @@ class Service(models.Model):
         return self.name
 
 
+
 # ---------------- Client Service Preference ----------------
 class ClientServicePreference(models.Model):
     client = models.OneToOneField(
@@ -118,7 +120,7 @@ class ClientServicePreference(models.Model):
         on_delete=models.CASCADE,
         related_name="service_preference"
     )
-    services = models.ManyToManyField(Service, blank=True)
+    services = models.ManyToManyField(ClientService, blank=True)
     frequency = models.CharField(
         max_length=20,
         choices=[
@@ -132,24 +134,46 @@ class ClientServicePreference(models.Model):
 
 
 # ---------------- Client Job / Schedule ----------------
+
+class PaymentStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    PAID = "paid", "Paid"
+    CASH_PENDING = "cash_pending", "Cash Pending"
+
+
 class ServiceSchedule(models.Model):
-    service = models.ForeignKey(Service, on_delete=models.CASCADE)
+    service = models.ForeignKey(
+        ClientService,
+        on_delete=models.CASCADE,
+        related_name="schedules"
+    )
     client = models.ForeignKey(ClientProfile, on_delete=models.CASCADE)
     landscaper = models.ForeignKey(
-        LandscaperProfile,
+        LandscaperProfilies,
         on_delete=models.CASCADE,
-        null=True,  # <-- allow null
-        blank=True
+        null=True,
+        blank=True,
+        related_name="jobs"
     )
 
     scheduled_date = models.DateField()
-    scheduled_time = models.TimeField()
-  
-
-    is_completed = models.BooleanField(default=False)
-    completed_at = models.DateTimeField(null=True, blank=True)
     scheduled_time = models.TimeField(null=True, blank=True)
 
+    # Job status
+    is_completed = models.BooleanField(default=False)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    # 💰 PAYMENT FIELDS (THIS IS WHAT YOU WERE MISSING)
+    payment_status = models.CharField(
+        max_length=20,
+        choices=PaymentStatus.choices,
+        default=PaymentStatus.PENDING
+    )
+    stripe_payment_id = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -167,5 +191,7 @@ class ScheduleCompletionImage(models.Model):
         on_delete=models.CASCADE,
         related_name="images"
     )
+
     image = CloudinaryField("completed-work")
+
     uploaded_at = models.DateTimeField(auto_now_add=True)

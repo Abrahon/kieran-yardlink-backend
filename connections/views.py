@@ -1,10 +1,7 @@
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
+
 from rest_framework.response import Response
-from rest_framework import status
-from django.db.models import Q
 from django.shortcuts import get_object_or_404
-from services.models import ServiceSchedule ,Service
+from services.models import ServiceSchedule ,ClientService
 from rest_framework.exceptions import ValidationError
 from accounts.models import User
 from .models import ConnectionRequest
@@ -14,7 +11,6 @@ from .serializers import (
     RespondConnectionRequestSerializer,
     AcceptedConnectionSerializer,
 )
-
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .models import ConnectionRequest
@@ -22,23 +18,24 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
-from services.models import ServiceSchedule
 from profiles.models import ClientProfile, LandscaperProfilies
-from accounts.models import User
-
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework.exceptions import ValidationError
-from django.shortcuts import get_object_or_404
-from connections.models import ConnectionRequest
-from landscapers.models import WorkingHours
-from services.models import Service, ServiceSchedule
-from profiles.models import ClientProfile
+from landscapers.models import WorkingHours,Service
 from datetime import datetime, timedelta
 from django.utils.timezone import make_aware
-
+from django.db import transaction
+from rest_framework.exceptions import PermissionDenied
+from profiles.serializers import ClientProfileSerializer, LandscaperProfileSerializer
+from django.db import transaction
+from rest_framework.views import APIView
+from django.shortcuts import get_object_or_404
+from django.db.models import Q
+from rest_framework import status
+from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
+from services.models import ServiceSchedule, ScheduleCompletionImage
+from common.permissions import IsLandscaper
 User = get_user_model()
+
+
 
 class SendConnectionRequestAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -103,15 +100,42 @@ class InboxConnectionRequestAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        qs = ConnectionRequest.objects.filter(
+        # 1️⃣ Fetch all pending requests where the logged-in user is the receiver
+        pending_requests = ConnectionRequest.objects.filter(
             receiver=request.user,
-            is_accepted__isnull=True  # Only pending
+            is_accepted__isnull=True
         ).order_by("-created_at")
 
-        print("Queryset:", qs)  # Debug: check what it returns
-        serializer = ConnectionRequestDetailSerializer(qs, many=True, context={"request": request})
-        print("Serialized data:", serializer.data)  # Debug: check serialized output
-        return Response(serializer.data)
+        response = []
+
+        for req in pending_requests:
+            sender = req.sender
+            sender_data = {"user_id": sender.id, "email": sender.email, "type": "unknown"}
+
+            #  Check if sender is landscaper
+            try:
+                sender_profile = sender.landscaperprofilies
+                sender_data = LandscaperProfileSerializer(sender_profile, context={"request": request}).data
+                sender_data["type"] = "landscaper"
+            except LandscaperProfilies.DoesNotExist:
+                #  Check if sender is client
+                try:
+                    sender_profile = sender.clientprofile
+                    sender_data = ClientProfileSerializer(sender_profile, context={"request": request}).data
+                    sender_data["type"] = "client"
+                except ClientProfile.DoesNotExist:
+                    pass  # keep as "unknown"
+
+            #  Append to response
+            response.append({
+                "connection_id": req.id,
+                "sent_by": sender_data,  # full profile of sender
+                "created_at": req.created_at,
+                "status": "pending"
+            })
+
+        return Response(response)
+
 
 
 class SentConnectionRequestAPIView(APIView):
@@ -127,118 +151,6 @@ class SentConnectionRequestAPIView(APIView):
 
 
 
-# class RespondConnectionRequestAPIView(APIView):
-#     permission_classes = [IsAuthenticated]
-
-#     def post(self, request, pk):
-#         connection = get_object_or_404(
-#             ConnectionRequest,
-#             id=pk,
-#             receiver=request.user,
-#             is_accepted=None
-#         )
-
-#         serializer = RespondConnectionRequestSerializer(
-#             instance=connection,
-#             data=request.data
-#         )
-#         serializer.is_valid(raise_exception=True)
-#         serializer.save()
-
-#         return Response(ConnectionRequestSerializer(connection).data)
-
-# from rest_framework.views import APIView
-# from rest_framework.response import Response
-# from rest_framework.permissions import IsAuthenticated
-# from django.db.models import Q
-# from connections.models import ConnectionRequest
-# from profiles.models import LandscaperProfilies, ClientProfile
-# # from .serializers import ConnectedUserSerializer, RespondConnectionRequestSerializer
-# from services.models import ServiceSchedule
-
-
-# class RespondConnectionRequestAPIView(APIView):
-#     permission_classes = [IsAuthenticated]
-
-#     def post(self, request, pk):
-#         # 1️⃣ Get the pending connection request
-#         try:
-#             connection = ConnectionRequest.objects.get(
-#                 id=pk,
-#                 receiver=request.user,
-#                 is_accepted=None
-#             )
-#         except ConnectionRequest.DoesNotExist:
-#             return Response(
-#                 {"detail": "Connection request not found or already responded."},
-#                 status=404
-#             )
-
-#         # 2️⃣ Update connection request (accept/reject)
-#         serializer = RespondConnectionRequestSerializer(
-#             instance=connection,
-#             data=request.data
-#         )
-#         serializer.is_valid(raise_exception=True)
-#         serializer.save()
-
-#         # 3️⃣ Get the connected user (other side)
-#         connected_user = connection.receiver if connection.sender == request.user else connection.sender
-
-#         # 4️⃣ Get profile data
-#         profile_data = self.get_profile_data(connected_user)
-
-#         # 5️⃣ Get all upcoming jobs if connection was accepted
-#         upcoming_jobs = []
-#         if connection.is_accepted:
-#             upcoming_jobs = self.get_upcoming_jobs(request.user, connected_user)
-
-#         # 6️⃣ Build response
-#         response_data = {
-#             "connection_id": connection.id,
-#             "connected_profile": profile_data,
-#             "created_at": connection.created_at,
-#             "upcoming_jobs": upcoming_jobs  # changed from single "upcoming_job"
-#         }
-
-#         serializer = ConnectedUserSerializer(response_data)
-#         return Response(serializer.data)
-
-#     # ----------------------
-#     def get_profile_data(self, user):
-#         try:
-#             profile = LandscaperProfilies.objects.get(user=user)
-#             data = ConnectedUserSerializer(profile).data
-#             data["type"] = "landscaper"
-#             return data
-#         except LandscaperProfilies.DoesNotExist:
-#             try:
-#                 profile = ClientProfile.objects.get(user=user)
-#                 data = ConnectedUserSerializer(profile).data
-#                 data["type"] = "client"
-#                 return data
-#             except ClientProfile.DoesNotExist:
-#                 return {
-#                     "user_id": user.id,
-#                     "email": user.email,
-#                     "name": getattr(user, "name", ""),
-#                     "type": "unknown"
-#                 }
-from django.db import transaction
-from django.db.models import Q
-from django.utils import timezone
-from django.shortcuts import get_object_or_404
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework.exceptions import PermissionDenied
-
-from connections.models import ConnectionRequest
-from connections.serializers import RespondConnectionRequestSerializer
-from profiles.models import ClientProfile, LandscaperProfilies
-from services.models import ServiceSchedule
-
-
 class RespondConnectionRequestAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -246,13 +158,7 @@ class RespondConnectionRequestAPIView(APIView):
     def post(self, request, pk):
         user = request.user
 
-        # 🔒 Only CLIENT can respond
-        try:
-            client_profile = user.clientprofile
-        except ClientProfile.DoesNotExist:
-            raise PermissionDenied("Only clients can respond to connection requests.")
-
-        # 🔍 Fetch pending request
+        # Fetch pending request
         connection = get_object_or_404(
             ConnectionRequest,
             id=pk,
@@ -260,76 +166,92 @@ class RespondConnectionRequestAPIView(APIView):
         )
 
         if user not in (connection.sender, connection.receiver):
-            raise PermissionDenied("You are not part of this request.")
+            return Response({"detail": "You are not part of this request."}, status=status.HTTP_403_FORBIDDEN)
 
-        # 🌿 Identify landscaper PROFILE (SAFE)
-        if hasattr(connection.sender, "landscaperprofilies"):
-            landscaper_profile = connection.sender.landscaperprofilies
-        elif hasattr(connection.receiver, "landscaperprofilies"):
-            landscaper_profile = connection.receiver.landscaperprofilies
+        # Identify roles
+        if hasattr(user, "clientprofile"):
+            responder_role = "client"
+            client_profile = user.clientprofile
+            landscaper_user = connection.receiver if connection.sender == user else connection.sender
+            landscaper_profile = get_object_or_404(LandscaperProfilies, user=landscaper_user)
+
+        elif hasattr(user, "landscaperprofilies"):
+            responder_role = "landscaper"
+            landscaper_profile = user.landscaperprofilies
+            client_user = connection.receiver if connection.sender == user else connection.sender
+            client_profile = get_object_or_404(ClientProfile, user=client_user)
+
         else:
-            raise PermissionDenied("No landscaper found in this connection.")
+            return Response({"detail": "Invalid user role."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Validate action
         serializer = RespondConnectionRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         action = serializer.validated_data["action"]
 
-        # ❌ REJECT
+        # Reject
         if action == "reject":
             connection.is_accepted = False
             connection.save(update_fields=["is_accepted"])
             return Response({
                 "connection_id": connection.id,
-                "status": "rejected"
+                "status": "rejected",
+                "responded_by": responder_role
             })
 
-        # ✅ ACCEPT
+        # Accept
         connection.is_accepted = True
         connection.save(update_fields=["is_accepted"])
 
-        # 🔥 ENFORCE: CLIENT → ONLY ONE LANDSCAPER
-        ConnectionRequest.objects.filter(
-            is_accepted=True
-        ).filter(
-            Q(sender=user) | Q(receiver=user)
-        ).exclude(
-            id=connection.id
-        ).delete()
+        # Client can only have one accepted landscaper
+        if responder_role == "client":
+            ConnectionRequest.objects.filter(
+                is_accepted=True
+            ).filter(
+                Q(sender=user) | Q(receiver=user)
+            ).exclude(id=connection.id).delete()
 
-        # 📅 UPCOMING JOB (CLIENT ONLY)
+        # Create or fetch upcoming job for this client-landscaper
         job = ServiceSchedule.objects.filter(
             client=client_profile,
             landscaper=landscaper_profile,
             is_completed=False
-        ).order_by(
-            "scheduled_date", "scheduled_time"
         ).first()
 
-        # 🆕 Create job if not exists
         if not job:
             now = timezone.now()
+            service = ClientService.objects.filter(landscaper=landscaper_profile).first()
+            if not service:
+                return Response({"detail": "No client service found for this landscaper."}, status=status.HTTP_400_BAD_REQUEST)
+
             job = ServiceSchedule.objects.create(
                 client=client_profile,
                 landscaper=landscaper_profile,
+                service=service,
                 scheduled_date=now.date(),
-                scheduled_time=now.time(),
+                scheduled_time=now.time()
             )
 
-        # 🔗 Attach schedule
+        # Attach schedule to connection
         connection.schedule = job
         connection.save(update_fields=["schedule"])
+
+        # Serialize client profile
+        client_data = ClientProfileSerializer(client_profile, context={"request": request}).data
 
         return Response({
             "connection_id": connection.id,
             "status": "accepted",
-            "client_id": client_profile.id,
-            "landscaper_id": landscaper_profile.id,
+            "accepted_by": responder_role,
             "upcoming_job": {
                 "job_id": job.id,
                 "date": job.scheduled_date,
-                "time": job.scheduled_time,
-            }
+                "time": job.scheduled_time
+            },
+            "client_profile": client_data
         })
+
+
 
 class CancelConnectionRequestAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -583,66 +505,59 @@ class AcceptConnectionAPIView(APIView):
             "price": float(job.service.price or 0),
         }
 
+
 # -------------------------------
 # Upcoming Job
 # -------------------------------
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
 
-from services.models import ServiceSchedule
-from profiles.models import LandscaperProfilies
-from connections.models import ConnectionRequest
-from profiles.serializers import ClientProfileSerializer
-
-
-class UpcomingJobAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+from common.permissions import IsLandscaper
+class UpcomingJobListAPIView(APIView):
+    """
+    Returns all pending jobs for the logged-in landscaper.
+    Shows client profile for each job.
+    """
+    permission_classes = [IsAuthenticated, IsLandscaper]
 
     def get(self, request):
-        # 1️⃣ Ensure landscaper
+        # 1️⃣ Get logged-in landscaper profile
         try:
             landscaper = request.user.landscaperprofilies
         except LandscaperProfilies.DoesNotExist:
             return Response([])
 
-        # 2️⃣ Fetch upcoming jobs
+        # 2️⃣ Fetch all pending jobs assigned to this landscaper
         jobs = ServiceSchedule.objects.filter(
             landscaper=landscaper,
             is_completed=False
-        ).select_related(
-            "client", "client__user", "service"
-        ).order_by("scheduled_date", "scheduled_time")
+        ).select_related("client", "service").order_by("scheduled_date", "scheduled_time")
 
         response = []
 
         for job in jobs:
             client_profile = job.client
 
-            # 3️⃣ Ensure ACCEPTED connection
-            is_connected = ConnectionRequest.objects.filter(
-                is_accepted=True,
-                sender__in=[request.user, client_profile.user],
-                receiver__in=[request.user, client_profile.user]
+            # 3️⃣ Ensure the job is linked to an accepted connection
+            connection_exists = ConnectionRequest.objects.filter(
+                is_accepted=True
+            ).filter(
+                Q(sender=client_profile.user, receiver=request.user) |
+                Q(sender=request.user, receiver=client_profile.user)
             ).exists()
 
-            if not is_connected:
-                continue  # ⛔ skip non-connected clients
+            if not connection_exists:
+                continue  # skip jobs without accepted connection
 
+            # 4️⃣ Append job info
             response.append({
                 "job_id": job.id,
+                "service_name": job.service.name,
                 "scheduled_date": job.scheduled_date,
                 "scheduled_time": job.scheduled_time,
-                "service_name": job.service.name,
                 "price": float(job.service.price or 0),
-
-                # 🔥 FULL CLIENT PROFILE + PROPERTIES
-                "client": ClientProfileWithPropertySerializer(client_profile).data
+                "client": ClientProfileSerializer(client_profile, context={"request": request}).data
             })
 
         return Response(response)
-
-
 
 class RemoveConnectionAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -664,3 +579,142 @@ class RemoveConnectionAPIView(APIView):
         return Response(
             {"message": "Connection removed"}
         )
+
+
+
+
+
+
+# class JobDetailAPIView(APIView):
+#     permission_classes = [IsAuthenticated, IsLandscaper]
+#     parser_classes = [JSONParser, MultiPartParser, FormParser]
+
+#     def patch(self, request, job_id):
+#         job = get_object_or_404(ServiceSchedule, id=job_id)
+
+#         landscaper = request.user.landscaperprofilies
+#         if job.landscaper != landscaper:
+#             return Response(
+#                 {"detail": "You are not assigned to this job"},
+#                 status=status.HTTP_403_FORBIDDEN
+#             )
+
+#         # Update schedule
+#         if "scheduled_date" in request.data:
+#             job.scheduled_date = request.data["scheduled_date"]
+
+#         if "scheduled_time" in request.data:
+#             job.scheduled_time = request.data["scheduled_time"]
+
+#         # Mark as completed
+#         if request.data.get("is_completed") in [True, "true", "True"]:
+#             if not job.is_completed:
+#                 job.is_completed = True
+#                 job.completed_at = timezone.now()
+
+#         job.save()
+
+#         #  Upload images ONLY after completion
+#         images = request.FILES.getlist("images")
+
+#         if images:
+#             if not job.is_completed:
+#                 return Response(
+#                     {"error": "Complete the job before uploading images"},
+#                     status=status.HTTP_400_BAD_REQUEST
+#                 )
+
+#             for image in images:
+#                 ScheduleCompletionImage.objects.create(
+#                     schedule=job,
+#                     image=image
+#                 )
+
+#         # Serialize images correctly
+#         image_urls = [img.image.url for img in job.images.all()]
+
+#         return Response({
+#             "job_id": job.id,
+#             "service": job.service.name,
+#             "scheduled_date": job.scheduled_date,
+#             "scheduled_time": job.scheduled_time,
+#             "is_completed": job.is_completed,
+#             "completed_at": job.completed_at,
+#             "payment_status": "pending" if job.is_completed else None,
+#             "images": image_urls,
+#             "client": ClientProfileSerializer(
+#                 job.client,
+#                 context={"request": request}
+#             ).data
+#         })
+
+
+
+class JobDetailAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsLandscaper]
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
+
+    def patch(self, request, job_id):
+        job = get_object_or_404(ServiceSchedule, id=job_id)
+
+        #  Only assigned landscaper can update
+        landscaper = request.user.landscaperprofilies
+        if job.landscaper != landscaper:
+            return Response(
+                {"detail": "You are not assigned to this job"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        #  Update schedule fields
+        if "scheduled_date" in request.data:
+            job.scheduled_date = request.data["scheduled_date"]
+
+        if "scheduled_time" in request.data:
+            job.scheduled_time = request.data["scheduled_time"]
+
+        #  Mark job as completed
+        if request.data.get("is_completed") in [True, "true", "True"]:
+            if not job.is_completed:
+                job.is_completed = True
+                job.completed_at = timezone.now()
+
+        # Save ONE completion note (job-level)
+        if "completion_note" in request.data:
+            job.completion_note = request.data["completion_note"]
+
+        job.save()
+
+        #  Upload images ONLY after completion
+        images = request.FILES.getlist("images")
+
+        if images:
+            if not job.is_completed:
+                return Response(
+                    {"error": "Complete the job before uploading images"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            for image in images:
+                ScheduleCompletionImage.objects.create(
+                    schedule=job,
+                    image=image
+                )
+
+        # Serialize images
+        image_urls = [img.image.url for img in job.images.all()]
+
+        return Response({
+            "job_id": job.id,
+            "service": job.service.name,
+            "scheduled_date": job.scheduled_date,
+            "scheduled_time": job.scheduled_time,
+            "is_completed": job.is_completed,
+            "completed_at": job.completed_at,
+            "completion_note": job.completion_note,  
+            "payment_status": "pending" if job.is_completed else None,
+            "images": image_urls,
+            "client": ClientProfileSerializer(
+                job.client,
+                context={"request": request}
+            ).data
+        })

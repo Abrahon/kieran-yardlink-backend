@@ -60,11 +60,14 @@
 #     """
 #     completed_services = ServiceSerializer(many=True)
 #     next_services = ServiceSerializer(many=True)
-# serializers.py
 
+# serializers.py
+# from rest_framework import serializers
+# from .models import Service, ClientServicePreference, ServiceSchedule
+# from property.models import Property
 from rest_framework import serializers
 from .models import (
-    Service,
+    ClientService,
     ClientServicePreference,
     ServiceSchedule,
     ScheduleCompletionImage
@@ -73,7 +76,7 @@ from .models import (
 
 class ServiceSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Service
+        model = ClientService
         fields = [
             "id",
             "name",
@@ -101,7 +104,7 @@ class ServiceSerializer(serializers.ModelSerializer):
 class ClientServicePreferenceWriteSerializer(serializers.ModelSerializer):
     services = serializers.PrimaryKeyRelatedField(
         many=True,
-        queryset=Service.objects.all()
+        queryset=ClientService.objects.all()
     )
 
     class Meta:
@@ -159,13 +162,11 @@ class ScheduleRescheduleSerializer(serializers.ModelSerializer):
         return attrs
 
 
-from rest_framework import serializers
-from .models import Service, ClientServicePreference, ServiceSchedule
-from property.models import Property
+
 
 class ServiceMiniSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Service
+        model = ClientService
         fields = ["id", "name", "price", "category"]
 
 class ServiceOverviewSerializer(serializers.Serializer):

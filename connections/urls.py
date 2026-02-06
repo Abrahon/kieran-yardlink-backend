@@ -9,7 +9,9 @@ from .views import (
     AcceptedConnectionsAPIView,
     AcceptConnectionAPIView,
     RemoveConnectionAPIView,
-    UpcomingJobAPIView,
+    UpcomingJobListAPIView,
+    JobDetailAPIView
+    
 )
 
 urlpatterns = [
@@ -65,14 +67,16 @@ urlpatterns = [
     # Get the next upcoming job for a connection
     path(
         "upcoming-job/<int:pk>/",
-        UpcomingJobAPIView.as_view(),
+        UpcomingJobListAPIView.as_view(),
         name="upcoming-job"
     ),
     path(
         "upcoming-job/list/",
-        AcceptConnectionAPIView.as_view(),
+        UpcomingJobListAPIView.as_view(),
         name="upcoming-job"
     ),
+    
+    path("jobs/<int:job_id>/", JobDetailAPIView.as_view(), name="job-detail"),
 
     # Remove an accepted connection
     path(
