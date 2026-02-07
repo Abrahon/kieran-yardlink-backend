@@ -31,6 +31,8 @@ SECRET_KEY = config(
 DEBUG = config("DEBUG", default=True, cast=bool)
 
 ALLOWED_HOSTS = config(
+    "api.yardlinkapp.com",
+    "www.api.yardlinkapp.com",
     "ALLOWED_HOSTS",
     default="localhost,127.0.0.1",
 ).split(",")

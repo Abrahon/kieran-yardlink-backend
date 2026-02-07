@@ -298,6 +298,7 @@ class WorkingHoursListCreateView(generics.ListCreateAPIView):
             },
             status=status.HTTP_201_CREATED if created_hours else status.HTTP_400_BAD_REQUEST
         )
+        
 # updated views
 # from rest_framework import generics, permissions
 # from .models import StandardService, ClientServicePreference
