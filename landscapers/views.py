@@ -298,3 +298,37 @@ class WorkingHoursListCreateView(generics.ListCreateAPIView):
             },
             status=status.HTTP_201_CREATED if created_hours else status.HTTP_400_BAD_REQUEST
         )
+# updated views
+# from rest_framework import generics, permissions
+# from .models import StandardService, ClientServicePreference
+# from .serializers import StandardServiceSerializer, StandardServiceUpdateByLandscaperSerializer, ClientServicePreferenceSerializer
+
+# # Admin: create and list all services
+# class StandardServiceListCreateView(generics.ListCreateAPIView):
+#     queryset = StandardService.objects.all()
+#     serializer_class = StandardServiceSerializer
+#     permission_classes = [permissions.IsAdminUser]
+
+# # Admin & landscaper: update service
+# class StandardServiceUpdateView(generics.RetrieveUpdateAPIView):
+#     queryset = StandardService.objects.all()
+#     permission_classes = [permissions.IsAuthenticated]
+
+#     def get_serializer_class(self):
+#         if self.request.user.is_staff:
+#             return StandardServiceSerializer  # Admin can update all fields
+#         return StandardServiceUpdateByLandscaperSerializer  # landscaper can update price/type/active
+
+# # Client: list all active services
+# class StandardServiceListForClientView(generics.ListAPIView):
+#     queryset = StandardService.objects.filter(is_active=True)
+#     serializer_class = StandardServiceSerializer
+#     permission_classes = [permissions.IsAuthenticated]
+
+# # Client: select services and update preference
+# class ClientServicePreferenceView(generics.RetrieveUpdateAPIView):
+#     serializer_class = ClientServicePreferenceSerializer
+#     permission_classes = [permissions.IsAuthenticated]
+
+#     def get_object(self):
+#         return ClientServicePreference.objects.get_or_create(client=self.request.user.clientprofile)[0]
