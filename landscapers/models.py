@@ -34,6 +34,25 @@ class LandscaperProfile(models.Model):
     def __str__(self):
         return self.business_name
 
+# updated  models
+# admin add standard service
+# class StandardService(models.Model):
+#     class PricingType(models.TextChoices):
+#         HOURLY = "hourly", _("Hourly")
+#         FLAT = "flat", _("Flat Rate")
+#         PER_SQFT = "per_sqft", _("Per Square Foot")
+
+#     name = models.CharField(max_length=120, unique=True)
+#     pricing_type = models.CharField(
+#         max_length=20,
+#         choices=PricingType.choices,
+#         default=PricingType.HOURLY
+#     )
+#     base_price = models.DecimalField(max_digits=10, decimal_places=2)
+#     is_active = models.BooleanField(default=True)
+
+#     def __str__(self):
+#         return self.name
 
 
 # Service model
@@ -77,6 +96,7 @@ class Service(models.Model):
         return self.custom_service if self.custom_service else ", ".join(self.standard_services)
 
 
+
 # working_hours/models.py
 DAYS_OF_WEEK = [
     ('SUNDAY', 'Sunday'),
@@ -105,3 +125,58 @@ class WorkingHours(models.Model):
     def __str__(self):
         return f"{self.landscaper.name} - {self.day}"
 
+# serializers for standard services 
+# from rest_framework import serializers
+# from .models import StandardService, ClientServicePreference
+
+# class StandardServiceSerializer(serializers.ModelSerializer):
+#     class Meta:
+#         model = StandardService
+#         fields = ["id", "name", "pricing_type", "base_price", "is_active"]
+#         read_only_fields = ["id"]
+
+# class StandardServiceUpdateByLandscaperSerializer(serializers.ModelSerializer):
+#     class Meta:
+#         model = StandardService
+#         fields = ["pricing_type", "base_price", "is_active"]
+
+# class ClientServicePreferenceSerializer(serializers.ModelSerializer):
+#     services = StandardServiceSerializer(many=True, read_only=True)
+#     service_ids = serializers.PrimaryKeyRelatedField(
+#         many=True,
+#         queryset=StandardService.objects.filter(is_active=True),
+#         write_only=True,
+#         source="services"
+#     )
+#     total_price = serializers.SerializerMethodField()
+
+#     class Meta:
+#         model = ClientServicePreference
+#         fields = ["client", "services", "service_ids", "frequency", "note", "total_price", "updated_at"]
+#         read_only_fields = ["client", "total_price", "updated_at"]
+
+#     def get_total_price(self, obj):
+#         total = 0
+#         for service in obj.services.all():
+#             qty = 1 if service.pricing_type in ["hourly","flat"] else 100
+#             total += float(service.base_price) * qty
+#         return total
+
+#     def update(self, instance, validated_data):
+#         services = validated_data.pop('services', [])
+#         if services:
+#             instance.services.set(services)
+#         for attr, value in validated_data.items():
+#             setattr(instance, attr, value)
+#         instance.save()
+#         return instance
+
+#     def create(self, validated_data):
+#         client = self.context['request'].user.clientprofile
+#         services = validated_data.pop('services', [])
+#         obj, created = ClientServicePreference.objects.update_or_create(
+#             client=client,
+#             defaults=validated_data
+#         )
+#         obj.services.set(services)
+#         return obj

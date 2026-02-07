@@ -227,3 +227,5 @@ class ServiceOverviewSerializer(serializers.Serializer):
 
         # Default to True for the latest property
         return True
+
+

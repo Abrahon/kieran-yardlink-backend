@@ -5,24 +5,6 @@ from profiles.models import ClientProfile,LandscaperProfilies
 from cloudinary.models import CloudinaryField
 
 
-# admin add standard service
-# class StandardService(models.Model):
-#     class PricingType(models.TextChoices):
-#         HOURLY = "hourly", _("Hourly")
-#         FLAT = "flat", _("Flat Rate")
-#         PER_SQFT = "per_sqft", _("Per Square Foot")
-
-#     name = models.CharField(max_length=120, unique=True)
-#     pricing_type = models.CharField(
-#         max_length=20,
-#         choices=PricingType.choices,
-#         default=PricingType.HOURLY
-#     )
-#     base_price = models.DecimalField(max_digits=10, decimal_places=2)
-#     is_active = models.BooleanField(default=True)
-
-#     def __str__(self):
-#         return self.name
 
 
 
@@ -69,6 +51,14 @@ class ClientServicePreference(models.Model):
     )
     note = models.TextField(blank=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+# updated client services
+# class ClientServicePreference(models.Model):
+#     client = models.OneToOneField(ClientProfile, on_delete=models.CASCADE, related_name="service_preference")
+#     services = models.ManyToManyField(StandardService, related_name="client_preferences", blank=True)
+#     frequency = models.CharField(max_length=20, choices=[("weekly","Weekly"),("biweekly","Bi-Weekly"),("monthly","Monthly")])
+#     note = models.TextField(blank=True)
+#     updated_at = models.DateTimeField(auto_now=True)
 
 
 # ---------------- Client Job / Schedule ----------------

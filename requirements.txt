@@ -40,7 +40,7 @@ cryptography==46.0.3
 cycler==0.12.1
 daphne==4.2.1
 dill==0.4.0
-Django==5.2.8
+Django==4.2.10
 django-celery-beat==2.8.1
 django-cloudinary-storage==0.3.0
 django-cors-headers==4.9.0
@@ -67,6 +67,7 @@ googleapis-common-protos==1.72.0
 greenlet==3.2.4
 grpcio==1.76.0
 grpcio-status==1.76.0
+gunicorn==25.0.3
 h11==0.16.0
 h2==4.3.0
 h5py==3.15.1
