@@ -2,8 +2,6 @@ from rest_framework import generics, permissions
 from rest_framework.exceptions import PermissionDenied
 from .serializers import BusinessLandscaperProfileSerializer
 from subscriptions.models import Subscription
-
-from rest_framework.exceptions import ValidationError
 from rest_framework.exceptions import NotFound
 from .models import LandscaperProfile
 from django.db.models import Q
@@ -24,23 +22,17 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework import generics, permissions
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from .models import Service
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
 from django.db.models import F, Avg
 from django.db.models.functions import ACos, Cos, Sin, Radians
 from django.db.models import Q
-
+from rest_framework import generics, status
+from .serializers import UpdateServiceSerializer
 from accounts.models import User
 from accounts.enums import RoleChoices
 from profiles.models import LandscaperProfilies
 from reviews.models import LandscaperReview
 from connections.models import ConnectionRequest
-from profiles.serializers import LandscaperProfileSerializer
-from rest_framework.exceptions import PermissionDenied, ValidationError
-from .models import LandscaperProfile
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
-from rest_framework import generics, permissions
 
 
 # views.py
@@ -133,50 +125,25 @@ class ListServicesView(generics.ListAPIView):
         return queryset
 
 
-# for client search
-# class LandscaperFind(generics.ListAPIView):
-#     """
-#     Search and filter landscapers.
-#     Optional query params:
-#     - name: partial match on landscaper name
-#     - city: filter by city
-#     - service: filter by service ID
-#     - previous_work: 'true' or 'false' to show only landscapers the client worked with
-#     """
-#     serializer_class = BusinessLandscaperProfileSerializer
-#     permission_classes = [permissions.IsAuthenticated]  # client must be logged in
+# update custome service
+class UpdateServiceView(generics.UpdateAPIView):
+    serializer_class = UpdateServiceSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    queryset = Service.objects.all()
+    lookup_field = "id"   # URL will use service id
 
-#     def get_queryset(self):
-#         queryset = LandscaperProfile.objects.all()
-#         user = self.request.user
-#         params = self.request.query_params
+    def get_object(self):
+        service = super().get_object()
 
-#         # Filter by name
-#         name = params.get("name")
-#         if name:
-#             queryset = queryset.filter(full_name__icontains=name)
+        # Only landscapers can update
+        if self.request.user.role != "landscaper":
+            raise PermissionDenied("Only landscapers can update services.")
 
-#         # Filter by city
-#         city = params.get("city")
-#         if city:
-#             queryset = queryset.filter(city__icontains=city)
+        # Only owner can update
+        if service.landscaper != self.request.user:
+            raise PermissionDenied("You can only update your own services.")
 
-#         # Filter by service ID
-#         service_id = params.get("service")
-#         if service_id:
-#             queryset = queryset.filter(services__id=service_id)
-
-#         # Filter by previous work
-#         prev_work = params.get("previous_work")
-#         if prev_work and prev_work.lower() == "true":
-#             # Get landscapers client has worked with
-#             worked_landscaper_ids = ServiceBooking.objects.filter(
-#                 client=user,
-#                 status=BookingStatus.COMPLETED
-#             ).values_list("landscaper_id", flat=True)
-#             queryset = queryset.filter(id__in=worked_landscaper_ids)
-
-#         return queryset.distinct()
+        return service
 
 
 
@@ -197,14 +164,14 @@ class LandscaperFind(generics.ListAPIView):
         user = self.request.user
         params = self.request.query_params
 
-        # 🔍 Filter by BUSINESS NAME
+        #  Filter by BUSINESS NAME
         name = params.get("name")
         if name:
             queryset = queryset.filter(
                 business_name__icontains=name
             )
 
-        # 🌍 Filter by city
+        #  Filter by city
         city = params.get("city")
         if city:
             queryset = queryset.filter(
@@ -218,7 +185,7 @@ class LandscaperFind(generics.ListAPIView):
                 services__id=service_id
             )
 
-        # 🔁 Filter by previous work
+        #  Filter by previous work
         prev_work = params.get("previous_work")
         if prev_work and prev_work.lower() == "true":
             worked_landscaper_ids = ServiceBooking.objects.filter(
@@ -233,105 +200,7 @@ class LandscaperFind(generics.ListAPIView):
         return queryset.distinct()
 
 
-# # working houser set
-# class WorkingHoursListCreateView(generics.ListCreateAPIView):
-#     serializer_class = WorkingHoursSerializer
-#     permission_classes = [IsAuthenticated, IsLandscaper]
-
-#     def get_queryset(self):
-#         profile = LandscaperProfile.objects.get(user=self.request.user)
-#         return WorkingHours.objects.filter(
-#             landscaper=profile
-#         ).order_by("day")
-
-#     def create(self, request, *args, **kwargs):
-#         try:
-#             profile = LandscaperProfile.objects.get(user=request.user)
-#         except LandscaperProfile.DoesNotExist:
-#             return Response(
-#                 {"detail": "Landscaper profile not found."},
-#                 status=status.HTTP_404_NOT_FOUND
-#             )
-
-#         VALID_DAYS = [choice[0] for choice in DAYS_OF_WEEK]
-#         data = request.data
-
-#         created_hours = []
-#         errors = []
-
-#         # Accept only dict payload
-#         if not isinstance(data, dict):
-#             return Response(
-#                 {"detail": "Payload must be an object."},
-#                 status=status.HTTP_400_BAD_REQUEST
-#             )
-
-#         days = data.get("days")
-#         start_time = data.get("start_time")
-#         end_time = data.get("end_time")
-
-#         if not isinstance(days, list) or not days:
-#             return Response(
-#                 {"detail": "`days` must be a non-empty list."},
-#                 status=status.HTTP_400_BAD_REQUEST
-#             )
-
-#         if not start_time or not end_time:
-#             return Response(
-#                 {"detail": "start_time and end_time are required."},
-#                 status=status.HTTP_400_BAD_REQUEST
-#             )
-
-#         if start_time >= end_time:
-#             return Response(
-#                 {"detail": "start_time must be before end_time."},
-#                 status=status.HTTP_400_BAD_REQUEST
-#             )
-
-#         for day in days:
-#             if day not in VALID_DAYS:
-#                 errors.append({"day": day, "detail": "Invalid day"})
-#                 continue
-
-#             # Do not overwrite existing records
-#             if WorkingHours.objects.filter(
-#                 landscaper=profile,
-#                 day=day
-#             ).exists():
-#                 errors.append({
-#                     "day": day,
-#                     "detail": "Working hours already exist for this day"
-#                 })
-#                 continue
-
-#             created_hours.append(
-#                 WorkingHours.objects.create(
-#                     landscaper=profile,
-#                     day=day,
-#                     start_time=start_time,
-#                     end_time=end_time
-#                 )
-#             )
-
-#         serializer = self.get_serializer(created_hours, many=True)
-
-#         return Response(
-#             {
-#                 "created_hours": serializer.data,
-#                 "errors": errors
-#             },
-#             status=status.HTTP_201_CREATED if created_hours else status.HTTP_400_BAD_REQUEST
-
-#       )
-from rest_framework import generics, status
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-
-from landscapers.models import LandscaperProfile, WorkingHours, DAYS_OF_WEEK
-from .serializers import WorkingHoursSerializer
-from common.permissions import IsLandscaper
-
-
+# set working hours for landscapers
 class WorkingHoursListCreateView(generics.ListCreateAPIView):
     serializer_class = WorkingHoursSerializer
     permission_classes = [IsAuthenticated, IsLandscaper]  

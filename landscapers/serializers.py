@@ -143,6 +143,17 @@ class ServiceSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class UpdateServiceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Service
+        fields = [
+            "custom_service",
+            "description",
+            "category",
+            "price",
+            "per_square_feet",
+        ]
+
 
 # # landscapers/serializers.py
 from rest_framework import serializers
