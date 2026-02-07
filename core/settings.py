@@ -9,6 +9,9 @@ from datetime import timedelta
 import os
 from decouple import config
 from dotenv import load_dotenv
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent  
 
 # ------------------------------------------------------------------------------
 # LOAD ENV
@@ -32,8 +35,15 @@ DEBUG = config("DEBUG", default=True, cast=bool)
 
 ALLOWED_HOSTS = config(
     "ALLOWED_HOSTS",
-    default="localhost,127.0.0.1",
+
+    default="localhost,127.0.0.1,api.yardlinkapp.com"
 ).split(",")
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://api.yardlinkapp.com",
+]
+
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 # ------------------------------------------------------------------------------
 # APPLICATIONS
@@ -281,7 +291,26 @@ USE_TZ = True
 # ------------------------------------------------------------------------------
 # STATIC FILES
 # ------------------------------------------------------------------------------
-STATIC_URL = "/static/"
+
+
+# -----------------------------
+# STATIC FILES
+# -----------------------------
+STATIC_URL = "/static/"  # URL for static files
+
+# During development, optional global static folder
+STATICFILES_DIRS = [BASE_DIR / "static"]  
+
+# Where collectstatic will collect all static files for production
+STATIC_ROOT = BASE_DIR / "staticfiles"  
+
+# -----------------------------
+# MEDIA FILES (for uploads)
+# -----------------------------
+MEDIA_URL = "/media/"  # URL for media files
+MEDIA_ROOT = BASE_DIR / "media"  # folder where uploaded files are stored
+
+
 
 # ------------------------------------------------------------------------------
 # DEFAULT PK
