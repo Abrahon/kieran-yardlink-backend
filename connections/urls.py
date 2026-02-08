@@ -7,7 +7,7 @@ from .views import (
     RespondConnectionRequestAPIView,
     CancelConnectionRequestAPIView,
     AcceptedConnectionsAPIView,
-    AcceptConnectionAPIView,
+    # AcceptConnectionAPIView,
     RemoveConnectionAPIView,
     UpcomingJobListAPIView,
     JobDetailAPIView
@@ -48,13 +48,6 @@ urlpatterns = [
         "connections/cancel/<int:pk>/",
         CancelConnectionRequestAPIView.as_view(),
         name="cancel-connection-request"
-    ),
-
-    # Accept a connection request and auto-schedule a job
-    path(
-        "connections/accept/<int:request_id>/",
-        AcceptConnectionAPIView.as_view(),
-        name="accept-connection-request"
     ),
 
     # List all accepted connections (friend list) with optional upcoming jobs

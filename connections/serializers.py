@@ -24,6 +24,34 @@ class UserMiniSerializer(serializers.ModelSerializer):
         model = User
         fields = ["id", "name", "email", "role"]
 
+# class ConnectionRequestSerializer(serializers.ModelSerializer):
+#     receiver_id = serializers.IntegerField(write_only=True)
+
+#     class Meta:
+#         model = ConnectionRequest
+#         fields = ["id", "receiver_id", "is_accepted", "created_at"]
+
+#     def validate_receiver_id(self, value):
+#         try:
+#             receiver = User.objects.get(id=value)
+#         except User.DoesNotExist:
+#             raise serializers.ValidationError("User not found.")
+
+#         request_user = self.context["request"].user
+
+#         if receiver == request_user:
+#             raise serializers.ValidationError("You cannot send request to yourself.")
+
+#         return receiver
+
+#     def create(self, validated_data):
+#         receiver = validated_data.pop("receiver_id")
+#         sender = self.context["request"].user
+
+#         return ConnectionRequest.objects.create(
+#             sender=sender,
+#             receiver=receiver
+#         )
 
 
 class ConnectionRequestDetailSerializer(serializers.ModelSerializer):

@@ -222,6 +222,62 @@ def landscaper_payment_history(request):
 
 
 
+# recent payments user
+class RecentPaymentsAPIView(APIView):
+    """
+    Returns recent PAID payments for the authenticated user.
+    
+    - Client: sees their own payments
+    - Landscaper: sees payments from their clients
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        limit = int(request.query_params.get("limit", 10)) 
+
+        queryset = ServiceSchedule.objects.filter(
+            payment_status=PaymentStatus.PAID
+        )
+
+        # ------------------------------
+        # Role-based filtering
+        # ------------------------------
+        if hasattr(user, "clientprofile"):
+            queryset = queryset.filter(
+                client=user.clientprofile
+            )
+
+        elif hasattr(user, "landscaperprofilies"):
+            queryset = queryset.filter(
+                landscaper=user.landscaperprofilies
+            )
+
+        else:
+            return Response(
+                {"detail": "Invalid user role"},
+                status=400
+            )
+
+        # ------------------------------
+        # Ordering: most recent first
+        # ------------------------------
+        queryset = queryset.order_by(
+            "-scheduled_date",
+            "-scheduled_time"
+        )[:limit]
+
+        serializer = PaymentHistorySerializer(
+            queryset,
+            many=True,
+            context={"request": request}
+        )
+
+        return Response({
+            "count": queryset.count(),
+            "results": serializer.data
+        })
+
 # for admin 
 
 # Admin: Stripe Overview by Day

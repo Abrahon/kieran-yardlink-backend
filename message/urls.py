@@ -19,7 +19,7 @@ from .views import ConversationListAPIView,ConversationDetailAPIView,DeleteMulti
 urlpatterns = [
     path("conversations/", ConversationListAPIView.as_view(), name="conversation-list"),
     path("conversations/<int:thread_id>/", ConversationDetailAPIView.as_view(), name="conversation-detail"),
-       path(
+    path(
         'conversations/delete/multiple/',
         DeleteMultipleConversationsAPIView.as_view(),
         name='delete-multiple-threads'

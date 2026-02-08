@@ -10,19 +10,19 @@ from .views import (
     admin_daily_income_overview,
     stripe_all_payments,
     delete_single_payment,
-    ProLandscaperMonthlyRevenueView
+    ProLandscaperMonthlyRevenueView,
+    RecentPaymentsAPIView
 )
 
+
 urlpatterns = [
-    # =========================
+
     # Client Payments
-    # =========================
+
     path("schedule/pay-online/", create_schedule_checkout_session),
     path("schedule/<int:schedule_id>/pay-cash/", CashPaymentScheduleAPIView.as_view()),
 
-    # =========================
     # Stripe
-    # =========================
     path("stripe/webhook/", stripe_webhook),
     path("success/", payment_success),
     path("cancel/", payment_cancel),
@@ -55,5 +55,6 @@ urlpatterns = [
         ProLandscaperMonthlyRevenueView.as_view(),
         name="pro-landscaper-monthly-revenue"
     ),
+    path("recent-payments/", RecentPaymentsAPIView.as_view(), name="recent-payments"),
 
 ]

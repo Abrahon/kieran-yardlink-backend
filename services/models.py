@@ -90,6 +90,7 @@ class ServiceSchedule(models.Model):
     # Job status
     is_completed = models.BooleanField(default=False)
     completed_at = models.DateTimeField(null=True, blank=True)
+    completion_note = models.TextField(null=True, blank=True)
 
     # 💰 PAYMENT FIELDS (THIS IS WHAT YOU WERE MISSING)
     payment_status = models.CharField(
