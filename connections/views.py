@@ -459,7 +459,7 @@ class RespondConnectionRequestAPIView(APIView):
             .filter(
                 user=landscaper_profile.user,
                 is_active=True,
-                tatus="active"
+                status="active"
             )
             .select_related("plan")
             .first()
