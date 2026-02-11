@@ -79,7 +79,7 @@ class ClientServicePreferenceAPIView(RetrieveUpdateAPIView):
 
 
 class ClientPreferenceNoteUpdateAPIView(APIView):
-    permission_classes = [IsLandscaper] 
+    permission_classes = [IsClient] 
 
     def post(self, request):
         client = request.user.clientprofile
