@@ -446,6 +446,7 @@ class SentConnectionRequestAPIView(APIView):
 from django.utils import timezone  # ✅ Make sure timezone is imported
 
 
+
 class RespondConnectionRequestAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -458,7 +459,7 @@ class RespondConnectionRequestAPIView(APIView):
             .filter(
                 user=landscaper_profile.user,
                 is_active=True,
-                status=SubscriptionStatus.ACTIVE
+                tatus="active"
             )
             .select_related("plan")
             .first()
