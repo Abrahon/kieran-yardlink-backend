@@ -66,6 +66,7 @@
 # from .models import Service, ClientServicePreference, ServiceSchedule
 # from property.models import Property
 from rest_framework import serializers
+from property .models import Property
 from .models import (
     ClientService,
     ClientServicePreference,

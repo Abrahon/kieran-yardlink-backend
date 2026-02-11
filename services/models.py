@@ -6,14 +6,13 @@ from cloudinary.models import CloudinaryField
 
 
 
-
-
-
 # ---------------- Client Service (Client-facing services) ----------------
 class ClientService(models.Model):
     landscaper = models.ForeignKey(
         LandscaperProfilies,
-        on_delete=models.CASCADE
+        on_delete=models.CASCADE,
+        null=True,   # allow NULL
+        blank=True
     )
     name = models.CharField(max_length=120)
     description = models.TextField(blank=True)

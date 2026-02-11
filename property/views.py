@@ -94,5 +94,5 @@ class PropertyDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_serializer_class(self):
         if self.request.method == "GET":
-            return PropertyReadSerializer
+            return PropertySerializer
         return PropertySerializer

@@ -37,18 +37,37 @@ class PlanListCreateView(generics.ListCreateAPIView):
     def get_permissions(self):
         return [IsAdmin()] if self.request.method == "POST" else [permissions.AllowAny()]
 
+    # def perform_create(self, serializer):
+    #     plan = serializer.save()
+    #     product = stripe.Product.create(name=plan.name)
+    #     price = stripe.Price.create(
+    #         product=product.id,
+    #         unit_amount=int(plan.price * 100),
+    #         currency="usd",
+    #         recurring={"interval": "month"},
+    #     )
+    #     plan.stripe_product_id = product.id
+    #     plan.stripe_price_id = price.id
+    #     plan.save()
+
     def perform_create(self, serializer):
         plan = serializer.save()
+
+        final_price = plan.final_price 
+
         product = stripe.Product.create(name=plan.name)
+
         price = stripe.Price.create(
             product=product.id,
-            unit_amount=int(plan.price * 100),
+            unit_amount=int(final_price * 100),  # use discounted value
             currency="usd",
             recurring={"interval": "month"},
         )
+
         plan.stripe_product_id = product.id
         plan.stripe_price_id = price.id
         plan.save()
+
 
 
 class PlanRetrieveUpdateDeleteView(generics.RetrieveUpdateDestroyAPIView):

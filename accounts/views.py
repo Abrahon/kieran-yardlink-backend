@@ -611,12 +611,55 @@ class UserListView(APIView):
 
 
 
+# class AdminDeleteUserView(generics.DestroyAPIView):
+#     """
+#     Admin can delete any user by ID.
+#     Users can delete their own account by confirming their password.
+#     Only superusers can delete other superusers.
+#     """
+#     permission_classes = [IsAuthenticated]
+#     queryset = User.objects.all()
+#     lookup_field = "id"
+
+#     def delete(self, request, *args, **kwargs):
+#         user_to_delete = self.get_object()
+
+#         # Check if the user is deleting their own account
+#         if request.user == user_to_delete:
+#             password = request.data.get("password")
+#             if not password:
+#                 return Response(
+#                     {"detail": "Password is required to delete your account."},
+#                     status=status.HTTP_400_BAD_REQUEST
+#                 )
+#             if not check_password(password, user_to_delete.password):
+#                 return Response(
+#                     {"detail": "Incorrect password."},
+#                     status=status.HTTP_400_BAD_REQUEST
+#                 )
+
+#         # Admin deletion rules
+#         elif not request.user.is_staff:
+#             return Response(
+#                 {"detail": "You do not have permission to delete this user."},
+#                 status=status.HTTP_403_FORBIDDEN
+#             )
+
+#         # Only superuser can delete another superuser
+#         if user_to_delete.is_superuser and not request.user.is_superuser:
+#             return Response(
+#                 {"detail": "Only a superuser can delete another superuser."},
+#                 status=status.HTTP_403_FORBIDDEN
+#             )
+
+#         email = user_to_delete.email
+#         user_to_delete.delete()
+
+#         return Response(
+#             {"detail": f"User {email} deleted successfully."},
+#             status=status.HTTP_200_OK
+#         )
 class AdminDeleteUserView(generics.DestroyAPIView):
-    """
-    Admin can delete any user by ID.
-    Users can delete their own account by confirming their password.
-    Only superusers can delete other superusers.
-    """
     permission_classes = [IsAuthenticated]
     queryset = User.objects.all()
     lookup_field = "id"
@@ -624,7 +667,15 @@ class AdminDeleteUserView(generics.DestroyAPIView):
     def delete(self, request, *args, **kwargs):
         user_to_delete = self.get_object()
 
-        # Check if the user is deleting their own account
+        # Prevent deleting the last superuser
+        if user_to_delete.is_superuser:
+            if User.objects.filter(is_superuser=True).count() == 1:
+                return Response(
+                    {"detail": "Cannot delete the last superuser."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        # Self deletion requires password
         if request.user == user_to_delete:
             password = request.data.get("password")
             if not password:
@@ -632,7 +683,8 @@ class AdminDeleteUserView(generics.DestroyAPIView):
                     {"detail": "Password is required to delete your account."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            if not check_password(password, user_to_delete.password):
+
+            if not request.user.check_password(password):
                 return Response(
                     {"detail": "Incorrect password."},
                     status=status.HTTP_400_BAD_REQUEST
@@ -653,11 +705,11 @@ class AdminDeleteUserView(generics.DestroyAPIView):
             )
 
         email = user_to_delete.email
-        user_to_delete.delete()
+        self.perform_destroy(user_to_delete)
 
         return Response(
             {"detail": f"User {email} deleted successfully."},
-            status=status.HTTP_200_OK
+            status=status.HTTP_204_NO_CONTENT
         )
 
 

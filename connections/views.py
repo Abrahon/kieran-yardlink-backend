@@ -29,6 +29,7 @@ from services.models import ServiceSchedule, ScheduleCompletionImage
 from common.permissions import IsLandscaper
 from django.db.models import Q
 from profiles.serializers import ConnectedUserSerializer
+from django.utils import timezone  # <-- ADD THIS
 User = get_user_model()
 
 
