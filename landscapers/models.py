@@ -59,6 +59,52 @@ class LandscaperProfile(models.Model):
 
 
 # Service model
+# class Service(models.Model):
+#     class CategoryChoices(models.TextChoices):
+#         STANDARD = "standard", _("Standard")
+#         CUSTOM = "custom", _("Custom")
+
+#     class StandardServiceChoices(models.TextChoices):
+#         LAWN_MOWING = "lawn_mowing", _("Lawn Mowing")
+#         GARDEN_DESIGN = "garden_design", _("Garden Design")
+#         TREE_TRIMMING = "tree_trimming", _("Tree Trimming")
+#         FERTILIZATION = "fertilization", _("Fertilization")
+#         IRRIGATION = "irrigation", _("Irrigation")
+
+#     landscaper = models.ForeignKey(
+#         User,
+#         on_delete=models.CASCADE,
+#         related_name="services"
+#     )
+#     # landscaper = models.ForeignKey(LandscaperProfilies, on_delete=models.CASCADE)
+    
+
+#     standard_services = models.JSONField(default=list, blank=True)
+#     custom_service = models.CharField(max_length=150, blank=True, null=True)
+#     description = models.TextField(blank=True, null=True)
+#     category = models.CharField(
+#         max_length=20,
+#         choices=CategoryChoices.choices,
+#         default=CategoryChoices.STANDARD
+#     )
+#     add_ons = models.JSONField(default=list, blank=True)
+#     latitude = models.DecimalField(max_digits=20, decimal_places=18)
+#     latitude = models.DecimalField(max_digits=20, decimal_places=18, null=True, blank=True)
+#     longitude = models.DecimalField(max_digits=20, decimal_places=18, null=True, blank=True)
+#     price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+#     per_square_feet = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+#     created_at = models.DateTimeField(auto_now_add=True)
+#     updated_at = models.DateTimeField(auto_now=True)
+
+#     def __str__(self):
+#         return self.custom_service if self.custom_service else ", ".join(self.standard_services)
+
+from django.db import models
+from django.contrib.auth import get_user_model
+from django.utils.translation import gettext_lazy as _
+
+User = get_user_model()
+
 class Service(models.Model):
     class CategoryChoices(models.TextChoices):
         STANDARD = "standard", _("Standard")
@@ -71,35 +117,47 @@ class Service(models.Model):
         FERTILIZATION = "fertilization", _("Fertilization")
         IRRIGATION = "irrigation", _("Irrigation")
 
+    class RateTypeChoices(models.TextChoices):
+        FLAT = "flat", _("Flat Rate")
+        HOURLY = "hourly", _("Hourly")
+
     landscaper = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
         related_name="services"
     )
-    # landscaper = models.ForeignKey(LandscaperProfilies, on_delete=models.CASCADE)
-    
 
-    standard_services = models.JSONField(default=list, blank=True)
-    custom_service = models.CharField(max_length=150, blank=True, null=True)
+    standard_service = models.CharField(
+        max_length=50,
+        choices=StandardServiceChoices.choices,
+        blank=True,
+        null=True
+    )
     description = models.TextField(blank=True, null=True)
     category = models.CharField(
         max_length=20,
         choices=CategoryChoices.choices,
         default=CategoryChoices.STANDARD
     )
-    add_ons = models.JSONField(default=list, blank=True)
-    latitude = models.DecimalField(max_digits=20, decimal_places=18)
+    price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    time = models.DecimalField(max_digits=5, decimal_places=2, default=1)  # in hours
+    rate_type = models.CharField(
+        max_length=10,
+        choices=RateTypeChoices.choices,
+        default=RateTypeChoices.FLAT
+    )
+
     latitude = models.DecimalField(max_digits=20, decimal_places=18, null=True, blank=True)
     longitude = models.DecimalField(max_digits=20, decimal_places=18, null=True, blank=True)
-    price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    per_square_feet = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+
+    is_active = models.BooleanField(default=True)  # new field
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return self.custom_service if self.custom_service else ", ".join(self.standard_services)
-
-
+        return self.standard_service or "Custom Service"
+        
 
 # working_hours/models.py
 DAYS_OF_WEEK = [

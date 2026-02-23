@@ -1,5 +1,18 @@
 from django.urls import path
-from .views import CompleteLandscaperProfileView,GetLandscaperProfileView,LandscaperFind,WorkingHoursListCreateView,CreateServiceView,ListServicesView,UpdateLandscaperProfileView,UpdateServiceView,CreateCustomServiceAPIView,CustomServiceListAPIView
+from .views import (
+    CompleteLandscaperProfileView,
+    GetLandscaperProfileView,
+    LandscaperFind,WorkingHoursListCreateView,
+    CreateServiceView,ListServicesView,
+    UpdateLandscaperProfileView,
+    UpdateServiceView,
+    CreateCustomServiceAPIView,
+    CustomServiceListAPIView,
+    StandardServiceCreateAPIView,
+    StandardServiceListAPIView,
+    toggle_service_active
+
+)
 
 
 urlpatterns = [
@@ -17,6 +30,9 @@ urlpatterns = [
     path("services/update/<int:id>/", UpdateServiceView.as_view()),
     path('services/custom/',CreateCustomServiceAPIView.as_view(), name='create-custom-service'),
     path('services/custom/list/', CustomServiceListAPIView.as_view(), name='list-custom-service'),
+    path('services/standard/', StandardServiceCreateAPIView.as_view(), name='create-standard-service'),
+    path('services/standard/list/', StandardServiceListAPIView.as_view(), name='list-standard-service'),
+    path('services/standard/<int:pk>/toggle/', toggle_service_active, name='toggle-service-active'),
 
 
 ]

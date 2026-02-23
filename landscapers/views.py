@@ -38,6 +38,18 @@ from django.core.exceptions import ValidationError, PermissionDenied
 from rest_framework.exceptions import APIException
 
 # views.py
+# views.py
+
+from rest_framework import generics
+from rest_framework.exceptions import ValidationError, PermissionDenied, APIException
+from rest_framework.permissions import IsAuthenticated
+from django.db import transaction
+
+from .models import LandscaperProfile
+from .serializers import BusinessLandscaperProfileSerializer
+from common.permissions import IsLandscaper
+
+
 class CompleteLandscaperProfileView(generics.CreateAPIView):
     serializer_class = BusinessLandscaperProfileSerializer
     permission_classes = [IsLandscaper]
@@ -48,23 +60,27 @@ class CompleteLandscaperProfileView(generics.CreateAPIView):
         if user.role != "landscaper":
             raise PermissionDenied("Only landscapers can complete this profile.")
 
-        if hasattr(user, "landscaper_profile"):
-            raise ValidationError("Profile already exists.")
-
-        serializer.context["user"] = user
+        if LandscaperProfile.objects.filter(user=user).exists():
+            raise ValidationError({"detail": "Profile already exists."})
 
         try:
             with transaction.atomic():
-                serializer.save()
+                serializer.context["user"] = user   # ✅ Pass via context
+                serializer.save()                  # ✅ No user= here
         except Exception as e:
-            # Optional: log error here
             raise APIException(f"Profile creation failed: {str(e)}")
 
 
 # update views
+from rest_framework.parsers import MultiPartParser, FormParser
+
+from rest_framework.exceptions import PermissionDenied
+
+
 class UpdateLandscaperProfileView(generics.UpdateAPIView):
     serializer_class = BusinessLandscaperProfileSerializer
     permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]  # REQUIRED for image
 
     def get_object(self):
         user = self.request.user
@@ -360,3 +376,48 @@ class CustomServiceListAPIView(generics.ListAPIView):
             landscaper=self.request.user,
             category=Service.CategoryChoices.CUSTOM
         )
+
+# standard service 
+from rest_framework import generics, permissions
+
+from rest_framework.decorators import api_view, permission_classes
+
+from .serializers import StandardServiceSerializer
+
+# Create Standard Service
+class StandardServiceCreateAPIView(generics.CreateAPIView):
+    serializer_class = StandardServiceSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def perform_create(self, serializer):
+        serializer.save(landscaper=self.request.user)
+
+
+# List Standard Services
+class StandardServiceListAPIView(generics.ListAPIView):
+    serializer_class = StandardServiceSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return Service.objects.filter(
+            landscaper=self.request.user,
+            category=Service.CategoryChoices.STANDARD
+        )
+
+
+# Toggle active/inactive
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def toggle_service_active(request, pk):
+    try:
+        service = Service.objects.get(pk=pk, landscaper=request.user)
+    except Service.DoesNotExist:
+        return Response({"error": "Service not found"}, status=404)
+
+    service.is_active = not service.is_active
+    service.save()
+    return Response({
+        "id": service.id,
+        "standard_service": service.standard_service,
+        "is_active": service.is_active
+    })

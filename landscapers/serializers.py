@@ -49,6 +49,18 @@ class BusinessLandscaperProfileSerializer(serializers.ModelSerializer):
             instance.save()
 
         return instance
+    
+    def update(self, instance, validated_data):
+        profile_file = validated_data.pop("profile_image", None)
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+
+        if profile_file:
+            instance.profile_image = profile_file
+
+        instance.save()
+        return instance
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -182,3 +194,30 @@ class WorkingHoursSerializer(serializers.ModelSerializer):
     class Meta:
         model = WorkingHours
         fields = ['id', 'day', 'day_display', 'start_time', 'end_time']
+
+
+# standard service
+class StandardServiceSerializer(serializers.ModelSerializer):
+    time_in_minutes = serializers.IntegerField(write_only=True, required=True)
+
+    class Meta:
+        model = Service
+        fields = [
+            "id",
+            "standard_service",
+            "description",
+            "price",
+            "rate_type",
+            "latitude",
+            "longitude",
+            "time",               # output in hours
+            "time_in_minutes",    # input in minutes
+            "is_active",
+        ]
+        read_only_fields = ["time"]
+
+    def create(self, validated_data):
+        minutes = validated_data.pop("time_in_minutes")
+        validated_data["time"] = round(minutes / 60, 2)  # convert minutes to hours
+        validated_data["category"] = Service.CategoryChoices.STANDARD
+        return super().create(validated_data)

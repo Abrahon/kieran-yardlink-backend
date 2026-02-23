@@ -272,24 +272,30 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
                 return None
         return None
 
-
     def get_services(self, obj):
+        """
+        Return all services for the landscaper in a safe, DRF-friendly format.
+        """
         services = Service.objects.filter(landscaper=obj.user)
-        return [
-            {
+        result = []
+
+        for s in services:
+            result.append({
                 "id": s.id,
-                "category": s.category,
-                "standard_services": s.standard_services,
-                "custom_service": s.custom_service,
-                "description": s.description,
-                "price": float(s.price),
-                "per_square_feet": float(s.per_square_feet),
-                "latitude": float(s.latitude),
-                "longitude": float(s.longitude),
-                "add_ons": s.add_ons,
-            }
-            for s in services
-        ]
+                "category": s.category,  # "standard" or "custom"
+                "standard_service": s.standard_service or "",
+                "description": s.description or "",
+                "price": float(s.price) if s.price else 0,
+                "time": float(s.time) if s.time else 0,
+                "rate_type": s.rate_type or "",
+                "latitude": float(s.latitude) if s.latitude else None,
+                "longitude": float(s.longitude) if s.longitude else None,
+                "is_active": s.is_active,
+                "created_at": s.created_at,
+                "updated_at": s.updated_at,
+            })
+
+        return result
 
     def get_upcoming_jobs(self, obj):
         jobs = ServiceSchedule.objects.filter(
