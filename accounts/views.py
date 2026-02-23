@@ -1,0 +1,917 @@
+from django.shortcuts import render
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.contrib.auth.hashers import check_password
+# Create your views here.
+from urllib.parse import urlencode, unquote
+from .serializers import UserSerializer
+import requests
+from django.conf import settings
+from django.shortcuts import render, redirect
+from django.contrib.auth import get_user_model
+from django.utils import timezone
+from datetime import timedelta
+from django.db.models import Q
+from rest_framework import generics, status
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
+from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+from rest_framework import views
+from django.shortcuts import get_object_or_404
+from .serializers import SignupSerializer, LoginSerializer, ResetPasswordSerializer,ResendOTPSerializer
+from .models import User, OTP,UserReport
+from django.utils import timezone
+from .utils import generate_otp, send_otp_email 
+from .serializers import (
+    SendOTPSerializer, VerifyOTPSerializer, ResetPasswordSerializer,VerifyOTPForgetSerializer,UserReportSerializer
+)
+
+
+
+
+# signup views 
+# class SignupView(generics.GenericAPIView):
+#     serializer_class = SignupSerializer
+#     permission_classes = [AllowAny]
+#     parser_classes = (MultiPartParser, FormParser)
+
+#     def post(self, request):
+#         serializer = self.get_serializer(data=request.data)
+#         serializer.is_valid(raise_exception=True)
+
+#         data = serializer.validated_data
+#         email = data["email"]
+
+#         if User.objects.filter(email=email).exists():
+#             return Response(
+#                 {"detail": "User with this email already exists."},
+#                 status=400
+#             )
+
+#         # ✅ STORE SESSION
+#         request.session["pending_user"] = {
+#             "email": email,
+#             "name": data["name"],
+#             "password": data["password"],
+#             "phone": data.get("phone"),
+#             "address": data.get("address"),
+#             "role": data["role"],
+#         }
+#         request.session.modified = True
+
+#         # ✅ EMAIL-BASED OTP
+#         OTP.objects.filter(email=email).delete()
+
+#         otp_code = generate_otp()
+#         OTP.objects.create(email=email, code=otp_code)
+
+#         send_otp_email(email, otp_code, data["name"])
+
+#         return Response(
+#             {"detail": "Verification OTP sent to email."},
+#             status=200
+#         )
+
+# from rest_framework import generics
+# from rest_framework import generics
+# from rest_framework.permissions import AllowAny
+# from rest_framework.parsers import MultiPartParser, FormParser
+# from rest_framework.response import Response
+
+
+class SignupView(generics.GenericAPIView):
+    serializer_class = SignupSerializer
+    permission_classes = [AllowAny]
+    parser_classes = (MultiPartParser, FormParser)
+
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        email = data["email"]
+
+
+        request.session["pending_user"] = {
+
+            "email": data["email"],
+            "name": data["name"],
+            "password": data["password"],
+            "phone": data.get("phone"),
+            "address": data.get("address"),
+            "latitude": str(data["latitude"]) if data.get("latitude") else None,
+            "longitude": str(data["longitude"]) if data.get("longitude") else None,
+            "role": data["role"],
+        }
+
+        request.session.modified = True
+
+        # OTP handling
+        OTP.objects.filter(email=email).delete()
+        otp_code = generate_otp()
+        OTP.objects.create(email=email, code=otp_code)
+
+        send_otp_email(email, otp_code, data["name"])
+
+        return Response(
+            {"detail": f"Verification OTP sent to {data['role']} email."},
+            status=200
+        )
+
+def get_tokens_for_user(user):
+    refresh = RefreshToken.for_user(user)
+    refresh['role'] = user.role
+    refresh['name'] = user.name 
+    refresh['email'] = user.email
+    refresh['phone'] = user.phone
+    refresh['address'] = user.address
+
+     # optional
+    return {
+        'refresh': str(refresh),
+        'access': str(refresh.access_token)
+    }
+
+# class LoginView(generics.GenericAPIView):
+#     serializer_class = LoginSerializer
+#     permission_classes = [AllowAny]
+#     parser_classes = (MultiPartParser, FormParser)
+
+#     def post(self, request, *args, **kwargs):
+#         serializer = self.get_serializer(data=request.data)
+#         serializer.is_valid(raise_exception=True)
+#         user = serializer.validated_data['user']
+#         print("user", user)
+
+#         # ---------------------------------------------------------
+#         # 🔥 Check if user is NOT verified
+#         # ---------------------------------------------------------
+#         if not user.is_active:
+#             return Response(
+#                 {"message": "Please verify your email first."},
+#                 status=status.HTTP_400_BAD_REQUEST
+#             )
+
+#         # ---------------------------------------------------------
+#         # 🔥 Login allowed only if email is verified
+#         # ---------------------------------------------------------
+#         tokens = get_tokens_for_user(user)
+#         print("tokens", tokens)
+
+#         return Response({
+#             "message": "Login successful",
+#             "token": tokens,
+#             "user": {
+#                 "id": user.id,
+#                 "email": user.email,
+#                 "name": getattr(user, "name", ""),
+#                 "role": user.role,
+#                 "phone": getattr(user, 'phone', None),
+#                 "address": getattr(user, 'address', None),
+#                 # ✅ Add latitude & longitude
+#                 "latitude": float(user.latitude) if user.latitude else None,
+#                 "longitude": float(user.longitude) if user.longitude else None,
+#             }
+#         }, status=status.HTTP_200_OK)
+
+
+def get_tokens_for_user(user):
+    refresh = RefreshToken.for_user(user)
+    return {
+        'refresh': str(refresh),
+        'access': str(refresh.access_token),
+    }
+
+class LoginView(generics.GenericAPIView):
+    serializer_class = LoginSerializer
+    permission_classes = [AllowAny]
+    parser_classes = (MultiPartParser, FormParser)
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.validated_data['user']
+        print("user", user)
+
+        # ---------------------------------------------------------
+        #  CHANGE ADDED HERE → Check if user is NOT verified
+        # ---------------------------------------------------------
+        if not user.is_active:
+            return Response(
+                {"message": "Please verify your email first."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # ---------------------------------------------------------
+        #  Login allowed only if email is verified
+        # ---------------------------------------------------------
+        tokens = get_tokens_for_user(user)
+        print("tokens", tokens)
+
+        return Response({
+            "message": "Login successful",
+            "token": tokens,
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "name": user.name,
+                "role": user.role,
+                "phone": getattr(user, 'phone', None),      
+                "address": getattr(user, 'address', None), 
+                # ✅ Add latitude & longitude
+                "latitude": float(user.latitude) if getattr(user, "latitude", None) else None,
+                "longitude": float(user.longitude) if getattr(user, "longitude", None) else None, 
+            }
+        }, status=status.HTTP_200_OK)
+
+
+
+class SendOTPView(generics.CreateAPIView):
+    serializer_class = SendOTPSerializer
+    permission_classes = [AllowAny]
+    parser_classes = (MultiPartParser, FormParser)
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        result = serializer.save()  
+        print("serializer.save() returned:", result)
+
+        # ❌ ISSUE IS HERE:
+        # serializer.save() is returning a User object, NOT a dict.
+        # User object has NO .get() method — that's why error occurred:
+        # AttributeError: 'User' object has no attribute 'get'
+
+        email = serializer.validated_data.get("email")
+        if email and hasattr(request, "session"):
+            request.session['otp_user_email'] = email
+            print("Stored in session:", email)
+
+        return Response(
+            {"message": "OTP sent successfully", "email": email},
+            
+            status=200
+        )
+
+
+# resend otp views 
+class ResendOTPView(generics.GenericAPIView):
+    serializer_class = ResendOTPSerializer
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        email = serializer.validated_data["email"]
+
+        # 🔁 Remove old OTPs
+        OTP.objects.filter(email=email).delete()
+
+        # 🔐 Generate new OTP
+        otp_code = generate_otp()
+        OTP.objects.create(email=email, code=otp_code)
+
+        # 📧 Send email
+        send_otp_email(email, otp_code)
+
+        # 🧠 Optional: store in session
+        request.session["otp_user_email"] = email
+        request.session.modified = True
+
+        return Response(
+            {"detail": "OTP resent successfully."},
+            status=status.HTTP_200_OK
+        )
+
+
+
+# resend otp forget password
+class ResendForgotOTPView(generics.GenericAPIView):
+    serializer_class = ResendOTPSerializer
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        email = serializer.validated_data["email"]
+
+        # Delete old OTPs for forgot password flow
+        OTP.objects.filter(email=email).delete()
+
+        # Generate new OTP
+        otp_code = generate_otp()
+        OTP.objects.create(email=email, code=otp_code)
+
+        # Send email
+        send_otp_email(email, otp_code, subject="Forgot Password OTP")
+
+        return Response(
+            {"detail": "Forgot password OTP resent successfully."},
+            status=status.HTTP_200_OK
+        )
+
+
+# verify otpo for email
+
+# class VerifyOTPView(APIView):
+#     permission_classes = [AllowAny]
+
+#     def post(self, request):
+#         email = request.data.get("email")
+#         otp = request.data.get("otp")
+
+#         otp_obj = OTP.objects.filter(email=email, code=otp).first()
+#         if not otp_obj:
+#             return Response(
+#                 {"detail": "Invalid or expired OTP"},
+#                 status=400
+#             )
+
+#         pending_user = request.session.get("pending_user")
+#         if not pending_user or pending_user["email"] != email:
+#             return Response(
+#                 {"detail": "Session expired. Please signup again."},
+#                 status=400
+#             )
+
+#         # ✅ CREATE USER with correct role from session
+#         user = User.objects.create_user(
+#             email=pending_user["email"],
+#             name=pending_user["name"],
+#             password=pending_user["password"],
+#             phone=pending_user.get("phone"),
+#             address=pending_user.get("address"),
+#             role=pending_user["role"]   # <-- fixed
+#         )
+
+#         # cleanup
+#         OTP.objects.filter(email=email).delete()
+#         request.session.flush()
+
+#         # ✅ GENERATE TOKENS
+#         refresh = RefreshToken.for_user(user)
+
+#         return Response({
+#             "access": str(refresh.access_token),
+#             "refresh": str(refresh),
+#             "user": {
+#                 "id": user.id,
+#                 "email": user.email,
+#                 "role": user.role   # now correctly shows "client", "landscaper", etc.
+#             }
+#         }, status=201)
+class VerifyOTPView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        email = request.data.get("email")
+        otp = request.data.get("otp")
+
+        otp_obj = OTP.objects.filter(email=email, code=otp).first()
+        if not otp_obj:
+            return Response(
+                {"detail": "Invalid or expired OTP"},
+                status=400
+            )
+
+        pending_user = request.session.get("pending_user")
+        if not pending_user or pending_user["email"] != email:
+            return Response(
+                {"detail": "Session expired. Please signup again."},
+                status=400
+            )
+
+        # ✅ CREATE USER WITH LAT & LNG SAVED
+        user = User.objects.create_user(
+            email=pending_user["email"],
+            name=pending_user["name"],
+            password=pending_user["password"],
+            phone=pending_user.get("phone"),
+            address=pending_user.get("address"),
+            role=pending_user["role"],
+            latitude=pending_user.get("latitude"),     
+            longitude=pending_user.get("longitude"),
+            is_active=True
+        )
+
+        # cleanup
+        OTP.objects.filter(email=email).delete()
+        request.session.flush()
+
+        # tokens
+        refresh = RefreshToken.for_user(user)
+
+        return Response({
+            "access": str(refresh.access_token),
+            "refresh": str(refresh),
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "name": user.name,
+                "role": user.role,
+                "phone": user.phone,
+                "address": user.address,
+                "latitude": float(user.latitude) if user.latitude else None,
+                "longitude": float(user.longitude) if user.longitude else None,
+            }
+        }, status=201)
+
+
+# verify otp for forget password 
+class VerifyOTPForgetView(generics.GenericAPIView):
+    serializer_class = VerifyOTPForgetSerializer
+    permission_classes = [AllowAny]
+    parser_classes = (MultiPartParser, FormParser)
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+
+        # OTP verified → keep email in session for password reset
+        request.session['verified_email'] = serializer.validated_data["user"].email
+
+        return Response({"message": "OTP verified successfully."})
+
+
+# 
+class ResetPasswordView(generics.GenericAPIView):
+    serializer_class = ResetPasswordSerializer
+    permission_classes = [AllowAny]
+    parser_classes = (MultiPartParser, FormParser)
+
+    def post(self, request, *args, **kwargs):
+        """
+        Request body must include:
+        {
+            "email": "user@example.com",
+            "otp": "123456",
+            "new_password": "newStrongPassword123",
+            "confirm_password": "newStrongPassword123"
+        }
+        """
+        email = request.data.get("email")
+        otp_code = request.data.get("otp")
+        print("otp_code",otp_code)
+
+        if not email or not otp_code:
+            return Response(
+                {"detail": "Email and OTP are required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 1️⃣ Verify user exists
+        user = User.objects.filter(email=email).first()
+        print("user", user)
+
+        if not user:
+            return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        # 2️⃣ Verify OTP
+        # otp = OTP.objects.filter(user=user, code=str(otp_code)).order_by("-created_at").first()
+        otp = OTP.objects.filter(user=user, code=str(otp_code).strip()).order_by("-created_at").first()
+        print("otp", otp)
+        if not otp:
+            return Response({"detail": "Invalid OTP."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if otp.is_expired():
+            return Response({"detail": "OTP has expired."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 3️⃣ OTP valid → delete OTP to prevent reuse
+        otp.delete()
+
+        # 4️⃣ Reset password
+        serializer = self.get_serializer(data=request.data, context={"user": user})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return Response({"message": "Password reset successfully."}, status=status.HTTP_200_OK)
+
+
+# resend otp for forget password
+class ResendForgotOTPView(generics.GenericAPIView):
+    serializer_class = ResendOTPSerializer
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        email = serializer.validated_data["email"]
+
+        # Delete old OTPs for forgot password flow
+        OTP.objects.filter(email=email).delete()
+
+        # Generate new OTP
+        otp_code = generate_otp()
+        OTP.objects.create(email=email, code=otp_code)
+
+        # Send email
+        send_otp_email(email, otp_code, subject="Forgot Password OTP")
+
+        return Response(
+            {"detail": "Forgot password OTP resent successfully."},
+            status=status.HTTP_200_OK
+        )
+
+
+# userlist views
+
+#  class UserListView(APIView):
+#     permission_classes = [IsAdminUser]
+
+#     def get(self, request):
+#         role = request.query_params.get("role")
+#         plan = request.query_params.get("plan")  # basic | pro
+#         status_param = request.query_params.get("status")  # active | paused
+#         search_query = request.query_params.get("search", "").strip()
+
+#         users = User.objects.all()
+
+#         # Filter by role
+#         if role:
+#             users = users.filter(role=role)
+
+#         # Filter by subscription plan
+#         if plan:
+#             users = users.filter(
+#                 subscription__is_active=True,
+#                 subscription__plan__name__iexact=plan
+#             )
+
+#         # Filter by active/paused
+#         if status_param:
+#             if status_param.lower() == "paused":
+#                 users = users.filter(is_active=False)
+#             elif status_param.lower() == "active":
+#                 users = users.filter(is_active=True)
+
+#         # Search by name or email
+#         if search_query:
+#             users = users.filter(
+#                 Q(name__icontains=search_query) |
+#                 Q(email__icontains=search_query)
+#             )
+
+#         users = users.distinct()
+
+#         # 📊 Stats
+#         total_users = User.objects.count()
+#         total_clients = User.objects.filter(role="client").count()
+#         total_landscapers = User.objects.filter(role="landscaper").count()
+
+#         total_basic_landscapers = User.objects.filter(
+#             role="landscaper",
+#             subscription__is_active=True,
+#             subscription__plan__name__iexact="basic"
+#         ).distinct().count()
+
+#         total_pro_landscapers = User.objects.filter(
+#             role="landscaper",
+#             subscription__is_active=True,
+#             subscription__plan__name__iexact="pro"
+#         ).distinct().count()
+
+#         paused_users = User.objects.filter(is_active=False).count()
+#         active_users = User.objects.filter(is_active=True).count()
+
+#         last_24h = timezone.now() - timedelta(hours=24)
+#         daily_active_users = User.objects.filter(
+#             last_login__gte=last_24h
+#         ).count()
+
+#         serializer = UserSerializer(users, many=True)
+
+#         return Response({
+#             "status": "success",
+#             "summary": {
+#                 "total_users": total_users,
+#                 "total_clients": total_clients,
+#                 "total_landscapers": total_landscapers,
+#                 "basic_landscapers": total_basic_landscapers,
+#                 "pro_landscapers": total_pro_landscapers,
+#                 "paused_users": paused_users,
+#                 "active_users": active_users,
+#                 "daily_active_users": daily_active_users,
+#             },
+#             "data": serializer.data,
+#         }, status=200)
+
+from django.db.models import Q, Sum, FloatField
+from django.utils import timezone
+from datetime import timedelta
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAdminUser
+from rest_framework.response import Response
+
+from accounts.models import User
+from services.models import ServiceSchedule, PaymentStatus
+from subscriptions.models import Subscription, SubscriptionStatus
+from .serializers import UserSerializer
+
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAdminUser
+from rest_framework.response import Response
+from django.db.models import Q, Sum, FloatField, Count
+from django.utils import timezone
+from datetime import timedelta
+from accounts.models import User
+from subscriptions.models import Subscription, SubscriptionStatus
+from services.models import ServiceSchedule, PaymentStatus
+from accounts.serializers import UserSerializer
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAdminUser
+from django.utils import timezone
+from django.db.models import Q, Sum, FloatField
+from datetime import timedelta
+
+from .serializers import UserSerializer
+
+
+class UserListView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        role = request.query_params.get("role")
+        plan = request.query_params.get("plan")  # basic | pro
+        status_param = request.query_params.get("status")  # active | paused
+        search_query = request.query_params.get("search", "").strip()
+
+        users = User.objects.all()
+
+        # --------------------------
+        # Filters
+        # --------------------------
+        if role:
+            users = users.filter(role=role)
+        if plan:
+            users = users.filter(
+                subscription__is_active=True,
+                subscription__plan__name__iexact=plan
+            )
+        if status_param:
+            if status_param.lower() == "paused":
+                users = users.filter(is_active=False)
+            elif status_param.lower() == "active":
+                users = users.filter(is_active=True)
+        if search_query:
+            users = users.filter(
+                Q(name__icontains=search_query) |
+                Q(email__icontains=search_query)
+            )
+        users = users.distinct()
+
+        # --------------------------
+        # Basic stats
+        # --------------------------
+        total_users = User.objects.count()
+        total_clients = User.objects.filter(role="client").count()
+        total_landscapers = User.objects.filter(role="landscaper").count()
+        total_basic_landscapers = User.objects.filter(
+            role="landscaper",
+            subscription__is_active=True,
+            subscription__plan__name__iexact="basic"
+        ).distinct().count()
+        total_pro_landscapers = User.objects.filter(
+            role="landscaper",
+            subscription__is_active=True,
+            subscription__plan__name__iexact="pro"
+        ).distinct().count()
+        paused_users = User.objects.filter(is_active=False).count()
+        active_users = User.objects.filter(is_active=True).count()
+        last_24h = timezone.now() - timedelta(hours=24)
+        daily_active_users = User.objects.filter(last_login__gte=last_24h).count()
+
+        # --------------------------
+        # Active / Inactive ratio
+        # --------------------------
+        if total_users > 0:
+            active_ratio = round((active_users / total_users) * 100, 2)
+            inactive_ratio = round((paused_users / total_users) * 100, 2)
+        else:
+            active_ratio = inactive_ratio = 0
+
+        # --------------------------
+        # Daily average users
+        # --------------------------
+        first_user = User.objects.order_by("date_joined").first()
+        if first_user:
+            days_active = max((timezone.now() - first_user.date_joined).days, 1)
+            daily_average_users = round(total_users / days_active, 2)
+        else:
+            daily_average_users = 0
+
+        # --------------------------
+        # New signups weekly & total
+        # --------------------------
+        one_week_ago = timezone.now() - timedelta(days=7)
+        weekly_new_users = User.objects.filter(date_joined__gte=one_week_ago).count()
+        total_new_users = total_users
+
+        # --------------------------
+        # Active subscriptions & jobs
+        # --------------------------
+        active_subscriptions_count = Subscription.objects.filter(
+            user__in=users, status=SubscriptionStatus.ACTIVE
+        ).count()
+        active_jobs_count = ServiceSchedule.objects.filter(
+            is_completed=False, landscaper__user__in=users
+        ).count()
+
+        # --------------------------
+        # Platform fees (2% from paid jobs)
+        # --------------------------
+        paid_jobs = ServiceSchedule.objects.filter(payment_status=PaymentStatus.PAID)
+        total_job_amount = paid_jobs.aggregate(
+            total=Sum('service__price', output_field=FloatField())
+        )['total'] or 0.0
+        job_platform_fee = round(total_job_amount * 0.02, 2)
+
+        # --------------------------
+        # Serialize users
+        # --------------------------
+        serializer = UserSerializer(users, many=True, context={"request": request})
+
+        return Response({
+            "status": "success",
+            "summary": {
+                "total_users": total_users,
+                "total_clients": total_clients,
+                "total_landscapers": total_landscapers,
+                "basic_landscapers": total_basic_landscapers,
+                "pro_landscapers": total_pro_landscapers,
+                "paused_users": paused_users,
+                "active_users": active_users,
+                "active_ratio": active_ratio,
+                "inactive_ratio": inactive_ratio,
+                "daily_active_users": daily_active_users,
+                "daily_average_users": daily_average_users,
+                "weekly_new_signups": weekly_new_users,
+                "total_new_signups": total_new_users,
+                "active_subscriptions": active_subscriptions_count,
+                "active_jobs": active_jobs_count,
+                "platform_fee_collected": job_platform_fee
+            },
+            "data": serializer.data,
+        }, status=200)
+# delete user for admin views 
+
+class AdminDeleteUserView(generics.DestroyAPIView):
+    """
+    Admin can delete any user by ID.
+    Users can delete their own account by confirming their password.
+    Only superusers can delete other superusers.
+    """
+    permission_classes = [IsAuthenticated]
+    queryset = User.objects.all()
+    lookup_field = "id"
+
+    def delete(self, request, *args, **kwargs):
+        user_to_delete = self.get_object()
+
+        # Check if the user is deleting their own account
+        if request.user == user_to_delete:
+            password = request.data.get("password")
+            if not password:
+                return Response(
+                    {"detail": "Password is required to delete your account."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if not check_password(password, user_to_delete.password):
+                return Response(
+                    {"detail": "Incorrect password."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        # Admin deletion rules
+        elif not request.user.is_staff:
+            return Response(
+                {"detail": "You do not have permission to delete this user."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Only superuser can delete another superuser
+        if user_to_delete.is_superuser and not request.user.is_superuser:
+            return Response(
+                {"detail": "Only a superuser can delete another superuser."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        email = user_to_delete.email
+        user_to_delete.delete()
+
+        return Response(
+            {"detail": f"User {email} deleted successfully."},
+            status=status.HTTP_200_OK
+        )
+
+
+
+class SelfDeleteUserView(generics.DestroyAPIView):
+    """
+    Authenticated user can delete their own account
+    by providing their password.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, *args, **kwargs):
+        user = request.user
+        password = request.data.get("password")
+
+        if not password:
+            return Response(
+                {"detail": "Password is required to delete your account."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not check_password(password, user.password):
+            return Response(
+                {"detail": "Incorrect password."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        email = user.email
+        user.delete()
+
+        return Response(
+            {"detail": f"Account {email} deleted successfully."},
+            status=status.HTTP_200_OK
+        )
+
+# user puse 
+
+class AdminPauseUserView(APIView):
+    """
+    Admin API to pause (deactivate) or unpause (activate) a user
+    """
+    permission_classes = [IsAdminUser]
+
+    def patch(self, request, user_id):
+        """
+        Toggle user's active status.
+        Send JSON payload: {"action": "pause"} or {"action": "unpause"}
+        """
+        user = get_object_or_404(User, id=user_id)
+
+        action = request.data.get("action")
+        if action not in ["pause", "unpause"]:
+            return Response(
+                {"detail": "Invalid action. Must be 'pause' or 'unpause'."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if action == "pause":
+            user.is_active = False
+            message = "User has been paused."
+        else:
+            user.is_active = True
+            message = "User has been unpaused."
+
+        user.save(update_fields=["is_active"])
+        return Response(
+            {
+                "status": "success",
+                "message": message,
+                "user": {
+                    "id": user.id,
+                    "email": user.email,
+                    "is_active": user.is_active,
+                }
+            },
+            status=status.HTTP_200_OK
+        )
+
+
+# report views
+# views.py
+class ReportUserAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, user_id):
+        reported_user = get_object_or_404(User, id=user_id)
+
+        # Prevent self-report
+        if request.user == reported_user:
+            return Response(
+                {"detail": "You cannot report yourself."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = UserReportSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        UserReport.objects.create(
+            reporter=request.user,
+            reported_user=reported_user,
+            note=serializer.validated_data["note"]
+        )
+
+        return Response(
+            {"message": "Report submitted successfully"},
+            status=status.HTTP_201_CREATED
+        )
