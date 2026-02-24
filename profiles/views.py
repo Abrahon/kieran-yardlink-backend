@@ -20,7 +20,8 @@ from common.permissions import IsClient,IsAdmin,IsLandscaper,IsWorker
 from invitations.models import TeamInvitation, InvitationStatus
 from invitations.permissions import IsProLandscaper, IsProOrBasicLandscaper
 from rest_framework_simplejwt.authentication import JWTAuthentication
-
+from django.db.models import F, FloatField
+from django.db.models.functions import ACos, Cos, Sin, Radians, Cast
 from rest_framework.permissions import IsAuthenticated
 
 # search by kim
@@ -51,7 +52,8 @@ from common.permissions import IsLandscaper
 from subscriptions.models import Subscription
 from subscriptions.enums import SubscriptionStatus
 from django.db.models import OuterRef, Subquery
-
+from django.db.models import F, FloatField
+from django.db.models.functions import ACos, Cos, Sin, Radians
 
 
 # admin profile
@@ -325,6 +327,8 @@ class ChangePasswordAPIView(generics.UpdateAPIView):
 # # ---------------- All Landscapers ----------------
 from django.db.models import Q
 
+from django.db.models import Exists
+
 class AllLandscapersListView(generics.ListAPIView):
     serializer_class = LandscaperProfileSerializer
     permission_classes = [IsAuthenticated]
@@ -337,47 +341,8 @@ class AllLandscapersListView(generics.ListAPIView):
         )
 
         return LandscaperProfilies.objects.annotate(
-            has_active_sub=Subquery(active_sub.values('id')[:1])
-        ).filter(
-            has_active_sub__isnull=False
+            has_active_sub=Exists(active_sub)
         ).select_related("user")
-
-    def list(self, request, *args, **kwargs):
-        queryset = self.get_queryset()
-
-        # Get all connections involving current user (ONE QUERY)
-        connections = ConnectionRequest.objects.filter(
-            Q(sender=request.user) | Q(receiver=request.user)
-        )
-
-        connection_map = {}
-        for conn in connections:
-            other_id = conn.receiver.id if conn.sender == request.user else conn.sender.id
-            connection_map[other_id] = conn
-
-        response_data = []
-
-        for landscaper in queryset:
-            user_obj = landscaper.user
-            conn = connection_map.get(user_obj.id)
-
-            status = "none"
-
-            if conn:
-                if conn.is_accepted is None:
-                    status = "pending_sent" if conn.sender == request.user else "pending_received"
-                elif conn.is_accepted is True:
-                    status = "accepted"
-                elif conn.is_accepted is False:
-                    status = "rejected"
-
-            serialized = self.get_serializer(landscaper).data
-            serialized["connection_status"] = status
-
-            response_data.append(serialized)
-
-        return Response(response_data)
-
 
 
 # ---------------- All Clients ----------------
@@ -433,79 +398,145 @@ class ClientProfileListView(generics.ListAPIView):
 
 
 # search landscaers
-class LandscaperSearchByKMAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+# class LandscaperSearchByKMAPIView(APIView):
+#     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
+#     def get(self, request):
+#         q = request.GET.get("q", "").strip()
+#         try:
+#             user_lat = request.GET.get("lat")
+#             user_lng = request.GET.get("lng")
+#             km = float(request.GET.get("km", 10))
+#             min_rating = float(request.GET.get("min_rating", 0))
+#         except ValueError:
+#             return Response(
+#                 {"error": "lat, lng, km, and min_rating must be valid numbers"},
+#                 status=400
+#             )
+
+#         landscapers = User.objects.filter(role=RoleChoices.LANDSCAPER)
+
+#         # Filter by search query
+#         if q:
+#             landscapers = landscapers.filter(
+#                 Q(name__icontains=q) | Q(email__icontains=q)
+#             )
+
+#         # Filter by min rating
+#         if min_rating > 0:
+#             landscapers = landscapers.annotate(
+#                 avg_rating=Avg("received_reviews__rating")  
+#             ).filter(avg_rating__gte=min_rating)
+
+#         # Filter by distance if lat/lng provided
+#         if user_lat and user_lng:
+#             try:
+#                 user_lat = float(user_lat)
+#                 user_lng = float(user_lng)
+#             except ValueError:
+#                 return Response(
+#                     {"error": "lat and lng must be valid numbers"},
+#                     status=400
+#                 )
+#         EARTH_RADIUS = 6371  # KM
+
+
+
+#         landscapers = landscapers.annotate(
+#             distance=EARTH_RADIUS * ACos(
+#                 Cos(Radians(user_lat)) *
+#                 Cos(Radians(Cast(F("latitude"), FloatField()))) *
+#                 Cos(Radians(Cast(F("longitude"), FloatField())) - Radians(user_lng)) +
+#                 Sin(Radians(user_lat)) *
+#                 Sin(Radians(Cast(F("latitude"), FloatField())))
+#             )
+#         ).filter(distance__lte=km).order_by("distance")
+
+
+
+
+#         # Get profiles
+#         profiles = [
+#             u.landscaperprofilies
+#             for u in landscapers
+#             if hasattr(u, "landscaperprofilies")
+#         ]
+
+#         serializer = LandscaperProfileSerializer(
+#             profiles,
+#             many=True,
+#             context={"request": request}
+#         )
+
+#         return Response({
+#             "count": len(serializer.data),
+#             "results": serializer.data
+#         })
+
+# views.py
+# profiles/views.py
+# profiles/views.py
+from rest_framework import generics, permissions
+from django.db.models import Q, F, FloatField
+from django.db.models.functions import ACos, Cos, Sin, Radians, Cast
+from django.db.models import Avg
+from profiles.models import LandscaperProfilies
+from profiles.serializers import LandscaperProfileSerializer
+
+class LandscaperSearchByKMAPIView(generics.ListAPIView):
+    serializer_class = LandscaperProfileSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = LandscaperProfilies.objects.all()
+        request = self.request
         q = request.GET.get("q", "").strip()
-        try:
-            user_lat = request.GET.get("lat")
-            user_lng = request.GET.get("lng")
-            km = float(request.GET.get("km", 10))
-            min_rating = float(request.GET.get("min_rating", 0))
-        except ValueError:
-            return Response(
-                {"error": "lat, lng, km, and min_rating must be valid numbers"},
-                status=400
-            )
+        min_rating = request.GET.get("min_rating")
+        lat = request.GET.get("lat")
+        lng = request.GET.get("lng")
+        km = request.GET.get("km", 10)
 
-        landscapers = User.objects.filter(role=RoleChoices.LANDSCAPER)
-
-        # Filter by search query
+        # Filter by name/email
         if q:
-            landscapers = landscapers.filter(
-                Q(name__icontains=q) | Q(email__icontains=q)
+            queryset = queryset.filter(
+                Q(name__icontains=q) |
+                Q(user__email__icontains=q)
             )
 
-        # Filter by min rating
-        if min_rating > 0:
-            landscapers = landscapers.annotate(
-                avg_rating=Avg("received_reviews__rating")  
-            ).filter(avg_rating__gte=min_rating)
+        # Filter by min_rating
+        if min_rating:
+            try:
+                min_rating = float(min_rating)
+                queryset = queryset.annotate(
+                    avg_rating=Avg("user__received_reviews__rating")
+                ).filter(avg_rating__gte=min_rating)
+            except ValueError:
+                pass
 
         # Filter by distance if lat/lng provided
-        if user_lat and user_lng:
+        if lat and lng:
             try:
-                user_lat = float(user_lat)
-                user_lng = float(user_lng)
+                lat = float(lat)
+                lng = float(lng)
+                km = float(km)
+                EARTH_RADIUS = 6371
+
+                queryset = queryset.annotate(
+                    distance=EARTH_RADIUS * ACos(
+                        Cos(Radians(lat)) *
+                        Cos(Radians(Cast(F("user__landscaper_profile__latitude"), FloatField()))) *
+                        Cos(Radians(Cast(F("user__landscaper_profile__longitude"), FloatField())) - Radians(lng)) +
+                        Sin(Radians(lat)) *
+                        Sin(Radians(Cast(F("user__landscaper_profile__latitude"), FloatField())))
+                    )
+                ).filter(distance__lte=km).order_by("distance")
+
             except ValueError:
-                return Response(
-                    {"error": "lat and lng must be valid numbers"},
-                    status=400
-                )
+                pass
 
-            EARTH_RADIUS = 6371  # KM
-            landscapers = landscapers.annotate(
-                distance=EARTH_RADIUS * ACos(
-                    Cos(Radians(user_lat)) *
-                    Cos(Radians(F("latitude"))) *
-                    Cos(Radians(F("longitude")) - Radians(user_lng)) +
-                    Sin(Radians(user_lat)) *
-                    Sin(Radians(F("latitude")))
-                )
-            ).filter(distance__lte=km).order_by("distance")
-
-        # Get profiles
-        profiles = [
-            u.landscaperprofilies
-            for u in landscapers
-            if hasattr(u, "landscaperprofilies")
-        ]
-
-        serializer = LandscaperProfileSerializer(
-            profiles,
-            many=True,
-            context={"request": request}
-        )
-
-        return Response({
-            "count": len(serializer.data),
-            "results": serializer.data
-        })
-
+        return queryset.distinct()
 
 # client search views
-
 class ClientSearchByKMAPIView(APIView):
     """
     Search clients by:

@@ -10,7 +10,9 @@ from .views import (
     CustomServiceListAPIView,
     StandardServiceCreateAPIView,
     StandardServiceListAPIView,
-    toggle_service_active
+    toggle_service_active,
+    StandardServiceUpdateAPIView,
+    ServiceStatsAPIView,
 
 )
 
@@ -33,6 +35,9 @@ urlpatterns = [
     path('services/standard/', StandardServiceCreateAPIView.as_view(), name='create-standard-service'),
     path('services/standard/list/', StandardServiceListAPIView.as_view(), name='list-standard-service'),
     path('services/standard/<int:pk>/toggle/', toggle_service_active, name='toggle-service-active'),
+    path("services/<int:id>/edit/", StandardServiceUpdateAPIView.as_view(), name="edit-standard-service"),
+    path("services/stats/", ServiceStatsAPIView.as_view(), name="service-stats"),
+
 
 
 ]

@@ -17,7 +17,12 @@ urlpatterns = [
     # admin dashyboard
     path("admin/dashboard-stats/", views.AdminDashboardStatsView.as_view()),
     path("admin/plans/<int:pk>/delete/", views.AdminPlanDeleteView.as_view()),
-    path("admin/subscriptions/<int:pk>/delete/", views.AdminSubscriptionDeleteView.as_view()),
+    path(
+        "admin/subscriptions/<int:subscription_id>/delete/",
+        views.AdminSubscriptionDeleteView.as_view(),
+        name="admin-subscription-delete"
+    ),
+        
     # path("admin/subscriptions/<int:pk>/extend/", views.ExtendSubscriptionView.as_view()),
     path("admin/subscriptions/",views.SubscriptionListAPIView.as_view(),name="admin-subscriptions"),
     path("confirm-subscription/", views.confirm_subscription, name="confirm-subscription"),
@@ -39,5 +44,6 @@ urlpatterns = [
     ),
     path('admin/subscriptions/ratio/',views. SubscriptionRatioAPIView.as_view(), name='admin-subscription-ratio'),
     path("subscription/upgrade/", views.UpgradePlanAPIView.as_view(), name="upgrade-plan"),
+    path('admin/subscription/<int:subscription_id>/pause/',views. AdminPauseSubscriptionAPIView.as_view(), name='admin-pause-subscription'),
 
 ]

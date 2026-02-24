@@ -404,6 +404,28 @@ class StandardServiceListAPIView(generics.ListAPIView):
             category=Service.CategoryChoices.STANDARD
         )
 
+# services/views.py
+
+
+
+
+class StandardServiceUpdateAPIView(generics.UpdateAPIView):
+    """
+    Update (edit) a standard service. Supports PATCH for partial updates.
+    Only the owner (landscaper) can update their service.
+    """
+    queryset = Service.objects.all()
+    serializer_class = StandardServiceSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = "id"  # URL will include service ID
+
+    def get_object(self):
+        service = super().get_object()
+        # Ensure only the owner can edit
+        if service.landscaper != self.request.user:
+            raise PermissionDenied("You do not have permission to edit this service.")
+        return service
+
 
 # Toggle active/inactive
 @api_view(['POST'])
@@ -421,3 +443,37 @@ def toggle_service_active(request, pk):
         "standard_service": service.standard_service,
         "is_active": service.is_active
     })
+
+
+
+# service stats 
+from django.db.models import Avg, Count, Q
+
+class ServiceStatsAPIView(APIView):
+    """
+    Returns statistics for logged-in landscaper's services.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+
+        queryset = Service.objects.filter(landscaper=user)
+
+        stats = queryset.aggregate(
+            total_services=Count("id"),
+            active_services=Count("id", filter=Q(is_active=True)),
+            seasonal_services=Count("id", filter=Q(category="seasonal")),
+            average_price=Avg("price")
+        )
+
+        return Response(
+            {
+                "total_services": stats["total_services"] or 0,
+                "active_services": stats["active_services"] or 0,
+                "seasonal_services": stats["seasonal_services"] or 0,
+                "average_price": round(float(stats["average_price"] or 0), 2),
+            },
+            status=status.HTTP_200_OK
+        )

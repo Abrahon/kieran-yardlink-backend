@@ -322,6 +322,39 @@ class SubscriptionCreateView(generics.CreateAPIView):
 
 
 
+from rest_framework.permissions import IsAdminUser
+
+class AdminPauseSubscriptionAPIView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def patch(self, request, subscription_id):
+        """
+        Admin can pause/resume a subscription.
+        PATCH body: {"is_active": false} → pause
+                    {"is_active": true} → resume
+        Response includes plan_name, plan_price, and subscription details.
+        """
+        subscription = get_object_or_404(Subscription, id=subscription_id)
+
+        # Update is_active field
+        is_active = request.data.get("is_active")
+        if is_active is None:
+            return Response({"detail": "is_active field is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        subscription.is_active = bool(is_active)
+        subscription.save(update_fields=["is_active"])
+
+        message = "Subscription paused successfully" if not subscription.is_active else "Subscription resumed successfully"
+
+        serializer = SubscriptionUpgradeSerializer(subscription)
+
+        return Response({
+            "status": "success",
+            "message": message,
+            "subscription": serializer.data
+        }, status=status.HTTP_200_OK)
+
+
 # @csrf_exempt
 # def stripe_webhook(request):
 #     payload = request.body
@@ -569,50 +602,73 @@ class AdminPlanDeleteView(generics.DestroyAPIView):
             status=status.HTTP_200_OK
         )
 
+# subscriptions/views.py
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status, permissions
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
+import stripe
+
+from .models import Subscription, SubscriptionStatus
+from profiles.models import LandscaperProfilies
+
+
 
 class AdminSubscriptionDeleteView(APIView):
+    """
+    Admin API to cancel/delete any user's subscription safely.
+    If the subscription does not exist on Stripe, it continues and only updates the DB.
+    """
     permission_classes = [IsAdmin]
 
     def delete(self, request, subscription_id):
+        # 1️⃣ Get the subscription object
         subscription = get_object_or_404(Subscription, id=subscription_id)
 
-        # 1️⃣ Cancel Stripe subscription
+        # 2️⃣ Cancel Stripe subscription if ID exists
         stripe_subscription_id = subscription.stripe_subscription_id
         if stripe_subscription_id:
             try:
                 stripe.Subscription.delete(stripe_subscription_id)
-            except stripe.error.StripeError as e:
-                return Response(
-                    {"detail": f"Stripe error: {str(e)}"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+            except stripe.error.InvalidRequestError as e:
+                if "No such subscription" in str(e):
+                    # Stripe subscription not found, just log and continue
+                    print(f"[Stripe] Subscription not found: {stripe_subscription_id}")
+                else:
+                    return Response(
+                        {"detail": f"Stripe error: {str(e)}"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
 
-        # 2️⃣ Update subscription in DB
-        subscription.status = SubscriptionStatus.CANCELED
+        # 3️ Update subscription in DB
+        subscription.status = SubscriptionStatus.CANCELLED
         subscription.is_active = False
         subscription.end_date = timezone.now()
         subscription.save(update_fields=["status", "is_active", "end_date"])
 
-        # 3️⃣ Check active subscriptions
+        # 4️⃣ Check if user has other active subscriptions
         user = subscription.user
         has_active = Subscription.objects.filter(
             user=user,
-            is_active=True,
-            status=SubscriptionStatus.ACTIVE
+            status=SubscriptionStatus.ACTIVE,
+            is_active=True
         ).exists()
 
-        # 4️⃣ DOWNGRADE landscaper profile
-        if not has_active:
-            profile = LandscaperProfilies.objects.filter(user=user).first()
-            if profile:
-                profile.plan = LandscaperProfilies.BASIC
-                profile.save(update_fields=["plan"])
+        # 5️⃣ Downgrade landscaper profile if no active subscriptions
+        profile = LandscaperProfilies.objects.filter(user=user).first()
+        if profile and not has_active:
+            # profile.plan = LandscaperProfilies.BASIC
+            profile.save(update_fields=["plan"])
 
         return Response(
-            {"detail": "Subscription canceled and landscaper downgraded to BASIC"},
+            {
+                "detail": "Subscription cancelled and landscaper downgraded if no active plan",
+                "subscription_status": subscription.status,
+                "plan_after_cancellation": profile.plan if profile else "N/A"
+            },
             status=status.HTTP_200_OK
         )
-
 
 
 
