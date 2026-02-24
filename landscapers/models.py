@@ -99,9 +99,10 @@ class LandscaperProfile(models.Model):
 #     def __str__(self):
 #         return self.custom_service if self.custom_service else ", ".join(self.standard_services)
 
+
 from django.db import models
-from django.contrib.auth import get_user_model
 from django.utils.translation import gettext_lazy as _
+from django.contrib.auth import get_user_model
 
 User = get_user_model()
 
@@ -110,54 +111,34 @@ class Service(models.Model):
         STANDARD = "standard", _("Standard")
         CUSTOM = "custom", _("Custom")
 
-    class StandardServiceChoices(models.TextChoices):
-        LAWN_MOWING = "lawn_mowing", _("Lawn Mowing")
-        GARDEN_DESIGN = "garden_design", _("Garden Design")
-        TREE_TRIMMING = "tree_trimming", _("Tree Trimming")
-        FERTILIZATION = "fertilization", _("Fertilization")
-        IRRIGATION = "irrigation", _("Irrigation")
-
     class RateTypeChoices(models.TextChoices):
         FLAT = "flat", _("Flat Rate")
         HOURLY = "hourly", _("Hourly")
 
     landscaper = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name="services"
+        User, on_delete=models.CASCADE, related_name="services"
     )
-
-    standard_service = models.CharField(
-        max_length=50,
-        choices=StandardServiceChoices.choices,
-        blank=True,
-        null=True
-    )
+    standard_service = models.CharField(max_length=150, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
     category = models.CharField(
-        max_length=20,
-        choices=CategoryChoices.choices,
-        default=CategoryChoices.STANDARD
+        max_length=20, choices=CategoryChoices.choices, default=CategoryChoices.STANDARD
     )
-    price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    time = models.DecimalField(max_digits=5, decimal_places=2, default=1)  # in hours
-    rate_type = models.CharField(
-        max_length=10,
-        choices=RateTypeChoices.choices,
-        default=RateTypeChoices.FLAT
+    price = models.DecimalField(max_digits=10, decimal_places=2)
+    time = models.DecimalField(
+        max_digits=5, decimal_places=2, help_text="Duration in hours"
     )
-
+    rate_type = models.CharField(max_length=10, choices=RateTypeChoices.choices)
     latitude = models.DecimalField(max_digits=20, decimal_places=18, null=True, blank=True)
     longitude = models.DecimalField(max_digits=20, decimal_places=18, null=True, blank=True)
-
-    is_active = models.BooleanField(default=True)  # new field
-
+    is_active = models.BooleanField(default=True)
+    is_pinned = models.BooleanField(default=False) 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return self.standard_service or "Custom Service"
-        
+
+
 
 # working_hours/models.py
 DAYS_OF_WEEK = [

@@ -196,9 +196,15 @@ class WorkingHoursSerializer(serializers.ModelSerializer):
         fields = ['id', 'day', 'day_display', 'start_time', 'end_time']
 
 
-# standard service
+
+from rest_framework import serializers
+from .models import Service
+
 class StandardServiceSerializer(serializers.ModelSerializer):
-    time_in_minutes = serializers.IntegerField(write_only=True, required=True)
+    # Input in minutes
+    time = serializers.IntegerField(
+        write_only=True, required=True, help_text="Time in minutes"
+    )
 
     class Meta:
         model = Service
@@ -210,14 +216,28 @@ class StandardServiceSerializer(serializers.ModelSerializer):
             "rate_type",
             "latitude",
             "longitude",
-            "time",               # output in hours
-            "time_in_minutes",    # input in minutes
+            "time",       # input in minutes
             "is_active",
+            "is_pinned",
         ]
-        read_only_fields = ["time"]
+        read_only_fields = ["is_active","is_pinned"]
 
     def create(self, validated_data):
-        minutes = validated_data.pop("time_in_minutes")
-        validated_data["time"] = round(minutes / 60, 2)  # convert minutes to hours
+        minutes = validated_data.pop("time")
+        validated_data["time"] = round(minutes / 60, 2)  
         validated_data["category"] = Service.CategoryChoices.STANDARD
+        validated_data["is_active"] = True
+        validated_data["is_pinned"] = False 
         return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        minutes = validated_data.pop("time", None)
+        if minutes is not None:
+            validated_data["time"] = round(minutes / 60, 2)
+        validated_data["category"] = Service.CategoryChoices.STANDARD
+        return super().update(instance, validated_data)
+
+    def to_representation(self, instance):
+        rep = super().to_representation(instance)
+        rep["time"] = float(instance.time)  # display in hours
+        return rep

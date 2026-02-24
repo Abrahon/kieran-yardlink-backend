@@ -36,6 +36,14 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.db import transaction
 from django.core.exceptions import ValidationError, PermissionDenied
 from rest_framework.exceptions import APIException
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from django.utils.timezone import now
+from django.db.models.functions import TruncMonth
+from django.db.models import Count
+from .models import Service
+from datetime import datetime, timedelta
 
 # views.py
 # views.py
@@ -377,14 +385,81 @@ class CustomServiceListAPIView(generics.ListAPIView):
             category=Service.CategoryChoices.CUSTOM
         )
 
-# standard service 
+# # standard service 
+# from rest_framework import generics, permissions
+
+# from rest_framework.decorators import api_view, permission_classes
+
+# from .serializers import StandardServiceSerializer
+
+# # Create Standard Service
+# class StandardServiceCreateAPIView(generics.CreateAPIView):
+#     serializer_class = StandardServiceSerializer
+#     permission_classes = [permissions.IsAuthenticated]
+
+#     def perform_create(self, serializer):
+#         serializer.save(landscaper=self.request.user)
+
+
+# # List Standard Services
+# class StandardServiceListAPIView(generics.ListAPIView):
+#     serializer_class = StandardServiceSerializer
+#     permission_classes = [permissions.IsAuthenticated]
+
+#     def get_queryset(self):
+#         return Service.objects.filter(
+#             landscaper=self.request.user,
+#             category=Service.CategoryChoices.STANDARD
+#         )
+
+# # services/views.py
+
+
+
+
+# class StandardServiceUpdateAPIView(generics.UpdateAPIView):
+#     """
+#     Update (edit) a standard service. Supports PATCH for partial updates.
+#     Only the owner (landscaper) can update their service.
+#     """
+#     queryset = Service.objects.all()
+#     serializer_class = StandardServiceSerializer
+#     permission_classes = [permissions.IsAuthenticated]
+#     lookup_field = "id"  # URL will include service ID
+
+#     def get_object(self):
+#         service = super().get_object()
+#         # Ensure only the owner can edit
+#         if service.landscaper != self.request.user:
+#             raise PermissionDenied("You do not have permission to edit this service.")
+#         return service
+
+
+# # Toggle active/inactive
+# @api_view(['POST'])
+# @permission_classes([permissions.IsAuthenticated])
+# def toggle_service_active(request, pk):
+#     try:
+#         service = Service.objects.get(pk=pk, landscaper=request.user)
+#     except Service.DoesNotExist:
+#         return Response({"error": "Service not found"}, status=404)
+
+#     service.is_active = not service.is_active
+#     service.save()
+#     return Response({
+#         "id": service.id,
+#         "standard_service": service.standard_service,
+#         "is_active": service.is_active
+#     })
+
 from rest_framework import generics, permissions
-
 from rest_framework.decorators import api_view, permission_classes
-
+from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied
+from .models import Service
 from .serializers import StandardServiceSerializer
 
-# Create Standard Service
+# 1️⃣ Create Standard Service
 class StandardServiceCreateAPIView(generics.CreateAPIView):
     serializer_class = StandardServiceSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -392,43 +467,36 @@ class StandardServiceCreateAPIView(generics.CreateAPIView):
     def perform_create(self, serializer):
         serializer.save(landscaper=self.request.user)
 
-
-# List Standard Services
+# 2️⃣ List Standard Services
+# views.py
 class StandardServiceListAPIView(generics.ListAPIView):
     serializer_class = StandardServiceSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
+        # Get all standard services for the user
+        # Order pinned services first
         return Service.objects.filter(
             landscaper=self.request.user,
             category=Service.CategoryChoices.STANDARD
-        )
+        ).order_by('-is_pinned', 'created_at')
+        
 
-# services/views.py
-
-
-
-
+# 3️⃣ Update Standard Service (PATCH)
 class StandardServiceUpdateAPIView(generics.UpdateAPIView):
-    """
-    Update (edit) a standard service. Supports PATCH for partial updates.
-    Only the owner (landscaper) can update their service.
-    """
     queryset = Service.objects.all()
     serializer_class = StandardServiceSerializer
     permission_classes = [permissions.IsAuthenticated]
-    lookup_field = "id"  # URL will include service ID
+    lookup_field = "id"
 
     def get_object(self):
         service = super().get_object()
-        # Ensure only the owner can edit
         if service.landscaper != self.request.user:
             raise PermissionDenied("You do not have permission to edit this service.")
         return service
 
-
-# Toggle active/inactive
-@api_view(['POST'])
+# 4️⃣ Toggle active/inactive
+@api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def toggle_service_active(request, pk):
     try:
@@ -443,7 +511,6 @@ def toggle_service_active(request, pk):
         "standard_service": service.standard_service,
         "is_active": service.is_active
     })
-
 
 
 # service stats 
@@ -477,3 +544,66 @@ class ServiceStatsAPIView(APIView):
             },
             status=status.HTTP_200_OK
         )
+
+
+
+# views.py
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def service_performance_monthly(request):
+    """
+    Return total number of services (Service model) created per month for last 12 months.
+    """
+    user = request.user
+    today = now()
+
+    # Generate last 12 months
+    month_labels = []
+    month_start_dates = []
+    for i in range(12):
+        month = (today.replace(day=1) - timedelta(days=i*30)).replace(day=1)
+        month_start_dates.append(month)
+        month_labels.append(month.strftime("%b %Y"))
+
+    month_labels = list(reversed(month_labels))
+    month_start_dates = list(reversed(month_start_dates))
+
+    # Get services created in the last 12 months
+    services_qs = Service.objects.filter(
+        landscaper=user,
+        created_at__gte=month_start_dates[0]
+    ).annotate(month=TruncMonth('created_at')).values('month').annotate(count=Count('id')).order_by('month')
+
+    # Map counts to month labels
+    counts = {label: 0 for label in month_labels}
+    for item in services_qs:
+        month_label = item['month'].strftime("%b %Y")
+        counts[month_label] = item['count']
+
+    return Response({
+        "months": month_labels,
+        "service_count": counts
+    })
+
+# pinned service /unpinned service
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def toggle_service_pin(request, service_id):
+    """
+    Toggle pin/unpin for a particular service.
+    Only the owner (landscaper) can pin their service.
+    """
+    try:
+        service = Service.objects.get(id=service_id, landscaper=request.user)
+    except Service.DoesNotExist:
+        return Response({"error": "Service not found"}, status=404)
+
+    service.is_pinned = not service.is_pinned
+    service.save(update_fields=["is_pinned"])
+
+    return Response({
+        "id": service.id,
+        "standard_service": service.standard_service,
+        "is_pinned": service.is_pinned
+    })

@@ -13,6 +13,8 @@ from .views import (
     toggle_service_active,
     StandardServiceUpdateAPIView,
     ServiceStatsAPIView,
+    service_performance_monthly,
+    toggle_service_pin
 
 )
 
@@ -37,7 +39,8 @@ urlpatterns = [
     path('services/standard/<int:pk>/toggle/', toggle_service_active, name='toggle-service-active'),
     path("services/<int:id>/edit/", StandardServiceUpdateAPIView.as_view(), name="edit-standard-service"),
     path("services/stats/", ServiceStatsAPIView.as_view(), name="service-stats"),
-
+    path("services/performance/", service_performance_monthly, name="service-performance-monthly"),
+    path("services/<int:service_id>/pin/", toggle_service_pin, name="service-pin"),
 
 
 ]
