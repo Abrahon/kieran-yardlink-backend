@@ -7,11 +7,12 @@ from rest_framework import status, serializers
 from django.core.mail import send_mail
 from django.conf import settings
 from django.utils import timezone
-
+from django.shortcuts import render, get_object_or_404
+from .models import TeamInvitation
 from accounts.models import User
 from profiles.models import WorkerProfile
 from .models import TeamInvitation
-from .serializers import SendInvitationSerializer, AcceptInvitationSerializer
+from .serializers import SendInvitationSerializer,AcceptInvitationSerializer,InvitationListSerializer
 from .permissions import IsProLandscaper
 
 
@@ -96,17 +97,6 @@ class AcceptInvitationView(APIView):
 # =========================
 # PENDING INVITATIONS
 # =========================
-class InvitationListSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = TeamInvitation
-        fields = (
-            "id",
-            "email",
-            "status",
-            "expires_at",
-            "created_at",
-            "token",
-        )
 
 
 class PendingInvitationListView(ListAPIView):
@@ -225,8 +215,7 @@ class AcceptedInvitationListView(ListAPIView):
 #             pro_landscaper=self.request.user.landscaper_profile
 #         ).select_related("user")
 # invitations/views.py
-from django.shortcuts import render, get_object_or_404
-from .models import TeamInvitation
+
 
 def accept_invite_page(request, token):
     invitation = get_object_or_404(
@@ -238,3 +227,78 @@ def accept_invite_page(request, token):
 
 
 
+# invitations/views.py
+
+# from landscapers.models import BusinessEmployee, EmployeePermission
+
+# # =========================
+# # ACCEPT INVITATION
+# # =========================
+# class AcceptInvitationView(APIView):
+#     permission_classes = [AllowAny]
+
+#     def post(self, request, token):
+#         invitation = TeamInvitation.objects.filter(
+#             token=token,
+#             status="pending"
+#         ).select_related("landscaper").first()
+
+#         if not invitation or invitation.is_expired():
+#             return Response(
+#                 {"detail": "Invitation invalid or expired"},
+#                 status=status.HTTP_400_BAD_REQUEST
+#             )
+
+#         serializer = AcceptInvitationSerializer(data=request.data)
+#         serializer.is_valid(raise_exception=True)
+
+#         # 1️⃣ Create or get user
+#         user, created = User.objects.get_or_create(
+#             email=invitation.email,
+#             defaults={
+#                 "name": serializer.validated_data["name"],
+#                 "role": "worker",
+#                 "is_active": True
+#             }
+#         )
+
+#         user.set_password(serializer.validated_data["password"])
+#         user.save()
+
+#         # 2️⃣ Create / Update Worker Profile
+#         WorkerProfile.objects.update_or_create(
+#             user=user,
+#             defaults={
+#                 "name": serializer.validated_data["name"],
+#                 "pro_landscaper": invitation.landscaper,
+#             }
+#         )
+
+#         # 3️⃣ Create BusinessEmployee
+#         employee, emp_created = BusinessEmployee.objects.get_or_create(
+#             landscaper=invitation.landscaper,
+#             user=user,
+#             defaults={
+#                 "is_active": True
+#             }
+#         )
+
+#         # 4️⃣ Create Default Permissions (only if employee newly created)
+#         if emp_created:
+#             EmployeePermission.objects.create(
+#                 employee=employee,
+#                 can_access_calendar=True,
+#                 can_manage_services=False,
+#                 can_manage_business_profile=False,
+#                 can_access_messages=True
+#             )
+
+#         # 5️⃣ Mark invitation accepted
+#         invitation.status = "accepted"
+#         invitation.accepted_at = timezone.now()
+#         invitation.save()
+
+#         return Response(
+#             {"detail": "Invitation accepted successfully"},
+#             status=status.HTTP_200_OK
+        # )

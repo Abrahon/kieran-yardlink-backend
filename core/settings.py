@@ -314,8 +314,6 @@ DEFAULT_CITY = "Dhaka,BD"
 RAIN_ALERT_THRESHOLD = 30
 
 
-
-
 # ------------------------------------------------------------------------------
 # COOKIES / SECURITY
 # ------------------------------------------------------------------------------
@@ -338,7 +336,7 @@ USE_TZ = True
 STATIC_URL = "/static/"  # URL for static files
 
 # During development, optional global static folder
-STATICFILES_DIRS = [BASE_DIR / "static"]  
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Where collectstatic will collect all static files for production
 STATIC_ROOT = BASE_DIR / "staticfiles"  

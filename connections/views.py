@@ -306,15 +306,27 @@ class RespondConnectionRequestAPIView(APIView):
             )
 
         # Create ClientService instance if needed
+        # client_service, created = ClientService.objects.get_or_create(
+        #     landscaper=landscaper_profile,
+        #     name=service_obj.custom_service or (service_obj.standard_services[0] if service_obj.standard_services else "Service"),
+        #     defaults={
+        #         "description": service_obj.description,
+        #         "category": service_obj.category,
+        #         "price": service_obj.price or 0,
+        #         "square_feet": service_obj.per_square_feet or 0,
+        #         "is_standard": False
+        #     }
+        # )
+        
         client_service, created = ClientService.objects.get_or_create(
             landscaper=landscaper_profile,
-            name=service_obj.custom_service or (service_obj.standard_services[0] if service_obj.standard_services else "Service"),
+            name=service_obj.standard_service or "Service",
             defaults={
-                "description": service_obj.description,
+                "description": service_obj.description or "", 
                 "category": service_obj.category,
                 "price": service_obj.price or 0,
-                "square_feet": service_obj.per_square_feet or 0,
-                "is_standard": False
+                "square_feet": getattr(service_obj, "per_square_feet", 0),
+                "is_standard": service_obj.category == "standard"
             }
         )
 
@@ -332,7 +344,7 @@ class RespondConnectionRequestAPIView(APIView):
             job = ServiceSchedule.objects.create(
                 client=client_profile,
                 landscaper=landscaper_profile,
-                service=client_service,  # ✅ Correct ClientService instance
+                service=client_service, 
                 scheduled_date=now.date(),
                 scheduled_time=now.time()
             )
@@ -380,7 +392,6 @@ class RespondConnectionRequestAPIView(APIView):
         )
 
 
-
 class CancelConnectionRequestAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -407,7 +418,6 @@ class CancelConnectionRequestAPIView(APIView):
 
 
 # Accepted Connections / Auto Schedule
-
 class AcceptedConnectionsAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -558,6 +568,7 @@ class AcceptedConnectionsAPIView(APIView):
             "change_vs_last_month": change_vs_last_month,
             "connection_limits": connection_limits
         })
+
 
 # -------------------------------
 # Upcoming Job
@@ -761,16 +772,16 @@ class UpcomingServicesForClientAPIView(APIView):
     Returns all pending services for the logged-in client.
     Shows landscaper profile and service details for each service.
     """
-    permission_classes = [IsClient]  # Add IsClient if available
+    permission_classes = [IsClient]  
 
     def get(self, request):
-        # 1️⃣ Get logged-in client profile
+        #  Get logged-in client profile
         try:
             client = request.user.clientprofile
         except ClientProfile.DoesNotExist:
             return Response([])
 
-        # 2️⃣ Fetch all pending services for this client
+        #  Fetch all pending services for this client
         services = ServiceSchedule.objects.filter(
             client=client,
             is_completed=False
@@ -783,7 +794,7 @@ class UpcomingServicesForClientAPIView(APIView):
             if not landscaper_profile:
                 continue  # skip if landscaper profile is missing
 
-            # 3️⃣ Ensure the service is linked to an accepted connection
+            #  Ensure the service is linked to an accepted connection
             connection_exists = ConnectionRequest.objects.filter(
                 is_accepted=True
             ).filter(
@@ -794,7 +805,7 @@ class UpcomingServicesForClientAPIView(APIView):
             if not connection_exists:
                 continue  # skip services without accepted connection
 
-            # 4️⃣ Append service info with landscaper
+            #  Append service info with landscaper
             response.append({
                 "service_id": service.id,
                 "scheduled_date": service.scheduled_date,
@@ -888,35 +899,118 @@ class ClientUpcomingServiceAPIView(APIView):
             "landscaper": LandscaperProfileSerializer(service.landscaper, context={"request": request}).data
         })
 
-# class ClientCompletedServiceAPIView(APIView):
+# class ClientUpcomingServiceAPIView(APIView):
 #     """
-#     Returns all completed services for the logged-in client.
+#     Returns upcoming services for the logged-in client.
+#     Client can reschedule and add a note.
 #     """
-#     permission_classes = [IsAuthenticated]
+#     permission_classes = [IsClient]
 
-#     def get(self, request):
-#         client = getattr(request.user, "clientprofile", None)
-#         if not client:
+#     def get(self, request, service_id=None):
+#         # FIX 1: Properly get client profile
+#         try:
+#             client = request.user.clientprofile
+#         except AttributeError:
 #             return Response({"detail": "Not a client"}, status=403)
 
-#         completed_services = ServiceSchedule.objects.filter(
+#         # FIX 2: Ensure landscaper & service loaded properly
+#         queryset = ServiceSchedule.objects.filter(
 #             client=client,
-#             is_completed=True
-#         ).select_related("landscaper", "service").order_by("-completed_at")
+#             is_completed=False
+#         ).select_related("landscaper", "service").order_by(
+#             "scheduled_date", "scheduled_time"
+#         )
 
-#         response = []
-#         for service in completed_services:
-#             response.append({
+#         # If specific service requested
+#         if service_id:
+#             service = get_object_or_404(queryset, id=service_id)
+
+#             # FIX 3: Safe service name handling
+#             service_name = getattr(service.service, "name", None) or \
+#                            getattr(service.service, "standard_service", "Service")
+
+#             return Response({
 #                 "service_id": service.id,
-#                 "service_name": service.service.name,
+#                 "service_name": service_name,
 #                 "scheduled_date": service.scheduled_date,
 #                 "scheduled_time": service.scheduled_time,
-#                 "completion_note": getattr(service, "completion_note", ""),
-#                 "landscaper": LandscaperProfileSerializer(service.landscaper, context={"request": request}).data
+#                 "client_note": getattr(service, "client_note", ""),
+#                 "landscaper": LandscaperProfileSerializer(
+#                     service.landscaper,
+#                     context={"request": request}
+#                 ).data
+#             })
+
+#         # Otherwise return all upcoming
+#         response = []
+
+#         for schedule in queryset:
+
+#             # FIX 4: Ensure service exists
+#             if not schedule.service:
+#                 continue
+
+#             service_name = getattr(schedule.service, "name", None) or \
+#                            getattr(schedule.service, "standard_service", "Service")
+
+#             response.append({
+#                 "service_id": schedule.id,
+#                 "service_name": service_name,
+#                 "scheduled_date": schedule.scheduled_date,
+#                 "scheduled_time": schedule.scheduled_time,
+#                 "client_note": getattr(schedule, "client_note", ""),
+#                 "landscaper": LandscaperProfileSerializer(
+#                     schedule.landscaper,
+#                     context={"request": request}
+#                 ).data
 #             })
 
 #         return Response(response)
 
+#     def patch(self, request, service_id):
+#         # FIX 5: Proper client validation
+#         try:
+#             client = request.user.clientprofile
+#         except AttributeError:
+#             return Response({"detail": "Not a client"}, status=403)
+
+#         service = get_object_or_404(
+#             ServiceSchedule.objects.select_related("service", "landscaper"),
+#             id=service_id,
+#             client=client,
+#             is_completed=False
+#         )
+
+#         scheduled_date = request.data.get("scheduled_date")
+#         scheduled_time = request.data.get("scheduled_time")
+#         client_note = request.data.get("client_note")
+
+#         # FIX 6: Update only provided fields
+#         if scheduled_date:
+#             service.scheduled_date = scheduled_date
+
+#         if scheduled_time:
+#             service.scheduled_time = scheduled_time
+
+#         if client_note is not None:
+#             service.client_note = client_note
+
+#         service.save()
+
+#         service_name = getattr(service.service, "name", None) or \
+#                        getattr(service.service, "standard_service", "Service")
+
+#         return Response({
+#             "service_id": service.id,
+#             "service_name": service_name,
+#             "scheduled_date": service.scheduled_date,
+#             "scheduled_time": service.scheduled_time,
+#             "client_note": getattr(service, "client_note", ""),
+#             "landscaper": LandscaperProfileSerializer(
+#                 service.landscaper,
+#                 context={"request": request}
+#             ).data
+#         })
 
 
 

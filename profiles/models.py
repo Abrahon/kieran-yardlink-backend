@@ -1,7 +1,8 @@
 from django.db import models
 from django.contrib.auth import get_user_model
 from cloudinary.models import CloudinaryField
-from landscapers .models import LandscaperProfile
+# from landscapers .models import BusinessProfile
+#  from landscapers.models import BusinessProfile
 from invitations .models import TeamInvitation
 from accounts.models import User
 from subscriptions.models import Plan
@@ -26,14 +27,12 @@ class AdminProfile(models.Model):
 class WorkerProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     pro_landscaper = models.ForeignKey(
-        
-        LandscaperProfile,
-        on_delete=models.CASCADE,
+        "landscapers.BusinessProfile",
+        on_delete=models.CASCADE,  # 🔹 required
         null=True,
         blank=True
     )
     
-
     name = models.CharField(max_length=255, default="Worker")
     phone = models.CharField(max_length=20, blank=True, default="")
     image = CloudinaryField("worker_profile", blank=True, null=True)
@@ -50,7 +49,7 @@ class LandscaperProfilies(models.Model):
     user = models.OneToOneField(
         User,
         on_delete=models.CASCADE,
-        related_name="landscaperprofilies"  # explicitly name the reverse accessor
+        related_name="landscaperprofilies"
     )
     name = models.CharField(max_length=255, default="Landscaper")
     phone = models.CharField(max_length=20, blank=True, default="")
@@ -61,7 +60,7 @@ class LandscaperProfilies(models.Model):
     job_reminder= models.BooleanField(default=False)
 
 # landscapers/models.py
-class LandscaperProfile(models.Model):
+class BusinessProfile(models.Model):
     user = models.OneToOneField(
         User,
         on_delete=models.CASCADE,

@@ -1,11 +1,11 @@
 import uuid
 from django.db import models
-from landscapers.models import LandscaperProfile  # no space after dot
+from landscapers.models import BusinessProfile  # no space after dot
 
 class LandscaperQRCode(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     landscaper = models.OneToOneField(
-        LandscaperProfile,
+        BusinessProfile,
         on_delete=models.CASCADE,
         related_name="qr_code"
     )

@@ -4,139 +4,290 @@ from django.contrib.auth import get_user_model
 from cloudinary.models import CloudinaryField
 from django.utils.translation import gettext_lazy as _
 # from profiles.models import LandscaperProfilies
-
+from django.db import models
+from django.core.validators import MinValueValidator
+from django.core.exceptions import ValidationError
+from django.utils import timezone
+from django.contrib.postgres.fields import ArrayField, JSONField  # PostgreSQL
 User = get_user_model()
+from django.core.exceptions import ValidationError
+
 
 # Landscaper Profile (business info)
-class LandscaperProfile(models.Model):
+class BusinessProfile(models.Model):
+
     user = models.OneToOneField(
         User,
         on_delete=models.CASCADE,
-        related_name="landscaper_profile"
+        related_name="business_profile"
     )
 
+    # Business info
+    business_name = models.CharField(max_length=150)
+    business_email = models.EmailField()
+    business_phone = models.CharField(max_length=20)
+
+    # Optional tagline / slogan
+    tagline = models.CharField(
+        max_length=250,
+        blank=True,
+        null=True,
+        help_text="Short description or tagline about the business"
+    )
+
+    # Optional business description
+    description = models.TextField(
+        max_length=500,
+        blank=True,
+        null=True
+    )
+
+    # Location
+    latitude = models.DecimalField(
+        max_digits=20,
+        decimal_places=18,
+        null=True,
+        blank=True
+    )
+    longitude = models.DecimalField(
+        max_digits=20,
+        decimal_places=18,
+        null=True,
+        blank=True
+    )
+
+    # Profile image (Pro only — validated via subscription app)
     profile_image = CloudinaryField(
         "pro_landscaper",
         blank=True,
         null=True
     )
 
-    business_name = models.CharField(max_length=150)
-    business_email = models.EmailField()
-    business_phone = models.CharField(max_length=20)
+    # QuickBooks integration (Pro only — validated via subscription app)
+    quickbooks_connected = models.BooleanField(default=False)
 
-    latitude = models.DecimalField(max_digits=20, decimal_places=18, null=True, blank=True)
-    longitude = models.DecimalField(max_digits=20, decimal_places=18, null=True, blank=True)
+    # Either Insurance or License document
+    insurance_doc = CloudinaryField(
+        "insurance_doc",
+        blank=True,
+        null=True,
+        help_text="Upload business insurance document if required"
+    )
+    license_doc = CloudinaryField(
+        "license_doc",
+        blank=True,
+        null=True,
+        help_text="Upload business license document if required"
+    )
 
+    # Profile complete flag
     is_profile_completed = models.BooleanField(default=False)
+
+    # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def clean(self):
+        # Validation: only one of insurance_doc or license_doc can be uploaded
+        if self.insurance_doc and self.license_doc:
+            raise ValidationError("You can upload either insurance OR license document, not both.")
 
     def __str__(self):
         return self.business_name
 
 
-# updated  models
-# admin add standard service
-# class StandardService(models.Model):
-#     class PricingType(models.TextChoices):
-#         HOURLY = "hourly", _("Hourly")
-#         FLAT = "flat", _("Flat Rate")
-#         PER_SQFT = "per_sqft", _("Per Square Foot")
-
-#     name = models.CharField(max_length=120, unique=True)
-#     pricing_type = models.CharField(
-#         max_length=20,
-#         choices=PricingType.choices,
-#         default=PricingType.HOURLY
-#     )
-#     base_price = models.DecimalField(max_digits=10, decimal_places=2)
-#     is_active = models.BooleanField(default=True)
-
-#     def __str__(self):
-#         return self.name
-
-# add new models  fo add ons
-
-
-# Service model
-# class Service(models.Model):
-#     class CategoryChoices(models.TextChoices):
-#         STANDARD = "standard", _("Standard")
-#         CUSTOM = "custom", _("Custom")
-
-#     class StandardServiceChoices(models.TextChoices):
-#         LAWN_MOWING = "lawn_mowing", _("Lawn Mowing")
-#         GARDEN_DESIGN = "garden_design", _("Garden Design")
-#         TREE_TRIMMING = "tree_trimming", _("Tree Trimming")
-#         FERTILIZATION = "fertilization", _("Fertilization")
-#         IRRIGATION = "irrigation", _("Irrigation")
-
-#     landscaper = models.ForeignKey(
-#         User,
-#         on_delete=models.CASCADE,
-#         related_name="services"
-#     )
-#     # landscaper = models.ForeignKey(LandscaperProfilies, on_delete=models.CASCADE)
-    
-
-#     standard_services = models.JSONField(default=list, blank=True)
-#     custom_service = models.CharField(max_length=150, blank=True, null=True)
-#     description = models.TextField(blank=True, null=True)
-#     category = models.CharField(
-#         max_length=20,
-#         choices=CategoryChoices.choices,
-#         default=CategoryChoices.STANDARD
-#     )
-#     add_ons = models.JSONField(default=list, blank=True)
-#     latitude = models.DecimalField(max_digits=20, decimal_places=18)
-#     latitude = models.DecimalField(max_digits=20, decimal_places=18, null=True, blank=True)
-#     longitude = models.DecimalField(max_digits=20, decimal_places=18, null=True, blank=True)
-#     price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-#     per_square_feet = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-#     created_at = models.DateTimeField(auto_now_add=True)
-#     updated_at = models.DateTimeField(auto_now=True)
-
-#     def __str__(self):
-#         return self.custom_service if self.custom_service else ", ".join(self.standard_services)
-
-
-from django.db import models
-from django.utils.translation import gettext_lazy as _
-from django.contrib.auth import get_user_model
-
-User = get_user_model()
-
 class Service(models.Model):
-    class CategoryChoices(models.TextChoices):
-        STANDARD = "standard", _("Standard")
-        CUSTOM = "custom", _("Custom")
 
-    class RateTypeChoices(models.TextChoices):
-        FLAT = "flat", _("Flat Rate")
-        HOURLY = "hourly", _("Hourly")
+    class PricingType(models.TextChoices):
+        FIXED = "fixed", "Fixed Price"
+        REQUEST = "request", "Priced Upon Request"
 
-    landscaper = models.ForeignKey(
-        User, on_delete=models.CASCADE, related_name="services"
+    # FK to BusinessProfile
+    business = models.ForeignKey(
+        BusinessProfile,
+        on_delete=models.CASCADE,
+        related_name="services",
+        null=False,   # non-nullable
+        blank=False
     )
-    standard_service = models.CharField(max_length=150, blank=True, null=True)
+
+    name = models.CharField(max_length=150)
     description = models.TextField(blank=True, null=True)
-    category = models.CharField(
-        max_length=20, choices=CategoryChoices.choices, default=CategoryChoices.STANDARD
+
+    # Pricing
+    base_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
+        blank=True,
+        null=True
     )
-    price = models.DecimalField(max_digits=10, decimal_places=2)
-    time = models.DecimalField(
-        max_digits=5, decimal_places=2, help_text="Duration in hours"
+    pricing_type = models.CharField(
+        max_length=10,
+        choices=PricingType.choices,
+        default=PricingType.FIXED
     )
-    rate_type = models.CharField(max_length=10, choices=RateTypeChoices.choices)
-    latitude = models.DecimalField(max_digits=20, decimal_places=18, null=True, blank=True)
-    longitude = models.DecimalField(max_digits=20, decimal_places=18, null=True, blank=True)
+    min_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
+        blank=True,
+        null=True
+    )
+
+    # Location (optional)
+    latitude = models.DecimalField(
+        max_digits=20,
+        decimal_places=18,
+        null=True,
+        blank=True
+    )
+    longitude = models.DecimalField(
+        max_digits=20,
+        decimal_places=18,
+        null=True,
+        blank=True
+    )
+
+    # Status & pinning
     is_active = models.BooleanField(default=True)
-    is_pinned = models.BooleanField(default=False) 
+    is_pinned = models.BooleanField(default=False)
+
+    # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["business", "is_active"]),
+            models.Index(fields=["pricing_type"]),
+            models.Index(fields=["is_pinned"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["business", "name"],
+                name="unique_service_per_business"
+            )
+        ]
+
+    def clean(self):
+        # Fixed → base_price required
+        if self.pricing_type == self.PricingType.FIXED and self.base_price is None:
+            raise ValidationError("Fixed pricing requires base_price.")
+        # Request → base_price must be empty
+        if self.pricing_type == self.PricingType.REQUEST and self.base_price is not None:
+            raise ValidationError("Request pricing should not have base_price.")
+
     def __str__(self):
-        return self.standard_service or "Custom Service"
+        return f"{self.name} ({self.business.business_name})"
+
+
+
+
+class ClientCustomService(models.Model):
+    client = models.ForeignKey(
+        "profiles.ClientProfile",
+        on_delete=models.CASCADE,
+        related_name="custom_services"
+    )
+
+    name = models.CharField(
+        max_length=150,
+        help_text="Custom service name"
+    )
+
+    description = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Service description"
+    )
+
+    price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
+        help_text="Service price"
+    )
+
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Deactivate instead of delete"
+    )
+
+    created_at = models.DateTimeField(
+        default=timezone.now
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["client"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["client", "name"],
+                name="unique_custom_service_per_client"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.client.user.email})"
+
+
+class Addon(models.Model):
+    business = models.ForeignKey(
+        "profiles.LandscaperProfilies",  # string reference
+        on_delete=models.CASCADE,
+        related_name="addons"
+    )
+
+    name = models.CharField(
+        max_length=150,
+        help_text="Add-On নাম"
+    )
+
+    price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
+        help_text="অতিরিক্ত মূল্য"
+    )
+
+
+    applicable_service_ids = models.JSONField(
+        blank=True,
+        default=list,
+        help_text="Applicable service IDs"
+    )
+
+    created_at = models.DateTimeField(
+        default=timezone.now
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True
+    )
+
+    class Meta:
+        ordering = ["name"]
+        indexes = [
+            models.Index(fields=["business"]),
+            models.Index(fields=["name"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["business", "name"],
+                name="unique_addon_per_business"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.business.business_name})"
+
 
 
 
@@ -153,7 +304,7 @@ DAYS_OF_WEEK = [
 
 class WorkingHours(models.Model):
     landscaper = models.ForeignKey(
-        LandscaperProfile,  
+        "landscapers.BusinessProfile", 
         on_delete=models.CASCADE,
         related_name="working_hours"
     )
@@ -167,59 +318,3 @@ class WorkingHours(models.Model):
 
     def __str__(self):
         return f"{self.landscaper.name} - {self.day}"
-
-# serializers for standard services 
-# from rest_framework import serializers
-# from .models import StandardService, ClientServicePreference
-
-# class StandardServiceSerializer(serializers.ModelSerializer):
-#     class Meta:
-#         model = StandardService
-#         fields = ["id", "name", "pricing_type", "base_price", "is_active"]
-#         read_only_fields = ["id"]
-
-# class StandardServiceUpdateByLandscaperSerializer(serializers.ModelSerializer):
-#     class Meta:
-#         model = StandardService
-#         fields = ["pricing_type", "base_price", "is_active"]
-
-# class ClientServicePreferenceSerializer(serializers.ModelSerializer):
-#     services = StandardServiceSerializer(many=True, read_only=True)
-#     service_ids = serializers.PrimaryKeyRelatedField(
-#         many=True,
-#         queryset=StandardService.objects.filter(is_active=True),
-#         write_only=True,
-#         source="services"
-#     )
-#     total_price = serializers.SerializerMethodField()
-
-#     class Meta:
-#         model = ClientServicePreference
-#         fields = ["client", "services", "service_ids", "frequency", "note", "total_price", "updated_at"]
-#         read_only_fields = ["client", "total_price", "updated_at"]
-
-#     def get_total_price(self, obj):
-#         total = 0
-#         for service in obj.services.all():
-#             qty = 1 if service.pricing_type in ["hourly","flat"] else 100
-#             total += float(service.base_price) * qty
-#         return total
-
-#     def update(self, instance, validated_data):
-#         services = validated_data.pop('services', [])
-#         if services:
-#             instance.services.set(services)
-#         for attr, value in validated_data.items():
-#             setattr(instance, attr, value)
-#         instance.save()
-#         return instance
-
-#     def create(self, validated_data):
-#         client = self.context['request'].user.clientprofile
-#         services = validated_data.pop('services', [])
-#         obj, created = ClientServicePreference.objects.update_or_create(
-#             client=client,
-#             defaults=validated_data
-#         )
-#         obj.services.set(services)
-#         return obj

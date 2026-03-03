@@ -190,13 +190,13 @@ class SubscriptionUpgradeSerializer(serializers.ModelSerializer):
         fields = ["id", "user", "plan_name", "plan_price", "start_date", "end_date", "status", "auto_renew"]
 
 # admin subscriptions 
-from rest_framework import serializers
-from .models import Subscription
-from django.utils import timezone
+
+# subscriptions/serializers.py
+
 
 class AdminSubscriptionSerializer(serializers.ModelSerializer):
     user_email = serializers.EmailField(source="user.email", read_only=True)
-    user_role = serializers.CharField(source="user.role", read_only=True)
+    user_name = serializers.CharField(source="user.name", read_only=True)
     plan_name = serializers.CharField(source="plan.name", read_only=True)
     plan_price = serializers.DecimalField(
         source="plan.price",
@@ -205,6 +205,8 @@ class AdminSubscriptionSerializer(serializers.ModelSerializer):
         read_only=True
     )
 
+    trial_remaining_days = serializers.SerializerMethodField()
+    remaining_days = serializers.SerializerMethodField()
     is_expired = serializers.SerializerMethodField()
 
     class Meta:
@@ -212,15 +214,31 @@ class AdminSubscriptionSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "user_email",
-            "user_role",
+            "user_name",
             "plan_name",
             "plan_price",
             "status",
+            "is_active",
+            "is_trial",
+            "trial_remaining_days",
+            "remaining_days",
             "start_date",
             "end_date",
             "is_expired",
             "created_at",
         ]
+
+    def get_trial_remaining_days(self, obj):
+        if obj.is_trial:
+            remaining = (obj.end_date - timezone.now()).days
+            return remaining if remaining > 0 else 0
+        return None
+
+    def get_remaining_days(self, obj):
+        if not obj.is_trial:
+            remaining = (obj.end_date - timezone.now()).days
+            return remaining if remaining > 0 else 0
+        return None
 
     def get_is_expired(self, obj):
         return obj.end_date < timezone.now()

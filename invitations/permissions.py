@@ -42,3 +42,16 @@ class IsProOrBasicLandscaper(BasePermission):
         return IsProLandscaper().has_permission(request, view) or \
                IsBasicLandscaper().has_permission(request, view)
 
+# from rest_framework.permissions import BasePermission
+# from .models import BusinessEmployee
+
+# class HasCalendarAccess(BasePermission):
+#     def has_permission(self, request, view):
+#         try:
+#             employee = BusinessEmployee.objects.get(
+#                 user=request.user,
+#                 is_active=True
+#             )
+#             return employee.permissions.can_access_calendar
+#         except:
+#             return False

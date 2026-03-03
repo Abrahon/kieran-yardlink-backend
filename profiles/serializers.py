@@ -15,9 +15,9 @@ from rest_framework import serializers
 from django.db.models import Q
 from connections.models import ConnectionRequest
 from django.db.models import Avg
-from landscapers.models import WorkingHours, LandscaperProfile
+from landscapers.models import WorkingHours, BusinessProfile
 from landscapers.serializers import WorkingHoursSerializer as WHSerializer
-from landscapers.models import WorkingHours, LandscaperProfile, Service
+from landscapers.models import WorkingHours, BusinessProfile, Service
 from services.models import ClientService 
 from connections.models import ConnectionRequest
 from subscriptions.models import Plan,Subscription
@@ -81,7 +81,7 @@ class WorkerProfileSerializer(serializers.ModelSerializer):
         return None
 
 
-from landscapers.models import LandscaperProfile  # NOT LandscaperProfilies
+from landscapers.models import BusinessProfile  # NOT LandscaperProfilies
 
 from rest_framework import serializers
 from django.utils import timezone

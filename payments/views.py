@@ -49,78 +49,9 @@ from django.core.mail import send_mail
 from services.models import ServiceSchedule, PaymentStatus
 from profiles.models import ClientProfile
 from rest_framework.permissions import IsAdminUser
-
 from subscriptions.models import Subscription, SubscriptionStatus
-from .serializers import PaymentHistorySerializer  # your existing serializer
+from .serializers import PaymentHistorySerializer 
 
-
-
-
-# payments/views.py
-# @api_view(["POST"])
-# @permission_classes([IsAuthenticated])
-# def create_schedule_checkout_session(request):
-#     """
-#     Client pays for a completed job (ServiceSchedule).
-#     schedule_id is passed in the POST body.
-#     """
-#     import stripe
-#     from django.conf import settings
-
-#     schedule_id = request.data.get("schedule_id")
-#     if not schedule_id:
-#         return Response({"error": "schedule_id is required"}, status=400)
-
-#     try:
-#         schedule = ServiceSchedule.objects.get(
-#             id=schedule_id, client=request.user.clientprofile
-#         )
-#     except ServiceSchedule.DoesNotExist:
-#         return Response({"error": "Schedule not found"}, status=404)
-
-#     if not schedule.is_completed:
-#         return Response({"error": "Job is not yet completed."}, status=400)
-
-#     if schedule.payment_status == PaymentStatus.PAID:
-#         return Response({"error": "Job already paid"}, status=400)
-
-#     # Amount in cents
-#     amount = int(schedule.service.price * 100)
-#     total_amount = amount + int(amount * 0.02)  # 2% platform fee
-
-#     # Stripe Checkout session
-#     try:
-#         session = stripe.checkout.Session.create(
-#             payment_method_types=["card"],
-#             mode="payment",
-#             customer_email=schedule.client.user.email,  
-#             line_items=[{
-#                 "price_data": {
-#                     "currency": "usd",
-#                     "unit_amount": total_amount,
-#                     "product_data": {
-#                         "name": f"{schedule.service.name} (Job ID {schedule.id})",
-#                         "description": f"Completed by landscaper: {schedule.landscaper.user.name}"
-#                     },
-#                 },
-#                 "quantity": 1,
-#             }],
-#             success_url=f"http://localhost:8000/api/success/?schedule_id={schedule.id}",
-#             cancel_url=f"http://localhost:8000/api/cancel/?schedule_id={schedule.id}",
-#             metadata={
-#                 "schedule_id": str(schedule.id),
-#                 "landscaper_id": str(schedule.landscaper.id)
-#             }
-#         )
-#     except stripe.error.StripeError as e:
-#         return Response({"error": str(e)}, status=500)
-
-#     # Save session info
-#     schedule.payment_status = PaymentStatus.PENDING
-#     schedule.stripe_payment_id = session.id
-#     schedule.save(update_fields=["payment_status", "stripe_payment_id"])
-
-#     return Response({"checkout_url": session.url})
 
 
 @api_view(["POST"])
@@ -221,24 +152,6 @@ def payment_cancel(request):
     schedule_id = request.GET.get("schedule_id")
     return Response({"message": "Payment cancelled", "schedule_id": schedule_id})
 
-
-
-# Cash Payment
-# class CashPaymentScheduleAPIView(APIView):
-#     permission_classes = [IsAuthenticated]
-
-#     def post(self, request, schedule_id):
-#         schedule = get_object_or_404(ServiceSchedule, id=schedule_id, client=request.user.clientprofile)
-
-#         if not schedule.is_completed:
-#             return Response({"error": "Job not completed yet"}, status=400)
-
-#         if schedule.payment_status == PaymentStatus.PAID:
-#             return Response({"error": "Already paid"}, status=400)
-
-#         schedule.payment_status = PaymentStatus.CASH_PENDING
-#         schedule.save(update_fields=["payment_status"])
-#         return Response({"message": "Cash payment selected", "payment_status": schedule.payment_status})
 
 
 

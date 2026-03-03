@@ -1,20 +1,16 @@
+
+
+
 from rest_framework import serializers
-from landscapers.models import LandscaperProfile, WorkingHours
-from services.models import ClientService
-from landscapers.models import Service
-
+from landscapers.models import BusinessProfile, WorkingHours
+from services.models import Service
 from profiles.models import LandscaperProfilies
-
 
 class PublicServiceSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Service
-        fields = ["id", "name", "price"]
-
-
-
-
-# --- Weekly Availability ---
+        model = Service  # or LandscaperService if exists
+        fields = ["id", "standard_service", "price", "category"]
+        
 class WeeklyAvailabilitySerializer(serializers.ModelSerializer):
     day = serializers.CharField(source="get_day_display")
 
@@ -23,7 +19,6 @@ class WeeklyAvailabilitySerializer(serializers.ModelSerializer):
         fields = ["day", "start_time", "end_time"]
 
 
-# # --- Public Landscaper Serializer ---
 class PublicLandscaperSerializer(serializers.ModelSerializer):
     # From User
     user_id = serializers.IntegerField(source="user.id", read_only=True)
@@ -47,7 +42,7 @@ class PublicLandscaperSerializer(serializers.ModelSerializer):
     )
 
     class Meta:
-        model = LandscaperProfile
+        model = BusinessProfile
         fields = [
             "user_id",
             "image",
@@ -62,22 +57,18 @@ class PublicLandscaperSerializer(serializers.ModelSerializer):
             "weekly_schedule",
         ]
 
-    # --- Helpers ---
     def get_basic_profile(self, obj):
-        """Return basic profile (LandscaperProfilies)"""
         try:
             return LandscaperProfilies.objects.get(user=obj.user)
         except LandscaperProfilies.DoesNotExist:
             return None
 
     def get_business_profile(self, obj):
-        """Return business profile (LandscaperProfile)"""
         try:
             return LandscaperProfile.objects.get(user=obj.user)
         except LandscaperProfile.DoesNotExist:
             return None
 
-    # --- Serializer Methods ---
     def get_phone(self, obj):
         profile = self.get_basic_profile(obj)
         return profile.phone if profile else None
@@ -99,25 +90,20 @@ class PublicLandscaperSerializer(serializers.ModelSerializer):
         return float(profile.longitude) if profile and profile.longitude else None
 
     def get_services(self, obj):
-        """
-        Fetch all services for this landscaper.
-        obj must be a LandscaperProfile instance.
-        """
         # obj is LandscaperProfile
-        services = Service.objects.filter(landscaper=obj)  
-
+        services = Service.objects.filter(landscaper=obj.user)  # Link to User
         return [
             {
                 "id": s.id,
                 "category": s.category,
-                "standard_services": s.standard_services,
-                "custom_service": s.custom_service,
+                "standard_service": getattr(s, "standard_service", None),
+                "custom_service": getattr(s, "custom_service", None),
                 "description": s.description,
                 "price": float(s.price),
-                "per_square_feet": float(s.per_square_feet),
-                "latitude": float(s.latitude),
-                "longitude": float(s.longitude),
-                "add_ons": s.add_ons,
+                "per_square_feet": float(getattr(s, "per_square_feet", 0)),
+                "latitude": float(s.latitude) if s.latitude else None,
+                "longitude": float(s.longitude) if s.longitude else None,
+                "add_ons": getattr(s, "add_ons", None),
             }
             for s in services
         ]

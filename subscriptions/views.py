@@ -26,7 +26,7 @@ from django.utils import timezone
 from datetime import timedelta
 import stripe
 from datetime import datetime
-
+from rest_framework.permissions import IsAdminUser
 from django.views.decorators.csrf import csrf_exempt
 from django.http import HttpResponse
 from django.conf import settings
@@ -322,35 +322,41 @@ class SubscriptionCreateView(generics.CreateAPIView):
 
 
 
-from rest_framework.permissions import IsAdminUser
-
+# resume and trail
 class AdminPauseSubscriptionAPIView(APIView):
+    """
+    Admin can pause or resume a subscription.
+    PATCH body: {"is_active": false} → pause
+                {"is_active": true} → resume
+    Response includes plan_name, plan_price, subscription details, and current status.
+    """
     permission_classes = [IsAdminUser]
 
     def patch(self, request, subscription_id):
-        """
-        Admin can pause/resume a subscription.
-        PATCH body: {"is_active": false} → pause
-                    {"is_active": true} → resume
-        Response includes plan_name, plan_price, and subscription details.
-        """
         subscription = get_object_or_404(Subscription, id=subscription_id)
 
-        # Update is_active field
+        # Get is_active from request
         is_active = request.data.get("is_active")
         if is_active is None:
-            return Response({"detail": "is_active field is required"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "The 'is_active' field is required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
+        # Convert to boolean safely
         subscription.is_active = bool(is_active)
         subscription.save(update_fields=["is_active"])
 
-        message = "Subscription paused successfully" if not subscription.is_active else "Subscription resumed successfully"
+        # Determine status message
+        status_text = "active" if subscription.is_active else "paused"
+        message = f"Subscription {status_text} successfully."
 
         serializer = SubscriptionUpgradeSerializer(subscription)
 
         return Response({
             "status": "success",
             "message": message,
+            "subscription_status": status_text,
             "subscription": serializer.data
         }, status=status.HTTP_200_OK)
 
@@ -672,6 +678,41 @@ class AdminSubscriptionDeleteView(APIView):
 
 
 
+# class ExtendSubscriptionView(APIView):
+#     permission_classes = [IsAuthenticated, IsAdmin]
+
+#     def post(self, request, pk):
+#         days = request.data.get("days")
+
+#         if not days or int(days) <= 0:
+#             return Response(
+#                 {"detail": "Valid number of days required"},
+#                 status=400
+#             )
+
+#         subscription = get_object_or_404(Subscription, pk=pk)
+
+#         # If expired, restart from today
+#         base_date = (
+#             subscription.end_date
+#             if subscription.end_date > timezone.now()
+#             else timezone.now()
+#         )
+
+#         subscription.end_date = base_date + timedelta(days=int(days))
+#         subscription.is_trial = False 
+#         subscription.status = "active"
+#         subscription.is_active = True
+#         subscription.save()
+
+#         return Response({
+#             "message": "Subscription extended successfully",
+#             "subscription_id": subscription.id,
+#             "new_end_date": subscription.end_date,
+#             "remaining_days": (subscription.end_date - timezone.now()).days
+#         })
+
+
 class ExtendSubscriptionView(APIView):
     permission_classes = [IsAuthenticated, IsAdmin]
 
@@ -679,38 +720,81 @@ class ExtendSubscriptionView(APIView):
         days = request.data.get("days")
 
         if not days or int(days) <= 0:
-            return Response(
-                {"detail": "Valid number of days required"},
-                status=400
-            )
+            return Response({"detail": "Valid number of days required"}, status=400)
 
         subscription = get_object_or_404(Subscription, pk=pk)
+        days = int(days)
 
-        # If expired, restart from today
-        base_date = (
-            subscription.end_date
-            if subscription.end_date > timezone.now()
-            else timezone.now()
-        )
+        now = timezone.now()
 
-        subscription.end_date = base_date + timedelta(days=int(days))
-        subscription.is_trial = False 
-        subscription.status = "active"
-        subscription.is_active = True
-        subscription.save()
+        if subscription.is_trial:
+            # Extend trial: add days to trial_remaining_days
+            # If trial expired, restart from today
+            base_date = subscription.end_date if subscription.end_date > now else now
+            subscription.end_date = base_date + timedelta(days=days)
+        else:
+            # Paid subscription: add days to end_date
+            base_date = subscription.end_date if subscription.end_date > now else now
+            subscription.end_date = base_date + timedelta(days=days)
+            subscription.status = "active"
+            subscription.is_active = True
+
+        subscription.save(update_fields=["end_date", "status", "is_active"])
+        
+        remaining_trial_days = (subscription.end_date - now).days if subscription.is_trial else None
+        remaining_paid_days = (subscription.end_date - now).days if not subscription.is_trial else None
 
         return Response({
             "message": "Subscription extended successfully",
             "subscription_id": subscription.id,
-            "new_end_date": subscription.end_date,
-            "remaining_days": (subscription.end_date - timezone.now()).days
-        })
+            "is_trial": subscription.is_trial,
+            "trial_remaining_days": remaining_trial_days,
+            "remaining_days": remaining_paid_days,
+            "new_end_date": subscription.end_date
+        }, status=200)
+
 
 
 # admin subscriptions views list
 # views.py
 
+# # subscriptions/views.py
+# class SubscriptionListAPIView(APIView):
+#     """
+#     Admin-only API to list subscriptions with:
+#     - search: plan name, user email, or user full name
+#     - filter by plan (partial match): e.g., 'ProPlan' or 'BasicPlan'
+#     """
+#     permission_classes = [IsAuthenticated, IsAdmin]
+
+#     def get(self, request):
+#         search = request.query_params.get("search", "") 
+#         plan_name = request.query_params.get("plan", "")  
+
+#         queryset = Subscription.objects.select_related("user", "plan").order_by("-created_at")
+
+#         # Flexible plan filter (partial match)
+#         if plan_name:
+#             queryset = queryset.filter(plan__name__icontains=plan_name)
+
+#         # Apply search filter (plan name, user email, or user name)
+#         if search:
+#             queryset = queryset.filter(
+#                 Q(plan__name__icontains=search) |
+#                 Q(user__email__icontains=search) |
+#                 Q(user__name__icontains=search)
+#             )
+
+#         serializer = SubscriptionSerializer(queryset, many=True, context={"request": request})
+
+#         return Response({
+#             "count": queryset.count(),
+#             "subscriptions": serializer.data,
+#         }, status=status.HTTP_200_OK)
+
+
 # subscriptions/views.py
+
 class SubscriptionListAPIView(APIView):
     """
     Admin-only API to list subscriptions with:
@@ -720,29 +804,33 @@ class SubscriptionListAPIView(APIView):
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def get(self, request):
-        search = request.query_params.get("search", "") 
-        plan_name = request.query_params.get("plan", "")  
+        # Get query parameters
+        search = request.query_params.get("search", "").strip()
+        plan_name = request.query_params.get("plan", "").strip()
 
+        # Base queryset: prefetch user and plan for performance
         queryset = Subscription.objects.select_related("user", "plan").order_by("-created_at")
 
-        # Flexible plan filter (partial match)
+        # Filter by plan name if provided (partial match)
         if plan_name:
             queryset = queryset.filter(plan__name__icontains=plan_name)
 
-        # Apply search filter (plan name, user email, or user name)
+        # Apply flexible search across plan name, user email, and user full name
         if search:
             queryset = queryset.filter(
                 Q(plan__name__icontains=search) |
                 Q(user__email__icontains=search) |
-                Q(user__name__icontains=search)
+                Q(user__name__icontains=search)  # Assuming `user.name` exists
             )
 
+        # Serialize results
         serializer = SubscriptionSerializer(queryset, many=True, context={"request": request})
 
         return Response({
             "count": queryset.count(),
-            "subscriptions": serializer.data,
+            "subscriptions": serializer.data
         }, status=status.HTTP_200_OK)
+
 
 
 @api_view(["GET"])
@@ -804,6 +892,7 @@ def confirm_subscription(request):
         }, status=200)
 
     return Response({"paid": False, "detail": "Payment not completed"}, status=200)
+
 
 
 

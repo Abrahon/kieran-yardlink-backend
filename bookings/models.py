@@ -2,7 +2,7 @@
 from django.db import models
 from django.utils import timezone
 from accounts.models import User
-from landscapers.models import LandscaperProfile
+from landscapers.models import BusinessProfile
 from services.models import ClientService
 
 
@@ -28,7 +28,7 @@ class ServiceBooking(models.Model):
     )
 
     landscaper = models.ForeignKey(
-        LandscaperProfile,
+        BusinessProfile,
         on_delete=models.CASCADE,
         related_name="service_bookings"
     )

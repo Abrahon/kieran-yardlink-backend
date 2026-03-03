@@ -1,136 +1,127 @@
 
 
-
-from rest_framework import serializers
 from django.db import transaction
-from .models import LandscaperProfile
+from .models import BusinessProfile,ClientCustomService
 from services.serializers import ServiceSerializer
 import json
+from .models import Service
 from rest_framework import serializers
-from .models import Service
-from .models import Service
+from .models import WorkingHours, DAYS_OF_WEEK
 import json
+from .models import Addon
+from services.models import Service  
+from django.core.exceptions import ValidationError
 
-from rest_framework import serializers
-from .models import LandscaperProfile
+from cloudinary.models import CloudinaryField
 
-from rest_framework import serializers
-from .models import LandscaperProfile
-from rest_framework import serializers
-from .models import LandscaperProfile
 
-from rest_framework import serializers
-from .models import LandscaperProfile
-
-# serializers.py
 class BusinessLandscaperProfileSerializer(serializers.ModelSerializer):
-    profile_image = serializers.ImageField(required=False)  # make writable
+    profile_image = serializers.ImageField(required=False, allow_null=True)
+    insurance_doc = serializers.ImageField(required=False, allow_null=True)
+    license_doc = serializers.ImageField(required=False, allow_null=True)
 
     class Meta:
-        model = LandscaperProfile
+        model = BusinessProfile
         fields = [
             "business_name",
             "business_email",
             "business_phone",
+            "tagline",
+            "description",
             "latitude",
             "longitude",
             "profile_image",
+            "quickbooks_connected",
+            "insurance_doc",
+            "license_doc",
+            "is_profile_completed",
         ]
+        read_only_fields = ["is_profile_completed", "quickbooks_connected"]
+
+    def validate(self, attrs):
+        """
+        Ensure only one of insurance_doc or license_doc is uploaded
+        """
+        insurance = attrs.get("insurance_doc") or getattr(self.instance, "insurance_doc", None)
+        license_doc = attrs.get("license_doc") or getattr(self.instance, "license_doc", None)
+
+        if insurance and license_doc:
+            raise ValidationError("You can upload either insurance OR license document, not both.")
+        return attrs
 
     def create(self, validated_data):
-        # user will come from view
-        user = self.context["user"]  # pass via context
-        profile_file = validated_data.pop("profile_image", None)
+        user = self.context["user"]  # pass user from view via context
+        profile_image = validated_data.pop("profile_image", None)
+        insurance_doc = validated_data.pop("insurance_doc", None)
+        license_doc = validated_data.pop("license_doc", None)
 
-        instance = LandscaperProfile.objects.create(user=user, **validated_data)
+        instance = BusinessProfile.objects.create(user=user, **validated_data)
 
-        if profile_file:
-            instance.profile_image = profile_file
-            instance.save()
-
-        return instance
-    
-    def update(self, instance, validated_data):
-        profile_file = validated_data.pop("profile_image", None)
-
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-
-        if profile_file:
-            instance.profile_image = profile_file
+        # Assign optional files if provided
+        if profile_image:
+            instance.profile_image = profile_image
+        if insurance_doc:
+            instance.insurance_doc = insurance_doc
+        if license_doc:
+            instance.license_doc = license_doc
 
         instance.save()
         return instance
 
-    def to_representation(self, instance):
-        data = super().to_representation(instance)
-        data["profile_image"] = instance.profile_image.url if instance.profile_image else None
-        return data
+    def update(self, instance, validated_data):
+        profile_image = validated_data.pop("profile_image", None)
+        insurance_doc = validated_data.pop("insurance_doc", None)
+        license_doc = validated_data.pop("license_doc", None)
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+
+        if profile_image:
+            instance.profile_image = profile_image
+        if insurance_doc:
+            instance.insurance_doc = insurance_doc
+            instance.license_doc = None  # clear license if insurance is provided
+        if license_doc:
+            instance.license_doc = license_doc
+            instance.insurance_doc = None  # clear insurance if license is provided
+
+        instance.save()
+        return instance
 
 
 
 class ServiceSerializer(serializers.ModelSerializer):
+    business = serializers.ReadOnlyField(source="business.id")
+
     class Meta:
         model = Service
         fields = [
             "id",
-            "landscaper",
-            "standard_services",
-            "custom_service",
+            "business",
+            "name",
             "description",
-            "category",
-            "add_ons",
+            "base_price",
+            "pricing_type",
+            "min_price",
             "latitude",
             "longitude",
-            "price",
-            "per_square_feet",
+            "is_active",
+            "is_pinned",
             "created_at",
             "updated_at",
         ]
-        read_only_fields = [
-            "id",
-            "landscaper",
-            "created_at",
-            "updated_at",
-        ]
+        read_only_fields = ["id", "business", "created_at", "updated_at", "is_pinned"]
 
-    def to_internal_value(self, data):
-        """
-        Allow JSON arrays from multipart/form-data
-        """
-        mutable_data = data.copy()
+    def validate(self, attrs):
+        pricing_type = attrs.get("pricing_type")
+        base_price = attrs.get("base_price")
 
-        for field in ("standard_services", "add_ons"):
-            if field in mutable_data and isinstance(mutable_data[field], str):
-                try:
-                    mutable_data[field] = json.loads(mutable_data[field])
-                except json.JSONDecodeError:
-                    raise serializers.ValidationError({
-                        field: "Invalid JSON format."
-                    })
+        if pricing_type == "fixed" and base_price is None:
+            raise serializers.ValidationError("Fixed pricing requires base_price.")
 
-        return super().to_internal_value(mutable_data)
+        if pricing_type == "request" and base_price is not None:
+            raise serializers.ValidationError("Request pricing should not include base_price.")
 
-    def validate_standard_services(self, value):
-        if not isinstance(value, list) or not value:
-            raise serializers.ValidationError(
-                "At least one standard service must be selected."
-            )
-        return value
-
-    def validate_add_ons(self, value):
-        if not isinstance(value, list):
-            raise serializers.ValidationError("Add-ons must be a list.")
-
-        for addon in value:
-            if not isinstance(addon, dict):
-                raise serializers.ValidationError(
-                    "Each add-on must be an object."
-                )
-            if "name" not in addon or "price" not in addon:
-                raise serializers.ValidationError(
-                    "Each add-on must include name and price."
-                )
         return value
 
     def validate(self, attrs):
@@ -169,25 +160,85 @@ class UpdateServiceSerializer(serializers.ModelSerializer):
 
 
 
-class CustomServiceSerializer(serializers.ModelSerializer):
+class ClientCustomServiceSerializer(serializers.ModelSerializer):
+    client = serializers.ReadOnlyField(source="client.id")
+
     class Meta:
-        model = Service
+        model = ClientCustomService
         fields = [
-            "custom_service",
+            "id",
+            "client",
+            "name",
             "description",
             "price",
-            "per_square_feet",
+            "is_active",
+            "created_at",
+            "updated_at",
         ]
+        read_only_fields = ["id", "client", "created_at", "updated_at"]
 
-    def create(self, validated_data):
-        # Automatically set category to 'custom'
-        validated_data['category'] = Service.CategoryChoices.CUSTOM
-        return super().create(validated_data)
+    def validate_name(self, value):
+        return value.strip()
+
+    def validate_price(self, value):
+        if value < 0:
+            raise serializers.ValidationError("Price must be positive.")
+        return value
+
+
+
+
+
+
+class AddonSerializer(serializers.ModelSerializer):
+    business = serializers.ReadOnlyField(source="business.id")
+
+    class Meta:
+        model = Addon
+        fields = [
+            "id",
+            "business",
+            "name",
+            "price",
+            "applicable_service_ids",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "business", "created_at", "updated_at"]
+
+    def validate_price(self, value):
+        if value < 0:
+            raise serializers.ValidationError("Price must be positive.")
+        return value
+
+    def validate_applicable_service_ids(self, value):
+        """
+        Ensure all service IDs belong to this business.
+        """
+        request = self.context.get("request")
+        if not request:
+            return value
+
+        try:
+            business = request.user.landscaperprofilies
+        except:
+            return value
+
+        valid_ids = set(
+            Service.objects.filter(
+                business=business,
+                id__in=value
+            ).values_list("id", flat=True)
+        )
+
+        if set(value) != valid_ids:
+            raise serializers.ValidationError(
+                "Some service IDs are invalid or do not belong to your business."
+            )
+
+        return value
 
 # # landscapers/serializers.py
-from rest_framework import serializers
-from .models import WorkingHours, DAYS_OF_WEEK
-
 class WorkingHoursSerializer(serializers.ModelSerializer):
     day_display = serializers.CharField(source='get_day_display', read_only=True)
 
@@ -197,8 +248,6 @@ class WorkingHoursSerializer(serializers.ModelSerializer):
 
 
 
-from rest_framework import serializers
-from .models import Service
 
 class StandardServiceSerializer(serializers.ModelSerializer):
     # Input in minutes

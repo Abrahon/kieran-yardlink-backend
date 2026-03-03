@@ -10,7 +10,7 @@ from common.permissions import IsClient, IsAdmin, IsLandscaper
 from rest_framework.exceptions import ValidationError
 from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.exceptions import NotFound
-from landscapers.models import WorkingHours, LandscaperProfile, Service
+from landscapers.models import WorkingHours, BusinessProfile, Service
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
