@@ -10,7 +10,11 @@ from rest_framework.exceptions import PermissionDenied
 from .models import Addon
 from profiles.models import LandscaperProfilies
 from .serializers import AddonSerializer
-
+from rest_framework import generics, permissions, status
+from rest_framework.exceptions import ValidationError, PermissionDenied
+from rest_framework.response import Response
+from django.db import IntegrityError, transaction
+from django.core.exceptions import ObjectDoesNotExist
 # landscapers/views.py
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -30,7 +34,7 @@ from django.db.models import F, Avg
 from django.db.models.functions import ACos, Cos, Sin, Radians
 from django.db.models import Q
 from rest_framework import generics, status
-from .serializers import UpdateServiceSerializer
+# from .serializers import UpdateServiceSerializer
 from accounts.models import User
 from accounts.enums import RoleChoices
 from profiles.models import LandscaperProfilies
@@ -71,6 +75,7 @@ from rest_framework.exceptions import PermissionDenied
 from .models import ClientCustomService
 from profiles.models import ClientProfile
 from .serializers import ClientCustomServiceSerializer
+from common .permissions import IsLandscaper
 
 
 
@@ -131,29 +136,41 @@ class GetBusinessProfileView(generics.RetrieveAPIView):
 
 
 # service views
-
 class ServiceListCreateView(generics.ListCreateAPIView):
     serializer_class = ServiceSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         try:
-            business = self.request.user.business_profile
+            business = self.request.user.landscaper_profile
         except BusinessProfile.DoesNotExist:
             return Service.objects.none()
-
         return Service.objects.filter(business=business)
 
     def perform_create(self, serializer):
         try:
             business = self.request.user.business_profile
         except BusinessProfile.DoesNotExist:
-            raise PermissionDenied("Create a Business Profile first.")
+            raise PermissionDenied("You must create a Business Profile first.")
 
-        serializer.save(business=business)
+        try:
+            with transaction.atomic():
+                serializer.save(business=business)
+        except IntegrityError as e:
+            # Check if it's a duplicate service name
+            if 'unique_service_per_business' in str(e):
+                raise ValidationError({
+                    "name": "A service with this name already exists for your business."
+                })
+            else:
+                # Other integrity errors
+                raise ValidationError({"detail": str(e)})
 
 
 # update custome service
+
+from django.db import transaction
+
 class ServiceDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = ServiceSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -163,8 +180,32 @@ class ServiceDetailView(generics.RetrieveUpdateDestroyAPIView):
             business = self.request.user.business_profile
         except BusinessProfile.DoesNotExist:
             return Service.objects.none()
-
         return Service.objects.filter(business=business)
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)  # supports PATCH
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+
+        try:
+            with transaction.atomic():
+                serializer.is_valid(raise_exception=True)
+                self.perform_update(serializer)
+        except ValidationError as ve:
+            return Response(
+                {"success": False, "message": "Update failed.", "errors": ve.detail},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            return Response(
+                {"success": False, "message": f"Update failed: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        return Response(
+            {"success": True, "message": "Service updated successfully.", "data": serializer.data},
+            status=status.HTTP_200_OK
+        )
 
 
 
@@ -323,15 +364,17 @@ class WorkingHoursListCreateView(generics.ListCreateAPIView):
 
 
 
-
-
 class ClientCustomServiceListCreateView(generics.ListCreateAPIView):
+    """
+    GET: List all custom services for the logged-in client
+    POST: Create a new custom service for the logged-in client
+    """
     serializer_class = ClientCustomServiceSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         try:
-            client = self.request.user.client_profile
+            client = self.request.user.clientprofile
         except ClientProfile.DoesNotExist:
             return ClientCustomService.objects.none()
 
@@ -339,26 +382,189 @@ class ClientCustomServiceListCreateView(generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         try:
-            client = self.request.user.client_profile
+            client = self.request.user.clientprofile
         except ClientProfile.DoesNotExist:
             raise PermissionDenied("You must create a Client Profile first.")
 
         serializer.save(client=client)
 
+    def create(self, request, *args, **kwargs):
+        """
+        Override to return a friendly success message
+        """
+        response = super().create(request, *args, **kwargs)
+        response.data = {
+            "message": "Custom service created successfully.",
+            "service": response.data
+        }
+        return response
 
-class ClientCustomServiceDetailView(generics.RetrieveUpdateDestroyAPIView):
+
+
+
+
+class ClientCustomServiceRetrieveUpdateView(generics.RetrieveUpdateAPIView):
+    """
+    GET: Retrieve a custom service by ID
+    PUT/PATCH: Update the custom service (only owner client can update)
+    """
     serializer_class = ClientCustomServiceSerializer
     permission_classes = [permissions.IsAuthenticated]
+    lookup_field = "pk"
 
     def get_queryset(self):
         try:
-            client = self.request.user.client_profile
+            client = self.request.user.clientprofile  # ✅ use clientprofile, not client_profile
         except ClientProfile.DoesNotExist:
             return ClientCustomService.objects.none()
 
         return ClientCustomService.objects.filter(client=client)
 
+    def perform_update(self, serializer):
+        # Ensure only the owner client can update
+        try:
+            client = self.request.user.client_profile
+        except ClientProfile.DoesNotExist:
+            raise PermissionDenied("You must have a Client Profile to update services.")
+
+        serializer.save(client=client)
+
+    def update(self, request, *args, **kwargs):
+        """
+        Override to add a success message
+        """
+        response = super().update(request, *args, **kwargs)
+        response.data = {
+            "message": "Custom service updated successfully.",
+            "service": response.data
+        }
+        return response
+
+
+
+
+
+class ClientCustomServiceDeleteView(generics.DestroyAPIView):
+    """
+    DELETE: Remove a custom service (only the owner client)
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = "pk"
+
+    def get_queryset(self):
+        # ✅ Use clientprofile, not client_profile
+        client = getattr(self.request.user, "clientprofile", None)
+        if not client:
+            # Return empty queryset if the user has no client profile
+            return ClientCustomService.objects.none()
+        return ClientCustomService.objects.filter(client=client)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        self.perform_destroy(instance)
+        return Response(
+            {"message": "Custom service deleted successfully."},
+            status=status.HTTP_200_OK
+        )
+
+
+# client see the custom service
+class LandscaperCustomServiceListView(generics.ListAPIView):
+    """
+    GET: List all active client custom service requests
+    for the authenticated landscaper to view.
+    """
+    serializer_class = ClientCustomServiceSerializer
+    permission_classes = [IsLandscaper]
+
+    def get_queryset(self):
+        # Only active requests
+        return ClientCustomService.objects.filter(is_active=True).order_by('-created_at')
+
+
+# accepet client custom service landscaper
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def accept_client_custom_service(request, pk):
+    """
+    POST: Landscaper accepts a client custom service request
+    """
+    try:
+        service = ClientCustomService.objects.get(pk=pk, is_active=True)
+    except ClientCustomService.DoesNotExist:
+        return Response({"error": "Service request not found"}, status=404)
+
+    if service.status != "pending":
+        return Response({"message": f"Service already {service.status}"}, status=400)
+
+    # Accept the service
+    service.status = "accepted"
+    service.save()
+
+    return Response({
+        "message": "Service request accepted.",
+        "id": service.id,
+        "name": service.name,
+        "status": service.status
+    }, status=status.HTTP_200_OK)
+
+
+
+# active inactive
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def toggle_client_custom_service_active(request, pk):
+    try:
+        # ✅ Correct attribute: clientprofile
+        service = ClientCustomService.objects.get(pk=pk, client=request.user.clientprofile)
+    except ClientCustomService.DoesNotExist:
+        return Response({"error": "Service not found"}, status=404)
+
+    service.is_active = not service.is_active
+    service.save()
+
+    return Response({
+        "message": "Custom service status updated.",
+        "id": service.id,
+        "name": service.name,
+        "is_active": service.is_active
+    })
+
+
+
 # add ons
+
+# class AddonListCreateView(generics.ListCreateAPIView):
+#     serializer_class = AddonSerializer
+#     permission_classes = [permissions.IsAuthenticated]
+
+#     def get_queryset(self):
+#         try:
+#             business = self.request.user.landscaper_profile  # ✅ matches related_name
+#             return Addon.objects.filter(business=business)
+#         except ObjectDoesNotExist:
+#             return Addon.objects.none()
+
+#     def perform_create(self, serializer):
+#         try:
+#             business = self.request.user.landscaper_profile
+#         except ObjectDoesNotExist:
+#             raise serializers.ValidationError(
+#                 {"error": "Landscaper profile not found."}
+#             )
+
+#         serializer.save(business=business)
+
+#     def create(self, request, *args, **kwargs):
+#         response = super().create(request, *args, **kwargs)
+#         return Response(
+#             {
+#                 "message": "Addon created successfully.",
+#                 "data": response.data
+#             },
+#             status=status.HTTP_201_CREATED
+#         )
 
 class AddonListCreateView(generics.ListCreateAPIView):
     serializer_class = AddonSerializer
@@ -366,40 +572,61 @@ class AddonListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         try:
-            business = self.request.user.landscaperprofilies
-        except LandscaperProfilies.DoesNotExist:
+            business = self.request.user.landscaper_profile
+        except BusinessProfile.DoesNotExist:
             return Addon.objects.none()
-
         return Addon.objects.filter(business=business)
 
     def perform_create(self, serializer):
         try:
-            business = self.request.user.landscaperprofilies
-        except LandscaperProfilies.DoesNotExist:
-            raise PermissionDenied("Create a business profile first.")
+            business = self.request.user.landscaper_profile
+        except BusinessProfile.DoesNotExist:
+            raise serializers.ValidationError({"error": "Landscaper profile not found."})
 
         serializer.save(business=business)
-
-        
 
 class AddonDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = AddonSerializer
     permission_classes = [permissions.IsAuthenticated]
+    lookup_field = "pk"
 
     def get_queryset(self):
         try:
-            business = self.request.user.landscaperprofilies
-        except LandscaperProfilies.DoesNotExist:
+            business = self.request.user.landscaper_profile
+            return Addon.objects.filter(business=business)
+        except ObjectDoesNotExist:
             return Addon.objects.none()
 
-        return Addon.objects.filter(business=business)
+    def update(self, request, *args, **kwargs):
+        response = super().update(request, *args, **kwargs)
+        return Response(
+            {
+                "message": "Addon updated successfully.",
+                "data": response.data
+            },
+            status=status.HTTP_200_OK
+        )
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+
+        # Soft delete instead of hard delete
+        instance.is_active = False
+        instance.save()
+
+        return Response(
+            {"message": "Addon deactivated successfully."},
+            status=status.HTTP_200_OK
+        )
+
+
 
 # 4️⃣ Toggle active/inactive
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def toggle_service_active(request, pk):
     try:
-        service = Service.objects.get(pk=pk, landscaper=request.user)
+        service = Service.objects.get(pk=pk, business__user=request.user)
     except Service.DoesNotExist:
         return Response({"error": "Service not found"}, status=404)
 
@@ -407,41 +634,40 @@ def toggle_service_active(request, pk):
     service.save()
     return Response({
         "id": service.id,
-        "standard_service": service.standard_service,
+        "name": service.name,          # updated from standard_service
         "is_active": service.is_active
     })
 
-
 # service stats 
 
-# class ServiceStatsAPIView(APIView):
-#     """
-#     Returns statistics for logged-in landscaper's services.
-#     """
+class ServiceStatsAPIView(APIView):
+    """
+    Returns statistics for logged-in landscaper's services.
+    """
 
-#     permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated]
 
-#     def get(self, request):
-#         user = request.user
+    def get(self, request):
+        user = request.user
 
-#         queryset = Service.objects.filter(landscaper=user)
+        queryset = Service.objects.filter(landscaper=user)
 
-#         stats = queryset.aggregate(
-#             total_services=Count("id"),
-#             active_services=Count("id", filter=Q(is_active=True)),
-#             seasonal_services=Count("id", filter=Q(category="seasonal")),
-#             average_price=Avg("price")
-#         )
+        stats = queryset.aggregate(
+            total_services=Count("id"),
+            active_services=Count("id", filter=Q(is_active=True)),
+            seasonal_services=Count("id", filter=Q(category="seasonal")),
+            average_price=Avg("price")
+        )
 
-#         return Response(
-#             {
-#                 "total_services": stats["total_services"] or 0,
-#                 "active_services": stats["active_services"] or 0,
-#                 "seasonal_services": stats["seasonal_services"] or 0,
-#                 "average_price": round(float(stats["average_price"] or 0), 2),
-#             },
-#             status=status.HTTP_200_OK
-#         )
+        return Response(
+            {
+                "total_services": stats["total_services"] or 0,
+                "active_services": stats["active_services"] or 0,
+                "seasonal_services": stats["seasonal_services"] or 0,
+                "average_price": round(float(stats["average_price"] or 0), 2),
+            },
+            status=status.HTTP_200_OK
+        )
 
 
 

@@ -15,12 +15,12 @@ from django.core.exceptions import ValidationError
 
 # Landscaper Profile (business info)
 class BusinessProfile(models.Model):
-
     user = models.OneToOneField(
         User,
         on_delete=models.CASCADE,
-        related_name="business_profile"
-    )
+        related_name="landscaper_profile"  # ✅
+)
+
 
     # Business info
     business_name = models.CharField(max_length=150)
@@ -96,8 +96,8 @@ class BusinessProfile(models.Model):
         return self.business_name
 
 
+# standard service
 class Service(models.Model):
-
     class PricingType(models.TextChoices):
         FIXED = "fixed", "Fixed Price"
         REQUEST = "request", "Priced Upon Request"
@@ -215,17 +215,26 @@ class ClientCustomService(models.Model):
         help_text="Deactivate instead of delete"
     )
 
-    created_at = models.DateTimeField(
-        default=timezone.now
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("accepted", "Accepted"),
+        ("completed", "Completed"),
+    ]
+    status = models.CharField(
+        max_length=10,
+        choices=STATUS_CHOICES,
+        default="pending",
+        help_text="Track landscaper response to the service"
     )
-    updated_at = models.DateTimeField(
-        auto_now=True
-    )
+
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["client"]),
+            models.Index(fields=["status"]),
         ]
         constraints = [
             models.UniqueConstraint(
@@ -240,44 +249,31 @@ class ClientCustomService(models.Model):
 
 class Addon(models.Model):
     business = models.ForeignKey(
-        "profiles.LandscaperProfilies",  # string reference
+        BusinessProfile,
         on_delete=models.CASCADE,
         related_name="addons"
     )
 
-    name = models.CharField(
-        max_length=150,
-        help_text="Add-On নাম"
-    )
+    name = models.CharField(max_length=150)
 
     price = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        validators=[MinValueValidator(0)],
-        help_text="অতিরিক্ত মূল্য"
+        validators=[MinValueValidator(0)]
     )
 
-
-    applicable_service_ids = models.JSONField(
-        blank=True,
-        default=list,
-        help_text="Applicable service IDs"
+    applicable_services = models.ManyToManyField(
+        Service,
+        related_name="addons",
+        blank=True
     )
+    is_active = models.BooleanField(default=True)
 
-    created_at = models.DateTimeField(
-        default=timezone.now
-    )
-
-    updated_at = models.DateTimeField(
-        auto_now=True
-    )
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["name"]
-        indexes = [
-            models.Index(fields=["business"]),
-            models.Index(fields=["name"]),
-        ]
         constraints = [
             models.UniqueConstraint(
                 fields=["business", "name"],
