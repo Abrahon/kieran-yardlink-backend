@@ -148,23 +148,52 @@ class ServiceSerializer(serializers.ModelSerializer):
 
 
 
+# class ClientCustomServiceSerializer(serializers.ModelSerializer):
+#     client = serializers.ReadOnlyField(source="client.id")  # set automatically from request
+#     price = serializers.DecimalField(
+#         max_digits=10, decimal_places=2, read_only=True
+#     )  # landscaper sets the price
+#     status = serializers.CharField(read_only=True)  # client cannot set directly
+
+#     class Meta:
+#         model = ClientCustomService
+#         fields = [
+#             "id",
+#             "client",
+#             "name",
+#             "description",
+#             "price",       # set by landscaper only
+#             "status",      # pending / accepted / completed
+#             "is_active",
+#             "created_at",
+#             "updated_at",
+#         ]
+#         read_only_fields = ["id", "client", "created_at", "updated_at", "status", "price"]
+
+#     def validate_name(self, value):
+#         value = value.strip()
+#         if not value:
+#             raise serializers.ValidationError("Service name cannot be empty.")
+#         return value
+
+#     # Remove validate_price because client cannot set price
+
 class ClientCustomServiceSerializer(serializers.ModelSerializer):
-    client = serializers.ReadOnlyField(source="client.id")  # automatically set from request
+    client = serializers.ReadOnlyField(source="client.id")
+    price = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        required=False,    # <--- make optional
+        allow_null=True    # <--- allow null
+    )
 
     class Meta:
         model = ClientCustomService
         fields = [
-            "id",
-            "client",
-            "name",
-            "description",
-            "price",
-            "status",  
-            "is_active",
-            "created_at",
-            "updated_at",
+            "id", "client", "name", "description",
+            "price", "status", "is_active", "created_at", "updated_at",
         ]
-        read_only_fields = ["id", "client", "created_at", "updated_at", "status",  ]
+        read_only_fields = ["id", "client", "created_at", "updated_at", "status"]
 
     def validate_name(self, value):
         value = value.strip()
@@ -173,9 +202,11 @@ class ClientCustomServiceSerializer(serializers.ModelSerializer):
         return value
 
     def validate_price(self, value):
-        if value < 0:
+        if value is not None and value < 0:
             raise serializers.ValidationError("Price must be zero or positive.")
         return value
+
+
 
 class AddonSerializer(serializers.ModelSerializer):
     business = serializers.ReadOnlyField(source="business.id")
@@ -221,7 +252,7 @@ class AddonSerializer(serializers.ModelSerializer):
                 )
         return services
 
-        
+
 # # landscapers/serializers.py
 class WorkingHoursSerializer(serializers.ModelSerializer):
     day_display = serializers.CharField(source='get_day_display', read_only=True)

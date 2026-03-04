@@ -207,7 +207,8 @@ class ClientCustomService(models.Model):
         max_digits=10,
         decimal_places=2,
         validators=[MinValueValidator(0)],
-        help_text="Service price"
+        null=True,    # <-- allow null in DB
+        blank=True    
     )
 
     is_active = models.BooleanField(
@@ -219,6 +220,8 @@ class ClientCustomService(models.Model):
         ("pending", "Pending"),
         ("accepted", "Accepted"),
         ("completed", "Completed"),
+        ("confirmed", "Confirmed"),
+        ("declined", "Declined"),
     ]
     status = models.CharField(
         max_length=10,

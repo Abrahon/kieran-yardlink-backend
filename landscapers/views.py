@@ -364,83 +364,160 @@ class WorkingHoursListCreateView(generics.ListCreateAPIView):
 
 
 
+# class ClientCustomServiceListCreateView(generics.ListCreateAPIView):
+#     """
+#     GET: List all custom services for the logged-in client
+#     POST: Create a new custom service for the logged-in client
+#     """
+#     serializer_class = ClientCustomServiceSerializer
+#     permission_classes = [permissions.IsAuthenticated]
+
+#     def get_queryset(self):
+#         try:
+#             client = self.request.user.clientprofile
+#         except ClientProfile.DoesNotExist:
+#             return ClientCustomService.objects.none()
+
+#         return ClientCustomService.objects.filter(client=client)
+
+#     def perform_create(self, serializer):
+#         try:
+#             client = self.request.user.clientprofile
+#         except ClientProfile.DoesNotExist:
+#             raise PermissionDenied("You must create a Client Profile first.")
+
+#         serializer.save(client=client)
+
+#     def create(self, request, *args, **kwargs):
+#         """
+#         Override to return a friendly success message
+#         """
+#         response = super().create(request, *args, **kwargs)
+#         response.data = {
+#             "message": "Custom service created successfully.",
+#             "service": response.data
+#         }
+#         return response
+
 class ClientCustomServiceListCreateView(generics.ListCreateAPIView):
     """
-    GET: List all custom services for the logged-in client
-    POST: Create a new custom service for the logged-in client
+    GET: List all custom service requests of the client
+    POST: Create a new request (status=pending)
     """
     serializer_class = ClientCustomServiceSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        try:
-            client = self.request.user.clientprofile
-        except ClientProfile.DoesNotExist:
+        client = getattr(self.request.user, "clientprofile", None)
+        if not client:
             return ClientCustomService.objects.none()
-
         return ClientCustomService.objects.filter(client=client)
 
     def perform_create(self, serializer):
-        try:
-            client = self.request.user.clientprofile
-        except ClientProfile.DoesNotExist:
-            raise PermissionDenied("You must create a Client Profile first.")
-
-        serializer.save(client=client)
+        client = getattr(self.request.user, "clientprofile", None)
+        if not client:
+            raise PermissionDenied("Client profile not found.")
+        serializer.save(client=client, status="pending")  # force pending
 
     def create(self, request, *args, **kwargs):
-        """
-        Override to return a friendly success message
-        """
         response = super().create(request, *args, **kwargs)
         response.data = {
-            "message": "Custom service created successfully.",
+            "message": "Service request submitted successfully.",
             "service": response.data
         }
         return response
 
 
 
+# class ClientCustomServiceRetrieveUpdateView(generics.RetrieveUpdateAPIView):
+#     """
+#     GET: Retrieve a custom service by ID
+#     PUT/PATCH: Update the custom service (only owner client can update)
+#     """
+#     serializer_class = ClientCustomServiceSerializer
+#     permission_classes = [permissions.IsAuthenticated]
+#     lookup_field = "pk"
 
+#     def get_queryset(self):
+#         try:
+#             client = self.request.user.clientprofile  # ✅ use clientprofile, not client_profile
+#         except ClientProfile.DoesNotExist:
+#             return ClientCustomService.objects.none()
 
-class ClientCustomServiceRetrieveUpdateView(generics.RetrieveUpdateAPIView):
+#         return ClientCustomService.objects.filter(client=client)
+
+#     def perform_update(self, serializer):
+#         # Ensure only the owner client can update
+#         try:
+#             client = self.request.user.client_profile
+#         except ClientProfile.DoesNotExist:
+#             raise PermissionDenied("You must have a Client Profile to update services.")
+
+#         serializer.save(client=client)
+
+#     def update(self, request, *args, **kwargs):
+#         """
+#         Override to add a success message
+#         """
+#         response = super().update(request, *args, **kwargs)
+#         response.data = {
+#             "message": "Custom service updated successfully.",
+#             "service": response.data
+#         }
+#         return response
+
+class ClientCustomServiceRetrieveUpdateView(generics.RetrieveDestroyAPIView):
     """
-    GET: Retrieve a custom service by ID
-    PUT/PATCH: Update the custom service (only owner client can update)
+    GET: Retrieve a single service request
+    DELETE: Delete pending service request
     """
     serializer_class = ClientCustomServiceSerializer
     permission_classes = [permissions.IsAuthenticated]
     lookup_field = "pk"
 
     def get_queryset(self):
-        try:
-            client = self.request.user.clientprofile  # ✅ use clientprofile, not client_profile
-        except ClientProfile.DoesNotExist:
+        client = getattr(self.request.user, "clientprofile", None)
+        if not client:
             return ClientCustomService.objects.none()
-
         return ClientCustomService.objects.filter(client=client)
 
-    def perform_update(self, serializer):
-        # Ensure only the owner client can update
-        try:
-            client = self.request.user.client_profile
-        except ClientProfile.DoesNotExist:
-            raise PermissionDenied("You must have a Client Profile to update services.")
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.status != "pending":
+            return Response(
+                {"error": "Cannot delete a service request that has been processed."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        instance.delete()
+        return Response({"message": "Service request deleted successfully."})
 
-        serializer.save(client=client)
+# client confirm  or not
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def client_confirm_service(request, pk):
+    """
+    Client confirms or declines a service after landscaper sets a price.
+    """
+    action = request.data.get("action")  # "confirm" or "decline"
+    if action not in ["confirm", "decline"]:
+        return Response({"error": "Invalid action."}, status=400)
 
-    def update(self, request, *args, **kwargs):
-        """
-        Override to add a success message
-        """
-        response = super().update(request, *args, **kwargs)
-        response.data = {
-            "message": "Custom service updated successfully.",
-            "service": response.data
-        }
-        return response
+    try:
+        service = ClientCustomService.objects.get(pk=pk, client=request.user.clientprofile)
+    except ClientCustomService.DoesNotExist:
+        return Response({"error": "Service request not found."}, status=404)
 
+    if service.status != "accepted":
+        return Response({"error": "Service is not ready for confirmation."}, status=400)
 
+    if action == "confirm":
+        service.status = "completed"
+        service.save()
+        return Response({"message": "Service confirmed successfully."})
+    else:
+        service.status = "pending"  # Could reset or mark declined
+        service.save()
+        return Response({"message": "Service request declined."})
 
 
 
