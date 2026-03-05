@@ -1,7 +1,6 @@
 
 import stripe
 from django.conf import settings
-from django.http import HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from rest_framework.response import Response
@@ -51,6 +50,22 @@ from profiles.models import ClientProfile
 from rest_framework.permissions import IsAdminUser
 from subscriptions.models import Subscription, SubscriptionStatus
 from .serializers import PaymentHistorySerializer 
+import csv
+from django.http import HttpResponse
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAdminUser
+from rest_framework.pagination import PageNumberPagination
+from common.permissions import IsProLandscaper
+from common.permissions import IsProLandscaper
+from django.db.models import Sum, F, FloatField, Value
+from django.db.models.functions import TruncMonth
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from profiles.models import LandscaperProfilies
+from services.models import ServiceSchedule, PaymentStatus
+from datetime import datetime
+from collections import OrderedDict
+from calendar import monthrange
 
 
 
@@ -695,11 +710,82 @@ def admin_transaction_summary(request):
 from rest_framework.pagination import PageNumberPagination
 
 
+# @api_view(["GET"])
+# @permission_classes([IsAdminUser])
+# def stripe_all_payments(request):
+#     """
+#     Admin: All Stripe payments with user/job IDs for reference.
+#     """
+
+#     data = []
+
+#     # =========================
+#     # Client Job Payments
+#     # =========================
+#     paid_jobs = (
+#         ServiceSchedule.objects
+#         .filter(payment_status=PaymentStatus.PAID)
+#         .select_related("client__user", "service")
+#     )
+
+#     for job in paid_jobs:
+#         service_price = float(job.service.price)
+#         platform_fee = round(service_price * 0.02, 2)
+
+#         data.append({
+#             "id": job.id,                   # job ID
+#             "user_id": job.client.user.id,  # client user ID
+#             "role": "client",
+#             "name": job.client.user.name,
+#             "email": job.client.user.email,
+#             "amount_paid": round(service_price + platform_fee, 2),
+#             "platform_fee": platform_fee,
+#             "transaction_id": job.stripe_payment_id,
+#             "date": job.scheduled_date,
+#             "source": "job_payment"
+#         })
+
+#     # =========================
+#     # Landscaper Subscription Payments
+#     # =========================
+#     subscriptions = (
+#         Subscription.objects
+#         .filter(stripe_subscription_id__isnull=False)
+#         .select_related("user", "plan")
+#     )
+
+#     for sub in subscriptions:
+#         data.append({
+#             "id": sub.id,              # subscription ID
+#             "user_id": sub.user.id,    # landscaper user ID
+#             "role": "landscaper",
+#             "name": sub.user.name,
+#             "email": sub.user.email,
+#             "amount_paid": float(sub.plan.price),
+#             "platform_fee": 0.0,
+#             "transaction_id": sub.stripe_subscription_id,
+#             "date": sub.created_at,
+#             "source": "subscription"
+#         })
+
+#     # =========================
+#     # PAGINATION
+#     # =========================
+#     paginator = PageNumberPagination()
+#     paginator.page_size = 10
+
+#     result_page = paginator.paginate_queryset(data, request)
+#     return paginator.get_paginated_response(result_page)
+
+
 @api_view(["GET"])
 @permission_classes([IsAdminUser])
 def stripe_all_payments(request):
     """
-    Admin: All Stripe payments with user/job IDs for reference.
+    Admin: All Stripe payments with user/job IDs.
+    Supports:
+    - pagination
+    - CSV download (?download=csv)
     """
 
     data = []
@@ -718,16 +804,16 @@ def stripe_all_payments(request):
         platform_fee = round(service_price * 0.02, 2)
 
         data.append({
-            "id": job.id,                   # job ID
-            "user_id": job.client.user.id,  # client user ID
+            "record_id": job.id,
+            "user_id": job.client.user.id,
             "role": "client",
+            "type": "job_payment",
             "name": job.client.user.name,
             "email": job.client.user.email,
             "amount_paid": round(service_price + platform_fee, 2),
             "platform_fee": platform_fee,
             "transaction_id": job.stripe_payment_id,
-            "date": job.scheduled_date,
-            "source": "job_payment"
+            "date": job.scheduled_date
         })
 
     # =========================
@@ -741,17 +827,56 @@ def stripe_all_payments(request):
 
     for sub in subscriptions:
         data.append({
-            "id": sub.id,              # subscription ID
-            "user_id": sub.user.id,    # landscaper user ID
+            "record_id": sub.id,
+            "user_id": sub.user.id,
             "role": "landscaper",
+            "type": "subscription",
             "name": sub.user.name,
             "email": sub.user.email,
             "amount_paid": float(sub.plan.price),
             "platform_fee": 0.0,
             "transaction_id": sub.stripe_subscription_id,
-            "date": sub.created_at,
-            "source": "subscription"
+            "date": sub.created_at
         })
+
+    # =========================
+    # CSV DOWNLOAD
+    # =========================
+    if request.GET.get("download") == "csv":
+
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = 'attachment; filename="stripe_payments_report.csv"'
+
+        writer = csv.writer(response)
+
+        writer.writerow([
+            "Record ID",
+            "User ID",
+            "Role",
+            "Type",
+            "Name",
+            "Email",
+            "Amount Paid",
+            "Platform Fee",
+            "Transaction ID",
+            "Date"
+        ])
+
+        for item in data:
+            writer.writerow([
+                item["record_id"],
+                item["user_id"],
+                item["role"],
+                item["type"],
+                item["name"],
+                item["email"],
+                item["amount_paid"],
+                item["platform_fee"],
+                item["transaction_id"],
+                item["date"]
+            ])
+
+        return response
 
     # =========================
     # PAGINATION
@@ -761,7 +886,6 @@ def stripe_all_payments(request):
 
     result_page = paginator.paginate_queryset(data, request)
     return paginator.get_paginated_response(result_page)
-
 # delete views
 
 from django.shortcuts import get_object_or_404
@@ -822,22 +946,6 @@ def delete_user_financial_data(request, user_id):
 
 
 # revenue overviw for pro landscapers
-
-
-from common.permissions import IsProLandscaper
-
-from common.permissions import IsProLandscaper
-from django.db.models import Sum, F, FloatField, Value
-from django.db.models.functions import TruncMonth
-from rest_framework.response import Response
-from rest_framework.views import APIView
-from profiles.models import LandscaperProfilies
-from services.models import ServiceSchedule, PaymentStatus
-from datetime import datetime
-
-from collections import OrderedDict
-from calendar import monthrange
-
 class ProLandscaperMonthlyRevenueView(APIView):
     permission_classes = [IsLandscaper]
 
@@ -908,10 +1016,10 @@ class ProLandscaperMonthlyRevenueView(APIView):
 
         return Response(data, status=200)
 
+
+
+
 # stripe vs cash
-
-
-
 class AdminStripeVsCashDashboardAPIView(APIView):
     """
     Admin: Dashboard showing total payments by type:

@@ -12,7 +12,9 @@ from .views import (
     ResendForgotOTPView,
     AdminPauseUserView,
     SelfDeleteUserView,
-    ReportUserAPIView
+    ReportUserAPIView,
+    AdminAuditLogView,
+    AdminVerifyOTPView
 )
 
 urlpatterns = [
@@ -32,6 +34,9 @@ urlpatterns = [
     path('admin/users/<int:user_id>/pause/', AdminPauseUserView.as_view(), name='admin-pause-user'),
     path("users/me/delete/", SelfDeleteUserView.as_view(), name="self-delete-user"),
     path("report/<int:user_id>/", ReportUserAPIView.as_view(), name="report-user"),
+    path("admin/verify-otp/", AdminVerifyOTPView.as_view(), name="admin-verify-otp"),
+    # audit log
+    path("admin/audit-logs/", AdminAuditLogView.as_view(), name="admin-audit-logs"),
 
 
 ]

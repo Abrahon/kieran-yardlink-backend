@@ -268,35 +268,7 @@ class ChangePasswordSerializer(serializers.Serializer):
         return user
 
         
-# class UserSerializer(serializers.ModelSerializer):
-#     landscaper_plan = serializers.SerializerMethodField()
 
-#     class Meta:
-#         model = User
-#         fields = [
-#             "id",
-#             "name",
-#             "email",
-#             "address",
-#             "phone",
-#             "role",
-#             "is_active",
-#             "date_joined",
-#             "landscaper_plan",
-#         ]
-
-    # def get_landscaper_plan(self, obj):
-    #     if obj.role != "landscaper":
-    #         return None
-
-    #     subscription = (
-    #         obj.subscription_set
-    #         .filter(is_active=True)
-    #         .select_related("plan")
-    #         .first()
-    #     )
-
-    #     return subscription.plan.name if subscription else None
 
 
 from django.utils import timezone
@@ -350,18 +322,6 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 
-# class UserSerializer(serializers.ModelSerializer):
-    # landscaper_plan = serializers.SerializerMethodField()
-    
-    # class Meta:
-        
-    #     model = User
-    #     fields = ['id', 'name', 'email', 'address', 'phone', 'role', 'is_active', 'date_joined','landscaper_plan']
-    
-    # def get_landscaper_plan(self, obj):
-    #     if obj.role == "landscaper" and hasattr(obj, "landscaper_profile"):
-    #         return obj.landscaper_profile.plan
-    #     return None
 
 # accounts/serializers.py
 
@@ -377,3 +337,55 @@ class UserReportSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserReport
         fields = ["note"]
+
+# admin serializers
+
+
+# class AdminUserSerializer(serializers.ModelSerializer):
+    landscaper_plan = serializers.SerializerMethodField()
+    plan_type = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = [
+            "id",
+            "name",
+            "email",
+            "phone",
+            "address",
+            "role",
+            "is_active",
+            "is_flagged",
+            "admin_notes",
+            "date_joined",
+            "last_login",
+            "landscaper_plan",
+            "plan_type",
+        ]
+
+    def get_landscaper_plan(self, obj):
+        if obj.landscaper_plan:
+            return obj.landscaper_plan
+
+        subscription = (
+            obj.subscription_set
+            .filter(is_active=True, status__in=["active", "trialing"])
+            .select_related("plan")
+            .first()
+        )
+        return subscription.plan.name if subscription else None
+
+    def get_plan_type(self, obj):
+        if obj.plan_type:
+            return obj.plan_type
+
+        subscription = (
+            obj.subscription_set
+            .filter(is_active=True, status__in=["active", "trialing"])
+            .first()
+        )
+
+        if not subscription:
+            return None
+
+        return "free_trial" if subscription.is_trial else "paid"

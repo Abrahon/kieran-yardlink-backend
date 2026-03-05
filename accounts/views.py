@@ -24,62 +24,18 @@ from django.shortcuts import get_object_or_404
 from .serializers import SignupSerializer, LoginSerializer, ResetPasswordSerializer,ResendOTPSerializer
 from .models import User, OTP,UserReport
 from django.utils import timezone
+from .models import AdminAuditLog
+
+from django.db.models import Q, Sum, FloatField, Count
+
+from subscriptions.models import Subscription, SubscriptionStatus
+from services.models import ServiceSchedule, PaymentStatus
 from .utils import generate_otp, send_otp_email 
 from .serializers import (
     SendOTPSerializer, VerifyOTPSerializer, ResetPasswordSerializer,VerifyOTPForgetSerializer,UserReportSerializer
 )
 
 
-
-
-# signup views 
-# class SignupView(generics.GenericAPIView):
-#     serializer_class = SignupSerializer
-#     permission_classes = [AllowAny]
-#     parser_classes = (MultiPartParser, FormParser)
-
-#     def post(self, request):
-#         serializer = self.get_serializer(data=request.data)
-#         serializer.is_valid(raise_exception=True)
-
-#         data = serializer.validated_data
-#         email = data["email"]
-
-#         if User.objects.filter(email=email).exists():
-#             return Response(
-#                 {"detail": "User with this email already exists."},
-#                 status=400
-#             )
-
-#         # ✅ STORE SESSION
-#         request.session["pending_user"] = {
-#             "email": email,
-#             "name": data["name"],
-#             "password": data["password"],
-#             "phone": data.get("phone"),
-#             "address": data.get("address"),
-#             "role": data["role"],
-#         }
-#         request.session.modified = True
-
-#         # ✅ EMAIL-BASED OTP
-#         OTP.objects.filter(email=email).delete()
-
-#         otp_code = generate_otp()
-#         OTP.objects.create(email=email, code=otp_code)
-
-#         send_otp_email(email, otp_code, data["name"])
-
-#         return Response(
-#             {"detail": "Verification OTP sent to email."},
-#             status=200
-#         )
-
-# from rest_framework import generics
-# from rest_framework import generics
-# from rest_framework.permissions import AllowAny
-# from rest_framework.parsers import MultiPartParser, FormParser
-# from rest_framework.response import Response
 
 
 class SignupView(generics.GenericAPIView):
@@ -134,6 +90,14 @@ def get_tokens_for_user(user):
         'access': str(refresh.access_token)
     }
 
+
+def get_tokens_for_user(user):
+    refresh = RefreshToken.for_user(user)
+    return {
+        'refresh': str(refresh),
+        'access': str(refresh.access_token),
+    }
+
 # class LoginView(generics.GenericAPIView):
 #     serializer_class = LoginSerializer
 #     permission_classes = [AllowAny]
@@ -146,7 +110,7 @@ def get_tokens_for_user(user):
 #         print("user", user)
 
 #         # ---------------------------------------------------------
-#         # 🔥 Check if user is NOT verified
+#         #  CHANGE ADDED HERE → Check if user is NOT verified
 #         # ---------------------------------------------------------
 #         if not user.is_active:
 #             return Response(
@@ -155,7 +119,7 @@ def get_tokens_for_user(user):
 #             )
 
 #         # ---------------------------------------------------------
-#         # 🔥 Login allowed only if email is verified
+#         #  Login allowed only if email is verified
 #         # ---------------------------------------------------------
 #         tokens = get_tokens_for_user(user)
 #         print("tokens", tokens)
@@ -166,23 +130,16 @@ def get_tokens_for_user(user):
 #             "user": {
 #                 "id": user.id,
 #                 "email": user.email,
-#                 "name": getattr(user, "name", ""),
+#                 "name": user.name,
 #                 "role": user.role,
-#                 "phone": getattr(user, 'phone', None),
-#                 "address": getattr(user, 'address', None),
+#                 "phone": getattr(user, 'phone', None),      
+#                 "address": getattr(user, 'address', None), 
 #                 # ✅ Add latitude & longitude
-#                 "latitude": float(user.latitude) if user.latitude else None,
-#                 "longitude": float(user.longitude) if user.longitude else None,
+#                 "latitude": float(user.latitude) if getattr(user, "latitude", None) else None,
+#                 "longitude": float(user.longitude) if getattr(user, "longitude", None) else None, 
 #             }
 #         }, status=status.HTTP_200_OK)
 
-
-def get_tokens_for_user(user):
-    refresh = RefreshToken.for_user(user)
-    return {
-        'refresh': str(refresh),
-        'access': str(refresh.access_token),
-    }
 
 class LoginView(generics.GenericAPIView):
     serializer_class = LoginSerializer
@@ -190,25 +147,40 @@ class LoginView(generics.GenericAPIView):
     parser_classes = (MultiPartParser, FormParser)
 
     def post(self, request, *args, **kwargs):
+
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user = serializer.validated_data['user']
-        print("user", user)
 
-        # ---------------------------------------------------------
-        #  CHANGE ADDED HERE → Check if user is NOT verified
-        # ---------------------------------------------------------
+        user = serializer.validated_data['user']
+
         if not user.is_active:
             return Response(
                 {"message": "Please verify your email first."},
-                status=status.HTTP_400_BAD_REQUEST
+                status=400
             )
 
-        # ---------------------------------------------------------
-        #  Login allowed only if email is verified
-        # ---------------------------------------------------------
+        # 🔐 STEP 1 → If ADMIN → send OTP
+        if user.role == "admin":
+
+            OTP.objects.filter(user=user).delete()
+
+            otp_code = generate_otp()
+
+            OTP.objects.create(
+                user=user,
+                code=otp_code
+            )
+
+            send_otp_email(user.email, otp_code)
+
+            return Response({
+                "message": "OTP sent to admin email",
+                "admin_2fa_required": True,
+                "email": user.email
+            })
+
+        # Normal users login directly
         tokens = get_tokens_for_user(user)
-        print("tokens", tokens)
 
         return Response({
             "message": "Login successful",
@@ -226,6 +198,36 @@ class LoginView(generics.GenericAPIView):
             }
         }, status=status.HTTP_200_OK)
 
+# create admin verify otp
+class AdminVerifyOTPView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+
+        email = request.data.get("email")
+        otp_code = request.data.get("otp")
+
+        user = User.objects.filter(email=email, role="admin").first()
+
+        if not user:
+            return Response({"detail": "Admin not found"}, status=404)
+
+        otp = OTP.objects.filter(user=user, code=otp_code).first()
+
+        if not otp:
+            return Response({"detail": "Invalid OTP"}, status=400)
+
+        if otp.is_expired():
+            return Response({"detail": "OTP expired"}, status=400)
+
+        otp.delete()
+
+        tokens = get_tokens_for_user(user)
+
+        return Response({
+            "message": "Admin login successful",
+            "token": tokens
+        })
 
 
 class SendOTPView(generics.CreateAPIView):
@@ -521,7 +523,7 @@ class ResendForgotOTPView(generics.GenericAPIView):
 
 # userlist views
 
-#  class UserListView(APIView):
+# class UserListView(APIView):
 #     permission_classes = [IsAdminUser]
 
 #     def get(self, request):
@@ -532,59 +534,98 @@ class ResendForgotOTPView(generics.GenericAPIView):
 
 #         users = User.objects.all()
 
-#         # Filter by role
+#         # --------------------------
+#         # Filters
+#         # --------------------------
 #         if role:
 #             users = users.filter(role=role)
-
-#         # Filter by subscription plan
 #         if plan:
 #             users = users.filter(
 #                 subscription__is_active=True,
 #                 subscription__plan__name__iexact=plan
 #             )
-
-#         # Filter by active/paused
 #         if status_param:
 #             if status_param.lower() == "paused":
 #                 users = users.filter(is_active=False)
 #             elif status_param.lower() == "active":
 #                 users = users.filter(is_active=True)
-
-#         # Search by name or email
 #         if search_query:
 #             users = users.filter(
 #                 Q(name__icontains=search_query) |
 #                 Q(email__icontains=search_query)
 #             )
-
 #         users = users.distinct()
 
-#         # 📊 Stats
+#         # --------------------------
+#         # Basic stats
+#         # --------------------------
 #         total_users = User.objects.count()
 #         total_clients = User.objects.filter(role="client").count()
 #         total_landscapers = User.objects.filter(role="landscaper").count()
-
 #         total_basic_landscapers = User.objects.filter(
 #             role="landscaper",
 #             subscription__is_active=True,
 #             subscription__plan__name__iexact="basic"
 #         ).distinct().count()
-
 #         total_pro_landscapers = User.objects.filter(
 #             role="landscaper",
 #             subscription__is_active=True,
 #             subscription__plan__name__iexact="pro"
 #         ).distinct().count()
-
 #         paused_users = User.objects.filter(is_active=False).count()
 #         active_users = User.objects.filter(is_active=True).count()
-
 #         last_24h = timezone.now() - timedelta(hours=24)
-#         daily_active_users = User.objects.filter(
-#             last_login__gte=last_24h
+#         daily_active_users = User.objects.filter(last_login__gte=last_24h).count()
+
+#         # --------------------------
+#         # Active / Inactive ratio
+#         # --------------------------
+#         if total_users > 0:
+#             active_ratio = round((active_users / total_users) * 100, 2)
+#             inactive_ratio = round((paused_users / total_users) * 100, 2)
+#         else:
+#             active_ratio = inactive_ratio = 0
+
+#         # --------------------------
+#         # Daily average users
+#         # --------------------------
+#         first_user = User.objects.order_by("date_joined").first()
+#         if first_user:
+#             days_active = max((timezone.now() - first_user.date_joined).days, 1)
+#             daily_average_users = round(total_users / days_active, 2)
+#         else:
+#             daily_average_users = 0
+
+#         # --------------------------
+#         # New signups weekly & total
+#         # --------------------------
+#         one_week_ago = timezone.now() - timedelta(days=7)
+#         weekly_new_users = User.objects.filter(date_joined__gte=one_week_ago).count()
+#         total_new_users = total_users
+
+#         # --------------------------
+#         # Active subscriptions & jobs
+#         # --------------------------
+#         active_subscriptions_count = Subscription.objects.filter(
+#             user__in=users, status=SubscriptionStatus.ACTIVE
+#         ).count()
+#         active_jobs_count = ServiceSchedule.objects.filter(
+#             is_completed=False, landscaper__user__in=users
 #         ).count()
 
-#         serializer = UserSerializer(users, many=True)
+#         # --------------------------
+#         # Platform fees (2% from paid jobs)
+#         # --------------------------
+#         paid_jobs = ServiceSchedule.objects.filter(payment_status=PaymentStatus.PAID)
+#         total_job_amount = paid_jobs.aggregate(
+#             total=Sum('service__price', output_field=FloatField())
+#         )['total'] or 0.0
+#         job_platform_fee = round(total_job_amount * 0.02, 2)
+
+#         # --------------------------
+#         # Serialize users
+#         # --------------------------
+#         serializer = UserSerializer(users, many=True, context={"request": request})
 
 #         return Response({
 #             "status": "success",
@@ -596,171 +637,420 @@ class ResendForgotOTPView(generics.GenericAPIView):
 #                 "pro_landscapers": total_pro_landscapers,
 #                 "paused_users": paused_users,
 #                 "active_users": active_users,
+#                 "active_ratio": active_ratio,
+#                 "inactive_ratio": inactive_ratio,
 #                 "daily_active_users": daily_active_users,
+#                 "daily_average_users": daily_average_users,
+#                 "weekly_new_signups": weekly_new_users,
+#                 "total_new_signups": total_new_users,
+#                 "active_subscriptions": active_subscriptions_count,
+#                 "active_jobs": active_jobs_count,
+#                 "platform_fee_collected": job_platform_fee
 #             },
 #             "data": serializer.data,
 #         }, status=200)
 
-from django.db.models import Q, Sum, FloatField
-from django.utils import timezone
+# from django.db.models import (
+#     Q,
+#     Count,
+#     Sum,
+#     Avg,
+#     FloatField
+# )
+# from django.utils import timezone
+# from datetime import timedelta
+
+# from rest_framework.views import APIView
+# from rest_framework.permissions import IsAdminUser
+# from rest_framework.response import Response
+# from rest_framework.pagination import PageNumberPagination
+
+# class UserListView(APIView):
+#     permission_classes = [IsAdminUser]
+
+#     def get(self, request):
+
+#         role = request.query_params.get("role")
+#         plan = request.query_params.get("plan")
+#         status_param = request.query_params.get("status")
+#         location = request.query_params.get("location")
+#         search_query = request.query_params.get("search", "").strip()
+#         sort_by = request.query_params.get("sort")
+
+#         users = User.objects.all()
+
+#         # --------------------------------
+#         # FILTERS
+#         # --------------------------------
+
+#         if role:
+#             users = users.filter(role__iexact=role)
+
+#         if plan:
+#             users = users.filter(
+#                 subscription__is_active=True,
+#                 subscription__plan__name__iexact=plan
+#             )
+
+#         if status_param:
+#             if status_param.lower() == "paused":
+#                 users = users.filter(is_active=False)
+#             elif status_param.lower() == "active":
+#                 users = users.filter(is_active=True)
+
+#         if location:
+#             users = users.filter(address__icontains=location)
+
+#         # --------------------------------
+#         # GLOBAL SEARCH
+#         # --------------------------------
+
+#         if search_query:
+#             users = users.filter(
+#                 Q(name__icontains=search_query) |
+#                 Q(email__icontains=search_query) |
+#                 Q(role__icontains=search_query) |
+#                 Q(address__icontains=search_query) |
+#                 Q(subscription__plan__name__icontains=search_query) |
+#                 Q(subscription__status__icontains=search_query)
+#             )
+
+#         # --------------------------------
+#         # ANNOTATIONS (metrics)
+#         # --------------------------------
+
+#         users = users.annotate(
+
+#             total_clients=Count(
+#                 "landscaper_jobs__client",
+#                 distinct=True
+#             ),
+
+#             total_jobs=Count(
+#                 "landscaper_jobs",
+#                 distinct=True
+#             ),
+
+#             total_revenue=Sum(
+#                 "landscaper_jobs__service__price",
+#                 output_field=FloatField()
+#             ),
+
+#             average_rating=Avg(
+#                 "reviews__rating"
+#             )
+#         )
+
+#         # --------------------------------
+#         # SORTING
+#         # --------------------------------
+
+#         if sort_by == "revenue":
+#             users = users.order_by("-total_revenue")
+
+#         elif sort_by == "clients":
+#             users = users.order_by("-total_clients")
+
+#         elif sort_by == "rating":
+#             users = users.order_by("-average_rating")
+
+#         elif sort_by == "jobs":
+#             users = users.order_by("-total_jobs")
+
+#         elif sort_by == "newest":
+#             users = users.order_by("-date_joined")
+
+#         users = users.distinct()
+
+#         # --------------------------------
+#         # PAGINATION
+#         # --------------------------------
+
+#         paginator = PageNumberPagination()
+#         paginator.page_size = 20
+
+#         page = paginator.paginate_queryset(users, request)
+
+#         serializer = UserSerializer(
+#             page,
+#             many=True,
+#             context={"request": request}
+#         )
+
+#         # --------------------------------
+#         # DASHBOARD SUMMARY
+#         # --------------------------------
+
+#         total_users = User.objects.count()
+
+#         total_clients = User.objects.filter(
+#             role="client"
+#         ).count()
+
+#         total_landscapers = User.objects.filter(
+#             role="landscaper"
+#         ).count()
+
+#         paused_users = User.objects.filter(
+#             is_active=False
+#         ).count()
+
+#         active_users = User.objects.filter(
+#             is_active=True
+#         ).count()
+
+#         last_24h = timezone.now() - timedelta(hours=24)
+
+#         daily_active_users = User.objects.filter(
+#             last_login__gte=last_24h
+#         ).count()
+
+#         # Weekly new signups
+#         one_week_ago = timezone.now() - timedelta(days=7)
+
+#         weekly_new_users = User.objects.filter(
+#             date_joined__gte=one_week_ago
+#         ).count()
+
+#         # Platform fees from jobs
+#         paid_jobs = ServiceSchedule.objects.filter(
+#             payment_status=PaymentStatus.PAID
+#         )
+
+#         total_job_amount = paid_jobs.aggregate(
+#             total=Sum("service__price", output_field=FloatField())
+#         )["total"] or 0.0
+
+#         platform_fee = round(total_job_amount * 0.02, 2)
+
+#         return paginator.get_paginated_response({
+
+#             "summary": {
+
+#                 "total_users": total_users,
+#                 "total_clients": total_clients,
+#                 "total_landscapers": total_landscapers,
+#                 "active_users": active_users,
+#                 "paused_users": paused_users,
+#                 "daily_active_users": daily_active_users,
+#                 "weekly_new_signups": weekly_new_users,
+#                 "platform_fee_collected": platform_fee
+#             },
+
+#             "data": serializer.data
+#         })
+
 from datetime import timedelta
+from django.db.models import (
+    Q, Count, Sum, FloatField, Value, OuterRef, Subquery
+)
+from django.db.models.functions import Coalesce
+from django.utils import timezone
+
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
+from rest_framework.pagination import PageNumberPagination
 
 from accounts.models import User
-from services.models import ServiceSchedule, PaymentStatus
-from subscriptions.models import Subscription, SubscriptionStatus
-from .serializers import UserSerializer
-
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAdminUser
-from rest_framework.response import Response
-from django.db.models import Q, Sum, FloatField, Count
-from django.utils import timezone
-from datetime import timedelta
-from accounts.models import User
-from subscriptions.models import Subscription, SubscriptionStatus
-from services.models import ServiceSchedule, PaymentStatus
 from accounts.serializers import UserSerializer
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import IsAdminUser
-from django.utils import timezone
-from django.db.models import Q, Sum, FloatField
-from datetime import timedelta
-
-from .serializers import UserSerializer
+from subscriptions.models import Subscription, SubscriptionStatus
+from services.models import ServiceSchedule, PaymentStatus
+from landscapers.models import BusinessProfile   # adjust import if needed
 
 
 class UserListView(APIView):
     permission_classes = [IsAdminUser]
 
     def get(self, request):
+
         role = request.query_params.get("role")
-        plan = request.query_params.get("plan")  # basic | pro
-        status_param = request.query_params.get("status")  # active | paused
+        plan = request.query_params.get("plan")
+        status_param = request.query_params.get("status")
+        location = request.query_params.get("location")
         search_query = request.query_params.get("search", "").strip()
+        sort_by = request.query_params.get("sort")
 
         users = User.objects.all()
 
         # --------------------------
-        # Filters
+        # FILTERS
         # --------------------------
+
         if role:
-            users = users.filter(role=role)
-        if plan:
-            users = users.filter(
-                subscription__is_active=True,
-                subscription__plan__name__iexact=plan
-            )
+            users = users.filter(role__iexact=role)
+
         if status_param:
             if status_param.lower() == "paused":
                 users = users.filter(is_active=False)
             elif status_param.lower() == "active":
                 users = users.filter(is_active=True)
+
+        if location:
+            users = users.filter(address__icontains=location)
+
+        if plan:
+            users = users.filter(
+                subscription__is_active=True,
+                subscription__plan__name__iexact=plan
+            )
+
+        # --------------------------
+        # GLOBAL SEARCH
+        # --------------------------
+
         if search_query:
             users = users.filter(
                 Q(name__icontains=search_query) |
-                Q(email__icontains=search_query)
+                Q(email__icontains=search_query) |
+                Q(role__icontains=search_query) |
+                Q(address__icontains=search_query) |
+                Q(subscription__plan__name__icontains=search_query) |
+                Q(subscription__status__icontains=search_query)
             )
+
         users = users.distinct()
 
+        # ==========================================================
+        # Subqueries using BusinessProfile
+        # ==========================================================
+
+        business_profile_sq = BusinessProfile.objects.filter(
+            user=OuterRef("pk")
+        ).values("id")[:1]
+
+        revenue_sq = ServiceSchedule.objects.filter(
+            landscaper_id=Subquery(business_profile_sq),
+            payment_status=PaymentStatus.PAID
+        ).values("landscaper_id").annotate(
+            total=Sum("service__price", output_field=FloatField())
+        ).values("total")[:1]
+
+        jobs_sq = ServiceSchedule.objects.filter(
+            landscaper_id=Subquery(business_profile_sq)
+        ).values("landscaper_id").annotate(
+            total=Count("id")
+        ).values("total")[:1]
+
+        completed_jobs_sq = ServiceSchedule.objects.filter(
+            landscaper_id=Subquery(business_profile_sq),
+            is_completed=True
+        ).values("landscaper_id").annotate(
+            total=Count("id")
+        ).values("total")[:1]
+
+        clients_sq = ServiceSchedule.objects.filter(
+            landscaper_id=Subquery(business_profile_sq)
+        ).values("landscaper_id").annotate(
+            total=Count("client_id", distinct=True)
+        ).values("total")[:1]
+
+        users = users.annotate(
+            total_revenue=Coalesce(Subquery(revenue_sq, output_field=FloatField()), Value(0.0)),
+            total_jobs=Coalesce(Subquery(jobs_sq), Value(0)),
+            completed_jobs=Coalesce(Subquery(completed_jobs_sq), Value(0)),
+            total_clients=Coalesce(Subquery(clients_sq), Value(0)),
+        )
+
         # --------------------------
-        # Basic stats
+        # SORTING
         # --------------------------
+
+        if sort_by == "revenue":
+            users = users.order_by("-total_revenue", "-date_joined")
+
+        elif sort_by == "clients":
+            users = users.order_by("-total_clients", "-date_joined")
+
+        elif sort_by == "jobs":
+            users = users.order_by("-total_jobs", "-date_joined")
+
+        elif sort_by == "newest":
+            users = users.order_by("-date_joined")
+
+        else:
+            users = users.order_by("-date_joined")
+
+        # --------------------------
+        # SUMMARY
+        # --------------------------
+
         total_users = User.objects.count()
-        total_clients = User.objects.filter(role="client").count()
-        total_landscapers = User.objects.filter(role="landscaper").count()
-        total_basic_landscapers = User.objects.filter(
-            role="landscaper",
-            subscription__is_active=True,
-            subscription__plan__name__iexact="basic"
-        ).distinct().count()
-        total_pro_landscapers = User.objects.filter(
-            role="landscaper",
-            subscription__is_active=True,
-            subscription__plan__name__iexact="pro"
-        ).distinct().count()
-        paused_users = User.objects.filter(is_active=False).count()
-        active_users = User.objects.filter(is_active=True).count()
+
+        total_clients = User.objects.filter(
+            role="client"
+        ).count()
+
+        total_landscapers = User.objects.filter(
+            role="landscaper"
+        ).count()
+
+        paused_users = User.objects.filter(
+            is_active=False
+        ).count()
+
+        active_users = User.objects.filter(
+            is_active=True
+        ).count()
+
         last_24h = timezone.now() - timedelta(hours=24)
-        daily_active_users = User.objects.filter(last_login__gte=last_24h).count()
 
-        # --------------------------
-        # Active / Inactive ratio
-        # --------------------------
-        if total_users > 0:
-            active_ratio = round((active_users / total_users) * 100, 2)
-            inactive_ratio = round((paused_users / total_users) * 100, 2)
-        else:
-            active_ratio = inactive_ratio = 0
+        daily_active_users = User.objects.filter(
+            last_login__gte=last_24h
+        ).count()
 
-        # --------------------------
-        # Daily average users
-        # --------------------------
-        first_user = User.objects.order_by("date_joined").first()
-        if first_user:
-            days_active = max((timezone.now() - first_user.date_joined).days, 1)
-            daily_average_users = round(total_users / days_active, 2)
-        else:
-            daily_average_users = 0
-
-        # --------------------------
-        # New signups weekly & total
-        # --------------------------
         one_week_ago = timezone.now() - timedelta(days=7)
-        weekly_new_users = User.objects.filter(date_joined__gte=one_week_ago).count()
-        total_new_users = total_users
 
-        # --------------------------
-        # Active subscriptions & jobs
-        # --------------------------
-        active_subscriptions_count = Subscription.objects.filter(
-            user__in=users, status=SubscriptionStatus.ACTIVE
-        ).count()
-        active_jobs_count = ServiceSchedule.objects.filter(
-            is_completed=False, landscaper__user__in=users
+        weekly_new_signups = User.objects.filter(
+            date_joined__gte=one_week_ago
         ).count()
 
-        # --------------------------
-        # Platform fees (2% from paid jobs)
-        # --------------------------
-        paid_jobs = ServiceSchedule.objects.filter(payment_status=PaymentStatus.PAID)
+        paid_jobs = ServiceSchedule.objects.filter(
+            payment_status=PaymentStatus.PAID
+        )
+
         total_job_amount = paid_jobs.aggregate(
-            total=Sum('service__price', output_field=FloatField())
-        )['total'] or 0.0
-        job_platform_fee = round(total_job_amount * 0.02, 2)
+            total=Sum("service__price", output_field=FloatField())
+        )["total"] or 0.0
+
+        platform_fee_collected = round(total_job_amount * 0.02, 2)
+
+        active_subscriptions = Subscription.objects.filter(
+            status=SubscriptionStatus.ACTIVE
+        ).count()
 
         # --------------------------
-        # Serialize users
+        # PAGINATION
         # --------------------------
-        serializer = UserSerializer(users, many=True, context={"request": request})
 
-        return Response({
+        paginator = PageNumberPagination()
+        paginator.page_size = 20
+
+        page = paginator.paginate_queryset(users, request)
+
+        serializer = UserSerializer(page, many=True, context={"request": request})
+
+        return paginator.get_paginated_response({
+
             "status": "success",
+
             "summary": {
+
                 "total_users": total_users,
                 "total_clients": total_clients,
                 "total_landscapers": total_landscapers,
-                "basic_landscapers": total_basic_landscapers,
-                "pro_landscapers": total_pro_landscapers,
-                "paused_users": paused_users,
                 "active_users": active_users,
-                "active_ratio": active_ratio,
-                "inactive_ratio": inactive_ratio,
+                "paused_users": paused_users,
                 "daily_active_users": daily_active_users,
-                "daily_average_users": daily_average_users,
-                "weekly_new_signups": weekly_new_users,
-                "total_new_signups": total_new_users,
-                "active_subscriptions": active_subscriptions_count,
-                "active_jobs": active_jobs_count,
-                "platform_fee_collected": job_platform_fee
+                "weekly_new_signups": weekly_new_signups,
+                "active_subscriptions": active_subscriptions,
+                "platform_fee_collected": platform_fee_collected
             },
-            "data": serializer.data,
-        }, status=200)
-# delete user for admin views 
 
+            "data": serializer.data
+        })
+        
+#    delete admins
 class AdminDeleteUserView(generics.DestroyAPIView):
     """
     Admin can delete any user by ID.
@@ -803,7 +1093,18 @@ class AdminDeleteUserView(generics.DestroyAPIView):
             )
 
         email = user_to_delete.email
+        target_user_id = user_to_delete.id
+
+        # 🔐 Audit Log BEFORE delete
+        AdminAuditLog.objects.create(
+            admin=request.user,
+            action="Delete User",
+            target_user=user_to_delete,
+            details=f"Admin {request.user.email} deleted user {email}"
+        )
+
         user_to_delete.delete()
+
 
         return Response(
             {"detail": f"User {email} deleted successfully."},
@@ -873,6 +1174,15 @@ class AdminPauseUserView(APIView):
             message = "User has been unpaused."
 
         user.save(update_fields=["is_active"])
+        
+        # 🔐 Create audit log
+        AdminAuditLog.objects.create(
+            admin=request.user,
+            action=log_action,
+            target_user=user,
+            details=f"Admin {request.user.email} performed '{log_action}' on {user.email}"
+        )
+
         return Response(
             {
                 "status": "success",
@@ -915,3 +1225,24 @@ class ReportUserAPIView(APIView):
             {"message": "Report submitted successfully"},
             status=status.HTTP_201_CREATED
         )
+
+class AdminAuditLogView(APIView):
+
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+
+        logs = AdminAuditLog.objects.all().order_by("-created_at")
+
+        data = []
+
+        for log in logs:
+            data.append({
+                "admin": log.admin.email,
+                "action": log.action,
+                "target_user": log.target_user.email if log.target_user else None,
+                "details": log.details,
+                "time": log.created_at
+            })
+
+        return Response(data)
