@@ -76,7 +76,7 @@ from .models import ClientCustomService
 from profiles.models import ClientProfile
 from .serializers import ClientCustomServiceSerializer
 from common .permissions import IsLandscaper
-
+from decimal import Decimal, InvalidOperation
 
 
 
@@ -107,64 +107,72 @@ class CompleteLandscaperProfileView(generics.CreateAPIView):
 # =========================
 # UPDATE BUSINESS PROFILE
 # =========================
+
+
+
 class UpdateBusinessProfileView(generics.UpdateAPIView):
     serializer_class = BusinessLandscaperProfileSerializer
-    permission_classes = [IsLandscaper]
+    permission_classes = [IsAuthenticated, IsLandscaper]
     parser_classes = [MultiPartParser, FormParser]
 
     def get_object(self):
-        try:
-            return self.request.user.business_profile
-        except BusinessProfile.DoesNotExist:
+        profile = getattr(self.request.user, "landscaper_profile", None)
+
+        if not profile:
             raise ValidationError("Business profile not found for this user.")
+
+        return profile
 
 
 # =========================
 # GET BUSINESS PROFILE
-# =========================
+from rest_framework.exceptions import ValidationError
+from rest_framework.permissions import IsAuthenticated
+
+
 class GetBusinessProfileView(generics.RetrieveAPIView):
     serializer_class = BusinessLandscaperProfileSerializer
-    permission_classes = [IsLandscaper]
+    permission_classes = [IsAuthenticated, IsLandscaper]
 
     def get_object(self):
-        try:
-            return self.request.user.business_profile
-        except BusinessProfile.DoesNotExist:
+        profile = getattr(self.request.user, "landscaper_profile", None)
+
+        if not profile:
             raise ValidationError("Business profile not found for this user.")
 
+        return profile
 
 
 
-# service views
+
+from django.db import transaction, IntegrityError
+from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework import generics, permissions
+
+
 class ServiceListCreateView(generics.ListCreateAPIView):
     serializer_class = ServiceSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        try:
-            business = self.request.user.landscaper_profile
-        except BusinessProfile.DoesNotExist:
+        business = getattr(self.request.user, "landscaper_profile", None)
+
+        if not business:
             return Service.objects.none()
+
         return Service.objects.filter(business=business)
 
     def perform_create(self, serializer):
-        try:
-            business = self.request.user.business_profile
-        except BusinessProfile.DoesNotExist:
-            raise PermissionDenied("You must create a Business Profile first.")
-
+        business, _ = BusinessProfile.objects.get_or_create(user=self.request.user)
         try:
             with transaction.atomic():
                 serializer.save(business=business)
         except IntegrityError as e:
-            # Check if it's a duplicate service name
-            if 'unique_service_per_business' in str(e):
+            if "unique_service_per_business" in str(e):
                 raise ValidationError({
                     "name": "A service with this name already exists for your business."
                 })
-            else:
-                # Other integrity errors
-                raise ValidationError({"detail": str(e)})
+            raise ValidationError({"detail": "Service creation failed."})
 
 
 # update custome service
@@ -362,48 +370,7 @@ class WorkingHoursListCreateView(generics.ListCreateAPIView):
         )
         
 
-
-
-# class ClientCustomServiceListCreateView(generics.ListCreateAPIView):
-#     """
-#     GET: List all custom services for the logged-in client
-#     POST: Create a new custom service for the logged-in client
-#     """
-#     serializer_class = ClientCustomServiceSerializer
-#     permission_classes = [permissions.IsAuthenticated]
-
-#     def get_queryset(self):
-#         try:
-#             client = self.request.user.clientprofile
-#         except ClientProfile.DoesNotExist:
-#             return ClientCustomService.objects.none()
-
-#         return ClientCustomService.objects.filter(client=client)
-
-#     def perform_create(self, serializer):
-#         try:
-#             client = self.request.user.clientprofile
-#         except ClientProfile.DoesNotExist:
-#             raise PermissionDenied("You must create a Client Profile first.")
-
-#         serializer.save(client=client)
-
-#     def create(self, request, *args, **kwargs):
-#         """
-#         Override to return a friendly success message
-#         """
-#         response = super().create(request, *args, **kwargs)
-#         response.data = {
-#             "message": "Custom service created successfully.",
-#             "service": response.data
-#         }
-#         return response
-
 class ClientCustomServiceListCreateView(generics.ListCreateAPIView):
-    """
-    GET: List all custom service requests of the client
-    POST: Create a new request (status=pending)
-    """
     serializer_class = ClientCustomServiceSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -411,180 +378,181 @@ class ClientCustomServiceListCreateView(generics.ListCreateAPIView):
         client = getattr(self.request.user, "clientprofile", None)
         if not client:
             return ClientCustomService.objects.none()
-        return ClientCustomService.objects.filter(client=client)
+        return ClientCustomService.objects.filter(client=client).order_by("-created_at")
 
     def perform_create(self, serializer):
         client = getattr(self.request.user, "clientprofile", None)
         if not client:
             raise PermissionDenied("Client profile not found.")
-        serializer.save(client=client, status="pending")  # force pending
 
-    def create(self, request, *args, **kwargs):
-        response = super().create(request, *args, **kwargs)
-        response.data = {
-            "message": "Service request submitted successfully.",
-            "service": response.data
-        }
-        return response
-
-
-
-# class ClientCustomServiceRetrieveUpdateView(generics.RetrieveUpdateAPIView):
-#     """
-#     GET: Retrieve a custom service by ID
-#     PUT/PATCH: Update the custom service (only owner client can update)
-#     """
-#     serializer_class = ClientCustomServiceSerializer
-#     permission_classes = [permissions.IsAuthenticated]
-#     lookup_field = "pk"
-
-#     def get_queryset(self):
-#         try:
-#             client = self.request.user.clientprofile  # ✅ use clientprofile, not client_profile
-#         except ClientProfile.DoesNotExist:
-#             return ClientCustomService.objects.none()
-
-#         return ClientCustomService.objects.filter(client=client)
-
-#     def perform_update(self, serializer):
-#         # Ensure only the owner client can update
-#         try:
-#             client = self.request.user.client_profile
-#         except ClientProfile.DoesNotExist:
-#             raise PermissionDenied("You must have a Client Profile to update services.")
-
-#         serializer.save(client=client)
-
-#     def update(self, request, *args, **kwargs):
-#         """
-#         Override to add a success message
-#         """
-#         response = super().update(request, *args, **kwargs)
-#         response.data = {
-#             "message": "Custom service updated successfully.",
-#             "service": response.data
-#         }
-#         return response
-
-class ClientCustomServiceRetrieveUpdateView(generics.RetrieveDestroyAPIView):
-    """
-    GET: Retrieve a single service request
-    DELETE: Delete pending service request
-    """
-    serializer_class = ClientCustomServiceSerializer
-    permission_classes = [permissions.IsAuthenticated]
-    lookup_field = "pk"
-
-    def get_queryset(self):
-        client = getattr(self.request.user, "clientprofile", None)
-        if not client:
-            return ClientCustomService.objects.none()
-        return ClientCustomService.objects.filter(client=client)
-
-    def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        if instance.status != "pending":
-            return Response(
-                {"error": "Cannot delete a service request that has been processed."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        instance.delete()
-        return Response({"message": "Service request deleted successfully."})
-
-# client confirm  or not
-@api_view(["POST"])
-@permission_classes([permissions.IsAuthenticated])
-def client_confirm_service(request, pk):
-    """
-    Client confirms or declines a service after landscaper sets a price.
-    """
-    action = request.data.get("action")  # "confirm" or "decline"
-    if action not in ["confirm", "decline"]:
-        return Response({"error": "Invalid action."}, status=400)
-
-    try:
-        service = ClientCustomService.objects.get(pk=pk, client=request.user.clientprofile)
-    except ClientCustomService.DoesNotExist:
-        return Response({"error": "Service request not found."}, status=404)
-
-    if service.status != "accepted":
-        return Response({"error": "Service is not ready for confirmation."}, status=400)
-
-    if action == "confirm":
-        service.status = "completed"
-        service.save()
-        return Response({"message": "Service confirmed successfully."})
-    else:
-        service.status = "pending"  # Could reset or mark declined
-        service.save()
-        return Response({"message": "Service request declined."})
-
-
-
-class ClientCustomServiceDeleteView(generics.DestroyAPIView):
-    """
-    DELETE: Remove a custom service (only the owner client)
-    """
-    permission_classes = [permissions.IsAuthenticated]
-    lookup_field = "pk"
-
-    def get_queryset(self):
-        # ✅ Use clientprofile, not client_profile
-        client = getattr(self.request.user, "clientprofile", None)
-        if not client:
-            # Return empty queryset if the user has no client profile
-            return ClientCustomService.objects.none()
-        return ClientCustomService.objects.filter(client=client)
-
-    def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        self.perform_destroy(instance)
-        return Response(
-            {"message": "Custom service deleted successfully."},
-            status=status.HTTP_200_OK
+        serializer.save(
+            client=client,
+            status="pending",
+            price=None
         )
 
 
+
+class ClientCustomServiceRetrieveDestroyView(generics.RetrieveDestroyAPIView):
+    serializer_class = ClientCustomServiceSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        client = getattr(self.request.user, "clientprofile", None)
+        if not client:
+            return ClientCustomService.objects.none()
+        return ClientCustomService.objects.filter(client=client)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+
+        if instance.status != "pending":
+            return Response(
+                {"error": "Only pending requests can be deleted."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        instance.delete()
+        return Response({"message": "Service request deleted successfully."})
+
+
+# clinet confirm or decline
+@api_view(["PATCH"])
+@permission_classes([permissions.IsAuthenticated])
+def client_confirm_service(request, pk):
+    action = request.data.get("action")
+
+    if action not in ["confirm", "decline"]:
+        return Response({"error": "Invalid action."}, status=400)
+
+    client = getattr(request.user, "clientprofile", None)
+    if not client:
+        return Response({"error": "Client profile not found."}, status=403)
+
+    try:
+        service = ClientCustomService.objects.get(pk=pk, client=client)
+    except ClientCustomService.DoesNotExist:
+        return Response({"error": "Service not found."}, status=404)
+
+    if service.status != "accepted":
+        return Response(
+            {"error": "Service is not ready for confirmation."},
+            status=400
+        )
+
+    if action == "confirm":
+        service.status = "confirmed"
+    else:
+        service.status = "declined"
+
+    service.save()
+
+    return Response({
+        "message": f"Service {service.status} successfully.",
+        "status": service.status
+    })
+
+
+# landscapers
 # client see the custom service
 class LandscaperCustomServiceListView(generics.ListAPIView):
     """
     GET: List all active client custom service requests
     for the authenticated landscaper to view.
+    Shows pending requests.
     """
     serializer_class = ClientCustomServiceSerializer
     permission_classes = [IsLandscaper]
 
     def get_queryset(self):
-        # Only active requests
-        return ClientCustomService.objects.filter(is_active=True).order_by('-created_at')
+        # Optional: check if user has a profile
+        try:
+            self.request.user.landscaper_profile
+        except BusinessProfile.DoesNotExist:
+            return ClientCustomService.objects.none()
+
+        return ClientCustomService.objects.filter(
+            is_active=True,
+            status="pending"  # only pending requests
+        ).order_by("-created_at")
+
 
 
 # accepet client custom service landscaper
-@api_view(["POST"])
-@permission_classes([permissions.IsAuthenticated])
-def accept_client_custom_service(request, pk):
+
+
+
+@api_view(["PATCH"])
+@permission_classes([IsLandscaper])
+def landscaper_accept_service(request, pk):
     """
-    POST: Landscaper accepts a client custom service request
+    PATCH: Landscaper sets price and updates status (must be 'accepted')
     """
+
+    price = request.data.get("price")
+    new_status = request.data.get("status")
+
+    # ✅ Validate required fields
+    if price is None:
+        return Response(
+            {"error": "Price is required."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if new_status != "accepted":
+        return Response(
+            {"error": "Status must be 'accepted'."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # ✅ Validate price format
     try:
-        service = ClientCustomService.objects.get(pk=pk, is_active=True)
+        price = Decimal(price)
+        if price <= 0:
+            return Response(
+                {"error": "Price must be greater than 0."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    except (InvalidOperation, TypeError):
+        return Response(
+            {"error": "Invalid price format."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    landscaper = getattr(request.user, "landscaper_profile", None)
+
+    try:
+        service = ClientCustomService.objects.get(
+            pk=pk,
+            is_active=True
+        )
     except ClientCustomService.DoesNotExist:
-        return Response({"error": "Service request not found"}, status=404)
+        return Response(
+            {"error": "Service not found."},
+            status=status.HTTP_404_NOT_FOUND
+        )
 
+    # ✅ Only allow from pending → accepted
     if service.status != "pending":
-        return Response({"message": f"Service already {service.status}"}, status=400)
+        return Response(
+            {"error": f"Service already {service.status}."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
-    # Accept the service
-    service.status = "accepted"
+    # ✅ Update service
+    service.landscaper = landscaper
+    service.price = price
+    service.status = new_status
     service.save()
 
-    return Response({
-        "message": "Service request accepted.",
-        "id": service.id,
-        "name": service.name,
-        "status": service.status
-    }, status=status.HTTP_200_OK)
-
+    return Response(
+        {
+            "message": "Service accepted and price set successfully.",
+            "service_id": service.id,
+            "price": service.price,
+            "status": service.status
+        },
+        status=status.HTTP_200_OK
+    )
 
 
 # active inactive

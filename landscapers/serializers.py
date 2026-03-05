@@ -50,14 +50,21 @@ class BusinessLandscaperProfileSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
-        user = self.context["user"]  # pass user from view via context
+        request = self.context.get("request")
+        user = request.user
+
+        if hasattr(user, "landscaper_profile"):
+            raise ValidationError("Business profile already exists.")
+
         profile_image = validated_data.pop("profile_image", None)
         insurance_doc = validated_data.pop("insurance_doc", None)
         license_doc = validated_data.pop("license_doc", None)
 
-        instance = BusinessProfile.objects.create(user=user, **validated_data)
+        instance = BusinessProfile.objects.create(
+            user=user,
+            **validated_data
+        )
 
-        # Assign optional files if provided
         if profile_image:
             instance.profile_image = profile_image
         if insurance_doc:
@@ -100,23 +107,38 @@ class ServiceSerializer(serializers.ModelSerializer):
             "created_at", "updated_at",
         ]
         read_only_fields = ["id", "business", "created_at", "updated_at", "is_pinned"]
-
     def validate_name(self, value):
-        """
-        Ensure name is unique per business, PATCH/PUT safe.
-        """
-        business = self.context['request'].user.business_profile
+        request = self.context.get("request")
+        if not request:
+            raise serializers.ValidationError("Request context is missing.")
 
-        # Skip check if value is the same as current instance
+        user = getattr(request, "user", None)
+        if not user or not user.is_authenticated:
+            raise serializers.ValidationError("Authentication required.")
+
+        # Correct way to get business
+        business = getattr(user, "landscaper_profile", None)
+        if not business:
+            raise serializers.ValidationError(
+                "You must have a business profile to create services."
+            )
+
+        # Skip check if unchanged (PATCH safe)
         if self.instance and self.instance.name == value:
             return value
 
-        if Service.objects.filter(business=business, name=value).exclude(id=getattr(self.instance, 'id', None)).exists():
+        if Service.objects.filter(
+            business=business,
+            name=value
+        ).exclude(
+            id=getattr(self.instance, "id", None)
+        ).exists():
             raise serializers.ValidationError(
                 "A service with this name already exists for your business."
             )
-        return value
 
+        return value
+        
     def validate(self, attrs):
         # Pricing rules
         pricing_type = attrs.get("pricing_type", getattr(self.instance, 'pricing_type', None))
@@ -147,28 +169,27 @@ class ServiceSerializer(serializers.ModelSerializer):
 
 
 
-
 # class ClientCustomServiceSerializer(serializers.ModelSerializer):
-#     client = serializers.ReadOnlyField(source="client.id")  # set automatically from request
+#     client = serializers.ReadOnlyField(source="client.id")
 #     price = serializers.DecimalField(
-#         max_digits=10, decimal_places=2, read_only=True
-#     )  # landscaper sets the price
-#     status = serializers.CharField(read_only=True)  # client cannot set directly
+#         max_digits=10,
+#         decimal_places=2,
+#         required=False,    # <--- make optional
+#         allow_null=True    # <--- allow null
+#     )
 
 #     class Meta:
 #         model = ClientCustomService
 #         fields = [
-#             "id",
-#             "client",
-#             "name",
-#             "description",
-#             "price",       # set by landscaper only
-#             "status",      # pending / accepted / completed
-#             "is_active",
-#             "created_at",
-#             "updated_at",
+#             "id", "client", "name", "description",
+#             "price", "status","note" ,"is_active", "created_at", "updated_at",
 #         ]
-#         read_only_fields = ["id", "client", "created_at", "updated_at", "status", "price"]
+#         read_only_fields = ["id", "client", "created_at", "updated_at", "status"]
+
+#     def validate_note(self, value):
+#         if not value.strip():
+#             raise serializers.ValidationError("Note is required.")
+#         return value
 
 #     def validate_name(self, value):
 #         value = value.strip()
@@ -176,36 +197,62 @@ class ServiceSerializer(serializers.ModelSerializer):
 #             raise serializers.ValidationError("Service name cannot be empty.")
 #         return value
 
-#     # Remove validate_price because client cannot set price
+#     def validate_price(self, value):
+#         if value is not None and value < 0:
+#             raise serializers.ValidationError("Price must be zero or positive.")
+#         return value
+from rest_framework import serializers
+from django.db import IntegrityError
+from .models import ClientCustomService
+
 
 class ClientCustomServiceSerializer(serializers.ModelSerializer):
     client = serializers.ReadOnlyField(source="client.id")
-    price = serializers.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        required=False,    # <--- make optional
-        allow_null=True    # <--- allow null
-    )
 
     class Meta:
         model = ClientCustomService
         fields = [
-            "id", "client", "name", "description",
-            "price", "status", "is_active", "created_at", "updated_at",
+            "id",
+            "client",
+            "name",
+            "description",
+            "note",
+            "price",
+            "status",
+            "is_active",
+            "created_at",
+            "updated_at",
         ]
-        read_only_fields = ["id", "client", "created_at", "updated_at", "status"]
+        read_only_fields = [
+            "id",
+            "client",
+            "created_at",
+            "updated_at",
+            "status",
+            "price",
+        ]
 
     def validate_name(self, value):
         value = value.strip()
+
         if not value:
             raise serializers.ValidationError("Service name cannot be empty.")
-        return value
 
-    def validate_price(self, value):
-        if value is not None and value < 0:
-            raise serializers.ValidationError("Price must be zero or positive.")
-        return value
+        request = self.context.get("request")
+        client = getattr(request.user, "clientprofile", None)
 
+        if client:
+            exists = ClientCustomService.objects.filter(
+                client=client,
+                name__iexact=value
+            ).exists()
+
+            if exists:
+                raise serializers.ValidationError(
+                    "You already have a custom service with this name."
+                )
+
+        return value
 
 
 class AddonSerializer(serializers.ModelSerializer):

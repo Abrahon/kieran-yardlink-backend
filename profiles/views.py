@@ -23,6 +23,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.db.models import F, FloatField
 from django.db.models.functions import ACos, Cos, Sin, Radians, Cast
 from rest_framework.permissions import IsAuthenticated
+from landscapers .models import BusinessProfile
 
 # search by kim
 from rest_framework.views import APIView
@@ -147,8 +148,7 @@ class LandScaperProfileView(generics.RetrieveUpdateAPIView):
     permission_classes = [IsAuthenticated, IsLandscaper]
 
     def get_object(self):
-        # Get or create profile (plan is now from subscription)
-        profile, created = LandscaperProfilies.objects.get_or_create(
+        profile, created = BusinessProfile.objects.get_or_create(
             user=self.request.user
         )
         return profile
@@ -396,82 +396,6 @@ class ClientProfileListView(generics.ListAPIView):
 
         return Response(response_data)
 
-
-# search landscaers
-# class LandscaperSearchByKMAPIView(APIView):
-#     permission_classes = [IsAuthenticated]
-
-#     def get(self, request):
-#         q = request.GET.get("q", "").strip()
-#         try:
-#             user_lat = request.GET.get("lat")
-#             user_lng = request.GET.get("lng")
-#             km = float(request.GET.get("km", 10))
-#             min_rating = float(request.GET.get("min_rating", 0))
-#         except ValueError:
-#             return Response(
-#                 {"error": "lat, lng, km, and min_rating must be valid numbers"},
-#                 status=400
-#             )
-
-#         landscapers = User.objects.filter(role=RoleChoices.LANDSCAPER)
-
-#         # Filter by search query
-#         if q:
-#             landscapers = landscapers.filter(
-#                 Q(name__icontains=q) | Q(email__icontains=q)
-#             )
-
-#         # Filter by min rating
-#         if min_rating > 0:
-#             landscapers = landscapers.annotate(
-#                 avg_rating=Avg("received_reviews__rating")  
-#             ).filter(avg_rating__gte=min_rating)
-
-#         # Filter by distance if lat/lng provided
-#         if user_lat and user_lng:
-#             try:
-#                 user_lat = float(user_lat)
-#                 user_lng = float(user_lng)
-#             except ValueError:
-#                 return Response(
-#                     {"error": "lat and lng must be valid numbers"},
-#                     status=400
-#                 )
-#         EARTH_RADIUS = 6371  # KM
-
-
-
-#         landscapers = landscapers.annotate(
-#             distance=EARTH_RADIUS * ACos(
-#                 Cos(Radians(user_lat)) *
-#                 Cos(Radians(Cast(F("latitude"), FloatField()))) *
-#                 Cos(Radians(Cast(F("longitude"), FloatField())) - Radians(user_lng)) +
-#                 Sin(Radians(user_lat)) *
-#                 Sin(Radians(Cast(F("latitude"), FloatField())))
-#             )
-#         ).filter(distance__lte=km).order_by("distance")
-
-
-
-
-#         # Get profiles
-#         profiles = [
-#             u.landscaperprofilies
-#             for u in landscapers
-#             if hasattr(u, "landscaperprofilies")
-#         ]
-
-#         serializer = LandscaperProfileSerializer(
-#             profiles,
-#             many=True,
-#             context={"request": request}
-#         )
-
-#         return Response({
-#             "count": len(serializer.data),
-#             "results": serializer.data
-#         })
 
 # views.py
 # profiles/views.py

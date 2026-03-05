@@ -76,30 +76,70 @@ class ConnectionRequestDetailSerializer(serializers.ModelSerializer):
         """
         return bool(obj.is_accepted)
 
+    # def _get_profile(self, user):
+    #     """
+    #     Return only necessary profile info depending on user type.
+    #     """
+    #     # Check if user is a landscaper
+    #     try:
+    #         profile = LandscaperProfilies.objects.get(user=user)
+    #         data = LandscaperProfileSerializer(profile).data
+    #         data["type"] = "landscaper"
+    #         return data
+    #     except LandscaperProfilies.DoesNotExist:
+    #         pass
+
+    #     # Check if user is a client
+    #     try:
+    #         profile = ClientProfile.objects.get(user=user)
+    #         data = ClientProfileSerializer(profile).data
+    #         data["type"] = "client"
+    #         return data
+    #     except ClientProfile.DoesNotExist:
+    #         pass
+
+    #     # Fallback minimal info
+    #     return {"user_id": user.id, "email": user.email, "type": "unknown"}
+
     def _get_profile(self, user):
         """
-        Return only necessary profile info depending on user type.
+        Return the user's profile depending on role/type:
+        - If landscaper, prefer BusinessProfile
+        - Fallback to LandscaperProfilies (basic info)
+        - If client, use ClientProfile
         """
-        # Check if user is a landscaper
-        try:
-            profile = LandscaperProfilies.objects.get(user=user)
-            data = LandscaperProfileSerializer(profile).data
-            data["type"] = "landscaper"
-            return data
-        except LandscaperProfilies.DoesNotExist:
-            pass
+        # Try to get BusinessProfile first
+        business_profile = getattr(user, "landscaper_profile", None)  # related_name from BusinessProfile
+        if business_profile:
+            return {
+                **LandscaperProfileSerializer(business_profile, context=self.context).data,
+                "type": "landscaper"
+            }
 
-        # Check if user is a client
-        try:
-            profile = ClientProfile.objects.get(user=user)
-            data = ClientProfileSerializer(profile).data
-            data["type"] = "client"
-            return data
-        except ClientProfile.DoesNotExist:
-            pass
+        # Fallback to basic profile
+        basic_profile = getattr(user, "landscaperprofilies", None)
+        
+        if basic_profile:
+            return {
+                "user_id": user.id,
+                "name": basic_profile.name,
+                "phone": basic_profile.phone,
+                "image": basic_profile.image.url if basic_profile.image else None,
+                "type": "landscaper_basic"
+            }
 
-        # Fallback minimal info
+        # Client profile
+        client_profile = getattr(user, "client_profile", None)
+        if client_profile:
+            return {
+                **ClientProfileSerializer(client_profile, context=self.context).data,
+                "type": "client"
+            }
+
+        # Minimal fallback
         return {"user_id": user.id, "email": user.email, "type": "unknown"}
+
+
     def get_sent_since(self, obj):
 
 
@@ -175,10 +215,30 @@ class ConnectionRequestDetailSerializer(serializers.ModelSerializer):
 
 
 
+# class SendConnectionRequestSerializer(serializers.Serializer):
+#     """
+#     Serializer to send a new connection request.
+#     """
+#     receiver_id = serializers.IntegerField()
+
+#     def validate_receiver_id(self, value):
+#         request_user = self.context["request"].user
+
+#         try:
+#             receiver = User.objects.get(id=value)
+#         except User.DoesNotExist:
+#             raise serializers.ValidationError("User not found.")
+
+#         if receiver == request_user:
+#             raise serializers.ValidationError("You cannot send request to yourself.")
+
+#         # Prevent duplicates in both directions
+#         if ConnectionRequest.objects.filter(sender=request_user, receiver=receiver).exists() or \
+#            ConnectionRequest.objects.filter(sender=receiver, receiver=request_user).exists():
+#             raise serializers.ValidationError("Connection already exists.")
+
+#         return value
 class SendConnectionRequestSerializer(serializers.Serializer):
-    """
-    Serializer to send a new connection request.
-    """
     receiver_id = serializers.IntegerField()
 
     def validate_receiver_id(self, value):

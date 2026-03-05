@@ -229,6 +229,7 @@ class ClientCustomService(models.Model):
         default="pending",
         help_text="Track landscaper response to the service"
     )
+    note = models.TextField() 
 
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)

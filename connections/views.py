@@ -72,7 +72,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import ValidationError, PermissionDenied
 
 from profiles.models import LandscaperProfilies, ClientProfile
-from landscapers.models import Service
+from subscriptions.models import Subscription, SubscriptionStatus
+
+from landscapers.models import Service,BusinessProfile
 # from subscriptions. models import subscription 
 
 from profiles.serializers import ClientProfileSerializer
@@ -83,6 +85,33 @@ from django.utils.timezone import now
 User = get_user_model()
 
 
+
+# class SendConnectionRequestAPIView(APIView):
+#     permission_classes = [IsAuthenticated]
+
+#     def post(self, request):
+#         serializer = SendConnectionRequestSerializer(
+#             data=request.data,
+#             context={"request": request}
+#         )
+#         serializer.is_valid(raise_exception=True)
+
+#         receiver = User.objects.get(
+#             id=serializer.validated_data["receiver_id"]
+#         )
+
+#         connection = ConnectionRequest.objects.create(
+#             sender=request.user,
+#             receiver=receiver
+#         )
+
+#         return Response(
+#             ConnectionRequestDetailSerializer(
+#                 connection,
+#                 context={"request": request}
+#             ).data,
+#             status=status.HTTP_201_CREATED
+#         )
 
 class SendConnectionRequestAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -98,20 +127,34 @@ class SendConnectionRequestAPIView(APIView):
             id=serializer.validated_data["receiver_id"]
         )
 
+        # Create the connection request
         connection = ConnectionRequest.objects.create(
             sender=request.user,
             receiver=receiver
         )
 
+        # Get receiver profile safely
+        profile_data = self._get_profile(receiver)
+
         return Response(
-            ConnectionRequestDetailSerializer(
-                connection,
-                context={"request": request}
-            ).data,
+            {
+                "connection_id": connection.id,
+                "receiver_profile": profile_data
+            },
             status=status.HTTP_201_CREATED
         )
 
+    def _get_profile(self, user):
+        business_profile = getattr(user, "landscaper_profile", None)
+        if business_profile:
+            return LandscaperProfileSerializer(business_profile, context={"request": self.request}).data
 
+        client_profile = getattr(user, "client_profile", None)
+        if client_profile:
+            return ClientProfileSerializer(client_profile, context={"request": self.request}).data
+
+        print(f"DEBUG: No profile found for user {user.id} ({user.email})")  # <-- debug line
+        return {}
 
 # inbox/views.py
 class InboxConnectionRequestAPIView(APIView):
@@ -179,17 +222,227 @@ class InboxConnectionRequestAPIView(APIView):
 
 
 
+# class SentConnectionRequestAPIView(APIView):
+#     permission_classes = [IsAuthenticated]
+
+#     def get(self, request):
+#         qs = ConnectionRequest.objects.filter(
+#             sender=request.user
+#         ).order_by("-created_at")
+
+#         return Response(ConnectionRequestDetailSerializer(qs, many=True).data)
+
 class SentConnectionRequestAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        qs = ConnectionRequest.objects.filter(
-            sender=request.user
-        ).order_by("-created_at")
+        qs = ConnectionRequest.objects.filter(sender=request.user).order_by("-created_at")
+        return Response(
+            ConnectionRequestDetailSerializer(
+                qs, many=True, context={"request": request}
+            ).data
+        )
 
-        return Response(ConnectionRequestDetailSerializer(qs, many=True).data)
+
+# class RespondConnectionRequestAPIView(APIView):
+#     permission_classes = [IsAuthenticated]
+
+#     @transaction.atomic
+#     def post(self, request, pk):
+#         user = request.user
+
+#         # Fetch the connection request
+#         connection = get_object_or_404(ConnectionRequest, id=pk)
+
+#         # Already responded check
+#         if connection.is_accepted is not None:
+#             return Response(
+#                 {"detail": "This connection request has already been responded to."},
+#                 status=status.HTTP_400_BAD_REQUEST
+#             )
+
+#         # Check user is part of the connection
+#         if user not in (connection.sender, connection.receiver):
+#             return Response(
+#                 {"detail": "You are not part of this request."},
+#                 status=status.HTTP_403_FORBIDDEN
+#             )
+#         if user.role == "client":
+#             responder_role = "client"
+
+#             client_profile = get_object_or_404(ClientProfile, user=user)
+#             landscaper_profile = get_object_or_404(BusinessProfile, user=connection.receiver)
+
+#         elif user.role == "landscaper":
+#             responder_role = "landscaper"
+
+#             landscaper_profile = get_object_or_404(BusinessProfile, user=user)
+#             client_profile = get_object_or_404(ClientProfile, user=connection.sender)
+
+#         else:
+#             return Response({"detail": "Invalid user role."}, status=400)
+            
+            
+#         # Validate action
+#         action = request.data.get("action")
+#         if action not in ["accept", "reject"]:
+#             return Response(
+#                 {"detail": "Invalid action."},
+#                 status=status.HTTP_400_BAD_REQUEST
+#             )
+
+#         # Reject request
+#         if action == "reject":
+#             connection.is_accepted = False
+#             connection.save(update_fields=["is_accepted"])
+#             return Response(
+#                 {
+#                     "connection_id": connection.id,
+#                     "status": "rejected",
+#                     "responded_by": responder_role
+#                 }
+#             )
+
+#         # -------------------------
+#         # Accept request
+#         # -------------------------
+
+#         # Count accepted connections for landscaper
+#         accepted_connections_count = ConnectionRequest.objects.filter(
+#             is_accepted=True
+#         ).filter(
+#             Q(sender=landscaper_profile.user) |
+#             Q(receiver=landscaper_profile.user)
+#         ).count()
 
 
+
+#         plan_name = landscaper_profile.plan.name.lower() if landscaper_profile.plan else "free"
+
+#         if plan_name == "basic" and accepted_connections_count >= 10:
+#             return Response(
+#                 {
+#                     "detail": "Basic landscapers can connect with up to 10 clients only. Upgrade to PRO for unlimited connections."
+#                 },
+#                 status=status.HTTP_403_FORBIDDEN
+#             )
+
+#         # Accept connection
+#         connection.is_accepted = True
+#         connection.save(update_fields=["is_accepted"])
+
+#         # Ensure client has only one accepted landscaper
+#         if responder_role == "client":
+#             ConnectionRequest.objects.filter(
+#                 is_accepted=True
+#             ).filter(
+#                 Q(sender=user) | Q(receiver=user)
+#             ).exclude(id=connection.id).delete()
+
+
+#         # -------------------------
+#         # Fetch or create ClientService for scheduling
+#         # -------------------------
+#         service_obj = Service.objects.filter(
+#             business=landscaper_profile   # ✅ FIXED
+#         ).order_by("-created_at").first()
+
+#         if not service_obj:
+#             connection.is_accepted = None
+#             connection.save(update_fields=["is_accepted"])
+#             return Response(
+#                 {"detail": "This landscaper has not created any services yet."},
+#                 status=status.HTTP_400_BAD_REQUEST
+#             )
+
+        
+#         client_service, created = ClientService.objects.get_or_create(
+#             landscaper=landscaper_profile,
+#             name=service_obj.standard_service or "Service",
+#             defaults={
+#                 "description": service_obj.description or "", 
+#                 "category": service_obj.category,
+#                 "price": service_obj.price or 0,
+#                 "square_feet": getattr(service_obj, "per_square_feet", 0),
+#                 "is_standard": service_obj.category == "standard"
+#             }
+#         )
+
+#         # -------------------------
+#         # Create or fetch upcoming job
+#         # -------------------------
+#         job = ServiceSchedule.objects.filter(
+#             client=client_profile,
+#             landscaper=landscaper_profile,
+#             is_completed=False
+#         ).first()
+
+#         if not job:
+#             now = timezone.now()
+#             job = ServiceSchedule.objects.create(
+#                 client=client_profile,
+#                 landscaper=landscaper_profile,
+#                 service=client_service, 
+#                 scheduled_date=now.date(),
+#                 scheduled_time=now.time()
+#             )
+
+#         # Link schedule to connection
+#         connection.schedule = job
+#         connection.save(update_fields=["schedule"])
+
+#         # Connection slot info for BASIC plan
+#         remaining_slots = None
+#         connection_warning = None
+#         if plan_name == "basic":
+#             MAX_CONNECTIONS = 10
+#             remaining_slots = MAX_CONNECTIONS - (accepted_connections_count + 1)
+#             if remaining_slots == 2:
+#                 connection_warning = "You have used 8 out of 10 client connections. Consider upgrading to PRO."
+#             elif remaining_slots == 1:
+#                 connection_warning = "You have only 1 client connection remaining. Upgrade to PRO to avoid limits."
+
+#         # Serialize client profile
+#         # Serialize both profiles
+#         client_data = ClientProfileSerializer(client_profile, context={"request": request}).data
+#         landscaper_data = LandscaperProfileSerializer(landscaper_profile, context={"request": request}).data
+
+#         return Response(
+#             {
+#                 "connection_id": connection.id,
+#                 "status": "accepted",
+#                 "accepted_by": responder_role,
+#                 "upcoming_job": {
+#                     "job_id": job.id,
+#                     "date": job.scheduled_date,
+#                     "time": job.scheduled_time
+#                 },
+#                 "client_profile": client_data,
+#                 "landscaper_profile": landscaper_data,
+#                 "connection_limits": {
+#                     "plan": plan_name,
+#                     "accepted_connections": accepted_connections_count + 1,
+#                     "remaining_slots": remaining_slots,
+#                     "warning": connection_warning
+#                 }
+#             },
+#             status=status.HTTP_200_OK
+#         )
+
+# from django.db import transaction
+# from django.utils import timezone
+# from django.db.models import Q
+# from rest_framework.views import APIView
+# from rest_framework.response import Response
+# from rest_framework import status
+# from rest_framework.permissions import IsAuthenticated
+# from django.shortcuts import get_object_or_404
+
+# from connections.models import ConnectionRequest, ClientService, ServiceSchedule
+# from profiles.models import ClientProfile, LandscaperProfilies
+# from landscapers.models import BusinessProfile, Service
+# from subscriptions.models import Subscription
+# from profiles.serializers import ClientProfileSerializer, LandscaperProfileSerializer
 
 
 class RespondConnectionRequestAPIView(APIView):
@@ -199,7 +452,7 @@ class RespondConnectionRequestAPIView(APIView):
     def post(self, request, pk):
         user = request.user
 
-        # Fetch the connection request
+        # Fetch connection request
         connection = get_object_or_404(ConnectionRequest, id=pk)
 
         # Already responded check
@@ -209,51 +462,49 @@ class RespondConnectionRequestAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Check user is part of the connection
+        # User must be part of connection
         if user not in (connection.sender, connection.receiver):
             return Response(
                 {"detail": "You are not part of this request."},
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        # Determine roles
-        if hasattr(user, "clientprofile"):
+        # -------------------------
+        # Determine roles and profiles
+        # -------------------------
+        if user.role == "client":
             responder_role = "client"
-            client_profile = user.clientprofile
-            landscaper_user = connection.receiver if connection.sender == user else connection.sender
-            landscaper_profile = get_object_or_404(LandscaperProfilies, user=landscaper_user)
+            client_profile = get_object_or_404(ClientProfile, user=user)
+            landscaper_business = get_object_or_404(BusinessProfile, user=connection.receiver)
+            landscaper_profile = get_object_or_404(LandscaperProfilies, user=connection.receiver)
 
-        elif hasattr(user, "landscaperprofilies"):
+        elif user.role == "landscaper":
             responder_role = "landscaper"
-            landscaper_profile = user.landscaperprofilies
-            client_user = connection.receiver if connection.sender == user else connection.sender
-            client_profile = get_object_or_404(ClientProfile, user=client_user)
+            client_profile = get_object_or_404(ClientProfile, user=connection.sender)
+            landscaper_business = get_object_or_404(BusinessProfile, user=user)
+            landscaper_profile = get_object_or_404(LandscaperProfilies, user=user)
 
         else:
-            return Response(
-                {"detail": "Invalid user role."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({"detail": "Invalid user role."}, status=400)
 
+        # -------------------------
         # Validate action
+        # -------------------------
         action = request.data.get("action")
         if action not in ["accept", "reject"]:
-            return Response(
-                {"detail": "Invalid action."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({"detail": "Invalid action."}, status=400)
 
+        # -------------------------
         # Reject request
+        # -------------------------
         if action == "reject":
             connection.is_accepted = False
             connection.save(update_fields=["is_accepted"])
-            return Response(
-                {
-                    "connection_id": connection.id,
-                    "status": "rejected",
-                    "responded_by": responder_role
-                }
-            )
+            return Response({
+                "connection_id": connection.id,
+                "status": "rejected",
+                "responded_by": responder_role
+            })
 
         # -------------------------
         # Accept request
@@ -263,12 +514,28 @@ class RespondConnectionRequestAPIView(APIView):
         accepted_connections_count = ConnectionRequest.objects.filter(
             is_accepted=True
         ).filter(
-            Q(sender=landscaper_profile.user) |
-            Q(receiver=landscaper_profile.user)
+            Q(sender=landscaper_profile.user) | Q(receiver=landscaper_profile.user)
         ).count()
 
-        plan_name = landscaper_profile.plan.name.lower() if landscaper_profile.plan else "free"
+        # -------------------------
+        # Determine plan
+        # -------------------------
+        now = timezone.now()
+        subscription = (
+            Subscription.objects
+            .filter(user=landscaper_profile.user, is_active=True)
+            .order_by("-end_date")
+            .first()
+        )
 
+        if subscription and subscription.status.lower() == "active" and subscription.end_date >= now:
+            plan_name = subscription.plan.name.lower()
+        elif landscaper_profile.plan:
+            plan_name = landscaper_profile.plan.name.lower()
+        else:
+            plan_name = "free"
+
+        # Enforce basic plan limit
         if plan_name == "basic" and accepted_connections_count >= 10:
             return Response(
                 {
@@ -277,7 +544,7 @@ class RespondConnectionRequestAPIView(APIView):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        # Accept connection
+        # Accept the connection
         connection.is_accepted = True
         connection.save(update_fields=["is_accepted"])
 
@@ -290,43 +557,29 @@ class RespondConnectionRequestAPIView(APIView):
             ).exclude(id=connection.id).delete()
 
         # -------------------------
-        # Fetch or create ClientService for scheduling
+        # Fetch or create ClientService
         # -------------------------
         service_obj = Service.objects.filter(
-            landscaper=landscaper_profile.user
+            business=landscaper_business
         ).order_by("-created_at").first()
 
         if not service_obj:
-            # Undo connection acceptance
             connection.is_accepted = None
             connection.save(update_fields=["is_accepted"])
             return Response(
                 {"detail": "This landscaper has not created any services yet."},
-                status=status.HTTP_400_BAD_REQUEST
+                status=400
             )
 
-        # Create ClientService instance if needed
-        # client_service, created = ClientService.objects.get_or_create(
-        #     landscaper=landscaper_profile,
-        #     name=service_obj.custom_service or (service_obj.standard_services[0] if service_obj.standard_services else "Service"),
-        #     defaults={
-        #         "description": service_obj.description,
-        #         "category": service_obj.category,
-        #         "price": service_obj.price or 0,
-        #         "square_feet": service_obj.per_square_feet or 0,
-        #         "is_standard": False
-        #     }
-        # )
-        
         client_service, created = ClientService.objects.get_or_create(
             landscaper=landscaper_profile,
-            name=service_obj.standard_service or "Service",
+            name=getattr(service_obj, "standard_service", "Service"),
             defaults={
-                "description": service_obj.description or "", 
-                "category": service_obj.category,
-                "price": service_obj.price or 0,
+                "description": service_obj.description or "",
+                "category": getattr(service_obj, "category", "general"),
+                "price": getattr(service_obj, "base_price", 0) or 0,
                 "square_feet": getattr(service_obj, "per_square_feet", 0),
-                "is_standard": service_obj.category == "standard"
+                "is_standard": getattr(service_obj, "category", None) == "standard"
             }
         )
 
@@ -344,7 +597,7 @@ class RespondConnectionRequestAPIView(APIView):
             job = ServiceSchedule.objects.create(
                 client=client_profile,
                 landscaper=landscaper_profile,
-                service=client_service, 
+                service=client_service,
                 scheduled_date=now.date(),
                 scheduled_time=now.time()
             )
@@ -353,7 +606,9 @@ class RespondConnectionRequestAPIView(APIView):
         connection.schedule = job
         connection.save(update_fields=["schedule"])
 
+        # -------------------------
         # Connection slot info for BASIC plan
+        # -------------------------
         remaining_slots = None
         connection_warning = None
         if plan_name == "basic":
@@ -364,33 +619,30 @@ class RespondConnectionRequestAPIView(APIView):
             elif remaining_slots == 1:
                 connection_warning = "You have only 1 client connection remaining. Upgrade to PRO to avoid limits."
 
-        # Serialize client profile
-        # Serialize both profiles
+        # -------------------------
+        # Serialize profiles
+        # -------------------------
         client_data = ClientProfileSerializer(client_profile, context={"request": request}).data
         landscaper_data = LandscaperProfileSerializer(landscaper_profile, context={"request": request}).data
 
-        return Response(
-            {
-                "connection_id": connection.id,
-                "status": "accepted",
-                "accepted_by": responder_role,
-                "upcoming_job": {
-                    "job_id": job.id,
-                    "date": job.scheduled_date,
-                    "time": job.scheduled_time
-                },
-                "client_profile": client_data,
-                "landscaper_profile": landscaper_data,
-                "connection_limits": {
-                    "plan": plan_name,
-                    "accepted_connections": accepted_connections_count + 1,
-                    "remaining_slots": remaining_slots,
-                    "warning": connection_warning
-                }
+        return Response({
+            "connection_id": connection.id,
+            "status": "accepted",
+            "accepted_by": responder_role,
+            "upcoming_job": {
+                "job_id": job.id,
+                "date": job.scheduled_date,
+                "time": job.scheduled_time
             },
-            status=status.HTTP_200_OK
-        )
-
+            "client_profile": client_data,
+            "landscaper_profile": landscaper_data,
+            "connection_limits": {
+                "plan": plan_name,
+                "accepted_connections": accepted_connections_count + 1,
+                "remaining_slots": remaining_slots,
+                "warning": connection_warning
+            }
+        }, status=status.HTTP_200_OK)
 
 class CancelConnectionRequestAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -415,6 +667,170 @@ class CancelConnectionRequestAPIView(APIView):
             {"message": "Request cancelled successfully"},
             status=status.HTTP_200_OK
         )
+
+
+# # Accepted Connections / Auto Schedule
+# class AcceptedConnectionsAPIView(APIView):
+#     permission_classes = [IsAuthenticated]
+
+#     def get(self, request):
+#         user = request.user
+#         now = timezone.now()
+
+#         # Get accepted connections for current user
+#         connections = ConnectionRequest.objects.filter(
+#             Q(sender=user) | Q(receiver=user),
+#             is_accepted=True
+#         ).select_related("sender", "receiver", "schedule").order_by("-created_at")
+
+#         response_data = []
+
+#         for conn in connections:
+#             other_user = conn.receiver if conn.sender == user else conn.sender
+
+#             # Connected time
+#             diff = now - conn.created_at
+#             if diff.days > 0:
+#                 connected_since = f"{diff.days} days ago"
+#             elif diff.seconds >= 3600:
+#                 connected_since = f"{diff.seconds // 3600} hours ago"
+#             elif diff.seconds >= 60:
+#                 connected_since = f"{diff.seconds // 60} minutes ago"
+#             else:
+#                 connected_since = "Just now"
+
+#             # Profiles
+#             landscaper_profile = LandscaperProfilies.objects.filter(user=other_user).first()
+#             client_profile = ClientProfile.objects.filter(user=other_user).first()
+
+#             if landscaper_profile:
+#                 role = "landscaper"
+#                 profile_data = LandscaperProfileSerializer(landscaper_profile, context={"request": request}).data
+#             elif client_profile:
+#                 role = "client"
+#                 profile_data = ClientProfileSerializer(client_profile, context={"request": request}).data
+#             else:
+#                 continue
+
+#             # Upcoming job
+#             upcoming_job = None
+#             if conn.schedule:
+#                 upcoming_job = {
+#                     "job_id": conn.schedule.id,
+#                     "service_name": conn.schedule.service.name,
+#                     "date": conn.schedule.scheduled_date,
+#                     "time": conn.schedule.scheduled_time,
+#                     "price": conn.schedule.service.price,
+#                     "payment_status": conn.schedule.payment_status,
+#                 }
+
+#             response_data.append({
+#                 "connection_id": conn.id,
+#                 "connected_user": {
+#                     "id": other_user.id,
+#                     "name": getattr(other_user, "name", ""),
+#                     "email": other_user.email,
+#                     "role": role,
+#                 },
+#                 "profile": profile_data,
+#                 "connected_at": conn.created_at,
+#                 "connected_since": connected_since,
+#                 "upcoming_job": upcoming_job
+#             })
+
+#         total_connections = len(response_data)
+
+#         # ---------------------------
+#         # Active percentage calculation
+#         # ---------------------------
+#         first_day_this_month = now.replace(day=1)
+#         first_day_last_month = (first_day_this_month - timedelta(days=1)).replace(day=1)
+#         last_day_last_month = first_day_this_month - timedelta(days=1)
+
+#         # Active users this month
+#         active_users_this_month = ConnectionRequest.objects.filter(
+#             is_accepted=True,
+#             created_at__gte=first_day_this_month
+#         ).values_list('receiver', 'sender')
+
+#         # Active users last month
+#         active_users_last_month = ConnectionRequest.objects.filter(
+#             is_accepted=True,
+#             created_at__gte=first_day_last_month,
+#             created_at__lte=last_day_last_month
+#         ).values_list('receiver', 'sender')
+
+#         # Flatten and deduplicate
+#         active_this = set([u for pair in active_users_this_month for u in pair])
+#         active_last = set([u for pair in active_users_last_month for u in pair])
+
+#         # Total active users (clients or landscapers depending on context)
+#         total_users = User.objects.filter(is_active=True).count()
+
+#         # Percentages
+#         active_percentage = (len(active_this) / total_users * 100) if total_users > 0 else 0
+#         previous_month_percentage = (len(active_last) / total_users * 100) if total_users > 0 else 0
+
+#         # Change vs previous month
+#         change_value = active_percentage - previous_month_percentage
+#         if change_value > 0:
+#             change_vs_last_month = f"+{change_value:.1f}"
+#         elif change_value < 0:
+#             change_vs_last_month = f"{change_value:.1f}"
+#         else:
+#             change_vs_last_month = "0.0"
+
+#         # ------------------------------
+#         # Connection limits
+#         # ------------------------------
+#         connection_limits = None
+#         landscaper_profile_self = LandscaperProfilies.objects.filter(user=user).first()
+
+#         if landscaper_profile_self:
+#             subscription = Subscription.objects.filter(user=user, is_active=True).first()
+#             plan_name = subscription.plan if subscription else "BASIC"
+
+#             accepted_count = ConnectionRequest.objects.filter(
+#                 is_accepted=True
+#             ).filter(
+#                 Q(sender=user) | Q(receiver=user)
+#             ).count()
+
+#             if plan_name == "BASIC":
+#                 connection_limits = {
+#                     "plan": "BASIC",
+#                     "accepted_connections": accepted_count,
+#                     "max_connections": 10,
+#                     "remaining_slots": max(0, 10 - accepted_count)
+#                 }
+#             else:
+#                 connection_limits = {
+#                     "plan": "PRO",
+#                     "accepted_connections": accepted_count,
+#                     "max_connections": None,
+#                     "remaining_slots": None
+#                 }
+
+#         # Final response
+#         return Response({
+#             "count": total_connections,
+#             "connections": response_data,
+#             "active_percentage": round(active_percentage, 1),
+#             "previous_month_percentage": round(previous_month_percentage, 1),
+#             "change_vs_last_month": change_vs_last_month,
+#             "connection_limits": connection_limits
+#         })
+
+from datetime import timedelta
+from django.utils import timezone
+from django.db.models import Q
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
+from subscriptions.models import  Subscription, SubscriptionStatus
+from connections.models import ConnectionRequest
+from profiles.serializers import LandscaperProfileSerializer, ClientProfileSerializer, JobSerializer
 
 
 # Accepted Connections / Auto Schedule
@@ -447,28 +863,41 @@ class AcceptedConnectionsAPIView(APIView):
             else:
                 connected_since = "Just now"
 
-            # Profiles
-            landscaper_profile = LandscaperProfilies.objects.filter(user=other_user).first()
-            client_profile = ClientProfile.objects.filter(user=other_user).first()
+            # -------------------------------
+            # Get profile data
+            # -------------------------------
+            landscaper_profile = getattr(other_user, "landscaper_profile", None)
+            client_profile = getattr(other_user, "client_profile", None)
 
             if landscaper_profile:
                 role = "landscaper"
-                profile_data = LandscaperProfileSerializer(landscaper_profile, context={"request": request}).data
+                try:
+                    business_profile = landscaper_profile.user.landscaper_profile
+                except BusinessProfile.DoesNotExist:
+                    business_profile = None
+
+                profile_data = (
+                    LandscaperProfileSerializer(business_profile, context={"request": request}).data
+                    if business_profile else {}
+                )
+
             elif client_profile:
                 role = "client"
                 profile_data = ClientProfileSerializer(client_profile, context={"request": request}).data
             else:
                 continue
 
+            # -------------------------------
             # Upcoming job
+            # -------------------------------
             upcoming_job = None
             if conn.schedule:
                 upcoming_job = {
                     "job_id": conn.schedule.id,
-                    "service_name": conn.schedule.service.name,
+                    "service_name": conn.schedule.service.name if conn.schedule.service else None,
                     "date": conn.schedule.scheduled_date,
                     "time": conn.schedule.scheduled_time,
-                    "price": conn.schedule.service.price,
+                    "price": getattr(conn.schedule.service, "base_price", None),
                     "payment_status": conn.schedule.payment_status,
                 }
 
@@ -512,14 +941,11 @@ class AcceptedConnectionsAPIView(APIView):
         active_this = set([u for pair in active_users_this_month for u in pair])
         active_last = set([u for pair in active_users_last_month for u in pair])
 
-        # Total active users (clients or landscapers depending on context)
-        total_users = User.objects.filter(is_active=True).count()
+        total_users = user.__class__.objects.filter(is_active=True).count()
 
-        # Percentages
         active_percentage = (len(active_this) / total_users * 100) if total_users > 0 else 0
         previous_month_percentage = (len(active_last) / total_users * 100) if total_users > 0 else 0
 
-        # Change vs previous month
         change_value = active_percentage - previous_month_percentage
         if change_value > 0:
             change_vs_last_month = f"+{change_value:.1f}"
@@ -529,14 +955,14 @@ class AcceptedConnectionsAPIView(APIView):
             change_vs_last_month = "0.0"
 
         # ------------------------------
-        # Connection limits
+        # Connection limits (for landscapers)
         # ------------------------------
         connection_limits = None
-        landscaper_profile_self = LandscaperProfilies.objects.filter(user=user).first()
+        landscaper_profile_self = getattr(user, "landscaper_profile", None)
 
         if landscaper_profile_self:
             subscription = Subscription.objects.filter(user=user, is_active=True).first()
-            plan_name = subscription.plan if subscription else "BASIC"
+            plan_name = subscription.plan.name.upper() if subscription else "BASIC"
 
             accepted_count = ConnectionRequest.objects.filter(
                 is_accepted=True
@@ -559,7 +985,9 @@ class AcceptedConnectionsAPIView(APIView):
                     "remaining_slots": None
                 }
 
+        # ------------------------------
         # Final response
+        # ------------------------------
         return Response({
             "count": total_connections,
             "connections": response_data,
@@ -568,8 +996,6 @@ class AcceptedConnectionsAPIView(APIView):
             "change_vs_last_month": change_vs_last_month,
             "connection_limits": connection_limits
         })
-
-
 # -------------------------------
 # Upcoming Job
 # -------------------------------

@@ -14,24 +14,25 @@ from .views import (
     AddonListCreateView,
     AddonDetailView,
     ServiceStatsAPIView,
-    ClientCustomServiceRetrieveUpdateView,
-    ClientCustomServiceDeleteView,
+    ClientCustomServiceRetrieveDestroyView,
+    # ClientCustomServiceDeleteView,
     toggle_client_custom_service_active,
     ClientCustomServiceListCreateView,
     LandscaperCustomServiceListView,
-    accept_client_custom_service
+    client_confirm_service,
+    landscaper_accept_service,
 
 )
 
 
 urlpatterns = [
-    path("landscaper/complete-profile/",CompleteLandscaperProfileView.as_view()),
+    path("business/complete-profile/",CompleteLandscaperProfileView.as_view()),
     path(
-        "landscaper/profile/update/",
+        "business/profile/update/",
         UpdateBusinessProfileView.as_view(),
         name="landscaper-profile-update"
     ),
-    path("landscaper/profile/", GetBusinessProfileView.as_view(), name="get-landscaper-profile"),
+    path("business/profile/", GetBusinessProfileView.as_view(), name="get-landscaper-profile"),
     
     # standard service crud 
     path("services/", ServiceListCreateView.as_view(), name="service-list-create"),
@@ -42,13 +43,15 @@ urlpatterns = [
 
     # custom service
     path('client/custom-services/', ClientCustomServiceListCreateView.as_view(), name='client-custom-services'),
-    path('client/custom-services/<int:pk>/', ClientCustomServiceRetrieveUpdateView.as_view(), name='client-custom-service-update'),
-    path('client/custom-services/<int:pk>/delete/', ClientCustomServiceDeleteView.as_view(), name='client-custom-service-delete'),
+    path('client/custom-services/<int:pk>/', ClientCustomServiceRetrieveDestroyView.as_view(), name='client-custom-service-update'),
+    path("client/custom-services/<int:pk>/confirm/",client_confirm_service, name="client-custom-service-confirm"),
+
     path('client/custom-services/<int:pk>/toggle/', toggle_client_custom_service_active, name='toggle-client-custom-service'),
+    
     # List all client custom services for landscaper (filter by status if needed)
-    path('client/custom-services/',LandscaperCustomServiceListView.as_view(), name='landscaper-custom-service-list'),
+    path('landscaper/custom-service-requests/',LandscaperCustomServiceListView.as_view(), name='landscaper-custom-service-list'),
     # Accept a pending service
-    path('client/custom-services/<int:pk>/accept/',accept_client_custom_service,name='accept-client-custom-service'),
+    path('landscaper/custom-service-requests/<int:pk>/',landscaper_accept_service,name="landscaper-accept-custom-service"),
 
     # add ons
     path("addons/", AddonListCreateView.as_view(), name="addon-list-create"),
