@@ -25,6 +25,14 @@ from .serializers import SignupSerializer, LoginSerializer, ResetPasswordSeriali
 from .models import User, OTP,UserReport
 from django.utils import timezone
 from .models import AdminAuditLog
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAdminUser
+from rest_framework.response import Response
+from django.shortcuts import get_object_or_404
+from accounts.models import User, LoginActivity
+
+
+from accounts.models import LoginActivity
 
 from django.db.models import Q, Sum, FloatField, Count
 
@@ -141,35 +149,96 @@ def get_tokens_for_user(user):
 #         }, status=status.HTTP_200_OK)
 
 
+# class LoginView(generics.GenericAPIView):
+#     serializer_class = LoginSerializer
+#     permission_classes = [AllowAny]
+#     parser_classes = (MultiPartParser, FormParser)
+
+#     def post(self, request, *args, **kwargs):
+
+#         serializer = self.get_serializer(data=request.data)
+#         serializer.is_valid(raise_exception=True)
+
+#         user = serializer.validated_data['user']
+
+#         if not user.is_active:
+#             return Response(
+#                 {"message": "Please verify your email first."},
+#                 status=400
+#             )
+
+#         # 🔐 STEP 1 → If ADMIN → send OTP
+#         if user.role == "admin":
+
+#             OTP.objects.filter(user=user).delete()
+
+#             otp_code = generate_otp()
+
+#             OTP.objects.create(
+#                 user=user,
+#                 code=otp_code
+#             )
+
+#             send_otp_email(user.email, otp_code)
+
+#             return Response({
+#                 "message": "OTP sent to admin email",
+#                 "admin_2fa_required": True,
+#                 "email": user.email
+#             })
+
+#         # Normal users login directly
+#         tokens = get_tokens_for_user(user)
+
+#         return Response({
+#             "message": "Login successful",
+#             "token": tokens,
+#             "user": {
+#                 "id": user.id,
+#                 "email": user.email,
+#                 "name": user.name,
+#                 "role": user.role,
+#                 "phone": getattr(user, 'phone', None),      
+#                 "address": getattr(user, 'address', None), 
+#                 # ✅ Add latitude & longitude
+#                 "latitude": float(user.latitude) if getattr(user, "latitude", None) else None,
+#                 "longitude": float(user.longitude) if getattr(user, "longitude", None) else None, 
+#             }
+#         }, status=status.HTTP_200_OK)
+
+from .serializers import LoginSerializer
+from .models import User, OTP, LoginActivity
+from .utils import generate_otp, send_otp_email
+from .security_utils import get_client_ip, parse_device
+
+# your existing function
+from .views import get_tokens_for_user  # adjust import if it's in same file remove this
+
+
 class LoginView(generics.GenericAPIView):
     serializer_class = LoginSerializer
     permission_classes = [AllowAny]
     parser_classes = (MultiPartParser, FormParser)
 
     def post(self, request, *args, **kwargs):
-
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        user = serializer.validated_data['user']
+        user = serializer.validated_data["user"]
 
         if not user.is_active:
             return Response(
                 {"message": "Please verify your email first."},
-                status=400
+                status=status.HTTP_400_BAD_REQUEST
             )
 
-        # 🔐 STEP 1 → If ADMIN → send OTP
+        # 🔐 STEP 1 → If ADMIN → send OTP (do NOT log activity yet)
+        # Because admin isn't fully authenticated until OTP verification succeeds.
         if user.role == "admin":
-
             OTP.objects.filter(user=user).delete()
 
             otp_code = generate_otp()
-
-            OTP.objects.create(
-                user=user,
-                code=otp_code
-            )
+            OTP.objects.create(user=user, code=otp_code)
 
             send_otp_email(user.email, otp_code)
 
@@ -177,10 +246,32 @@ class LoginView(generics.GenericAPIView):
                 "message": "OTP sent to admin email",
                 "admin_2fa_required": True,
                 "email": user.email
-            })
+            }, status=status.HTTP_200_OK)
 
-        # Normal users login directly
+        # ✅ Normal users login directly
         tokens = get_tokens_for_user(user)
+
+        # -------------------------
+        # ✅ Update last_login
+        # -------------------------
+        User.objects.filter(id=user.id).update(last_login=timezone.now())
+
+        # -------------------------
+        # ✅ Create LoginActivity record
+        # -------------------------
+        ip = get_client_ip(request)
+        ua = request.META.get("HTTP_USER_AGENT", "")
+
+        device_info = parse_device(ua)
+
+        LoginActivity.objects.create(
+            user=user,
+            ip_address=ip,
+            user_agent=ua,
+            device_type=device_info.get("device_type"),
+            os=device_info.get("os"),
+            browser=device_info.get("browser"),
+        )
 
         return Response({
             "message": "Login successful",
@@ -190,11 +281,10 @@ class LoginView(generics.GenericAPIView):
                 "email": user.email,
                 "name": user.name,
                 "role": user.role,
-                "phone": getattr(user, 'phone', None),      
-                "address": getattr(user, 'address', None), 
-                # ✅ Add latitude & longitude
+                "phone": getattr(user, "phone", None),
+                "address": getattr(user, "address", None),
                 "latitude": float(user.latitude) if getattr(user, "latitude", None) else None,
-                "longitude": float(user.longitude) if getattr(user, "longitude", None) else None, 
+                "longitude": float(user.longitude) if getattr(user, "longitude", None) else None,
             }
         }, status=status.HTTP_200_OK)
 
@@ -1327,6 +1417,28 @@ class AdminUserDetailView(APIView):
                 "selected_location": getattr(business_profile, "selected_location", None),
                 "address": user.address,
             }
+        
+        from accounts.models import LoginActivity  # add at top
+
+
+        # -------------------------
+        # Recent login activities
+        # -------------------------
+        login_qs = (
+            LoginActivity.objects
+            .filter(user=user)
+            .order_by("-created_at")[:20]
+        )
+
+        login_activity = [{
+            "id": x.id,
+            "ip_address": x.ip_address,
+            "device_type": x.device_type,
+            "os": x.os,
+            "browser": x.browser,
+            "user_agent": x.user_agent,
+            "created_at": x.created_at,
+        } for x in login_qs]
 
         # -------------------------
         # Landscaper Profile info (jobs metrics)
@@ -1376,6 +1488,7 @@ class AdminUserDetailView(APIView):
                     "client_id": client_user.id if client_user else None,
                     "client_name": client_user.name if client_user else None,
                     "client_email": client_user.email if client_user else None,
+                    
                 })
 
         # -------------------------
@@ -1408,6 +1521,7 @@ class AdminUserDetailView(APIView):
             "total_clients": total_clients,
             "recent_jobs": recent_jobs,
             "recent_audit_logs": recent_audit_logs,
+            "login_activity": login_activity,
         }
 
         return Response(payload, status=status.HTTP_200_OK)
@@ -1460,4 +1574,64 @@ class AdminUserDetailView(APIView):
             "message": "User updated successfully",
             "changes": changes
         }, status=status.HTTP_200_OK)
+
+
+# login activities 
+# accounts/admin_security_views.py
+
+
+class AdminLoginActivityListView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        user_id = request.query_params.get("user_id")  # optional filter
+
+        qs = LoginActivity.objects.select_related("user").all()
+
+        if user_id:
+            qs = qs.filter(user_id=user_id)
+
+        qs = qs.order_by("-created_at")[:200]  # limit for performance
+
+        data = []
+        for x in qs:
+            data.append({
+                "id": x.id,
+                "user_id": x.user.id,
+                "email": x.user.email,
+                "ip_address": x.ip_address,
+                "device_type": x.device_type,
+                "os": x.os,
+                "browser": x.browser,
+                "user_agent": x.user_agent,
+                "created_at": x.created_at,
+            })
+
+        return Response({"count": len(data), "data": data})
+
+
+class AdminUserLoginActivityView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request, user_id):
+        user = get_object_or_404(User, id=user_id)
+
+        qs = LoginActivity.objects.filter(user=user).order_by("-created_at")[:50]
+
+        data = [{
+            "id": x.id,
+            "ip_address": x.ip_address,
+            "device_type": x.device_type,
+            "os": x.os,
+            "browser": x.browser,
+            "user_agent": x.user_agent,
+            "created_at": x.created_at,
+        } for x in qs]
+
+        return Response({
+            "user_id": user.id,
+            "email": user.email,
+            "last_login": user.last_login,
+            "logins": data
+        })
 

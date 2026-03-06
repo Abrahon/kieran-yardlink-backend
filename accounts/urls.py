@@ -15,7 +15,9 @@ from .views import (
     ReportUserAPIView,
     AdminAuditLogView,
     AdminVerifyOTPView,
-    AdminUserDetailView
+    AdminUserDetailView,
+    AdminLoginActivityListView,
+    AdminUserLoginActivityView
 
 )
 
@@ -41,6 +43,9 @@ urlpatterns = [
     path("admin/audit-logs/", AdminAuditLogView.as_view(), name="admin-audit-logs"),
     # user details
     path("admin/users/<int:user_id>/", AdminUserDetailView.as_view(), name="admin-user-detail"),
+    # login activities
+    path("admin/login-activities/", AdminLoginActivityListView.as_view(), name="admin-login-activities"),
+    path("admin/users/<int:user_id>/login-activities/", AdminUserLoginActivityView.as_view(), name="admin-user-login-activities"),
 
 
 

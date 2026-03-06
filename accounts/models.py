@@ -167,3 +167,29 @@ class AdminAuditLog(models.Model):
     def __str__(self):
         return f"{self.admin.email} - {self.action}"
     
+
+# login activity
+# accounts/models.py
+from django.db import models
+from django.conf import settings
+
+class LoginActivity(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="login_activities"
+    )
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.TextField(blank=True, null=True)
+
+    # optional (nice for dashboards)
+    device_type = models.CharField(max_length=50, blank=True, null=True)   # "mobile", "desktop", "tablet"
+    os = models.CharField(max_length=50, blank=True, null=True)           # "Android", "iOS", "Windows"
+    browser = models.CharField(max_length=50, blank=True, null=True)      # "Chrome", "Safari"
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.user.email} - {self.ip_address} - {self.created_at}"
