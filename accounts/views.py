@@ -1049,7 +1049,7 @@ class UserListView(APIView):
 
             "data": serializer.data
         })
-        
+
 #    delete admins
 class AdminDeleteUserView(generics.DestroyAPIView):
     """
@@ -1246,3 +1246,218 @@ class AdminAuditLogView(APIView):
             })
 
         return Response(data)
+    
+# user detaisl
+
+
+
+from django.shortcuts import get_object_or_404
+from django.db.models import Sum, FloatField, Value
+from django.db.models.functions import Coalesce
+
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAdminUser
+from rest_framework.response import Response
+from rest_framework import status
+
+from .models import User, AdminAuditLog
+from .serializers import AdminUserDetailSerializer, AdminUserUpdateSerializer
+
+from subscriptions.models import Subscription
+from services.models import ServiceSchedule, PaymentStatus
+
+# ✅ BusinessProfile stays where it is (your landscapers app)
+from landscapers.models import BusinessProfile
+
+# ✅ LandscaperProfilies is in profiles app (as you said)
+from profiles.models import LandscaperProfilies
+
+
+class AdminUserDetailView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request, user_id):
+        user = get_object_or_404(User, id=user_id)
+
+        # -------------------------
+        # Subscription info
+        # -------------------------
+        subscription = (
+            Subscription.objects
+            .select_related("plan")
+            .filter(user=user)
+            .order_by("-created_at")
+            .first()
+        )
+
+        subscription_data = None
+        if subscription:
+            subscription_data = {
+                "id": subscription.id,
+                "status": subscription.status,
+                "is_active": subscription.is_active,
+                "is_trial": subscription.is_trial,
+                "auto_renew": subscription.auto_renew,
+                "start_date": subscription.start_date,
+                "end_date": subscription.end_date,
+                "stripe_customer_id": subscription.stripe_customer_id,
+                "stripe_subscription_id": subscription.stripe_subscription_id,
+                "plan": {
+                    "id": subscription.plan.id,
+                    "name": subscription.plan.name,
+                    "price": float(subscription.plan.price),
+                    "discount": float(subscription.plan.discount),
+                    "final_price": float(subscription.plan.final_price),
+                    "duration": subscription.plan.duration,
+                    "is_active": subscription.plan.is_active,
+                }
+            }
+
+        # -------------------------
+        # Business Profile info (business details)
+        # -------------------------
+        business_profile = BusinessProfile.objects.filter(user=user).first()
+        business_profile_data = None
+
+        if business_profile:
+            business_profile_data = {
+                "id": business_profile.id,
+                "business_name": getattr(business_profile, "business_name", None),
+                "bio": getattr(business_profile, "bio", None),
+                "selected_location": getattr(business_profile, "selected_location", None),
+                "address": user.address,
+            }
+
+        # -------------------------
+        # Landscaper Profile info (jobs metrics)
+        # -------------------------
+        landscaper_profile = LandscaperProfilies.objects.filter(user=user).first()
+
+        total_revenue = 0.0
+        total_jobs = 0
+        completed_jobs = 0
+        pending_jobs = 0
+        total_clients = 0
+        recent_jobs = []
+
+        if landscaper_profile:
+            # ✅ FIX: filter by LandscaperProfilies instance
+            jobs_qs = ServiceSchedule.objects.filter(landscaper=landscaper_profile)
+
+            total_jobs = jobs_qs.count()
+            completed_jobs = jobs_qs.filter(is_completed=True).count()
+            pending_jobs = jobs_qs.filter(is_completed=False).count()
+            total_clients = jobs_qs.values("client_id").distinct().count()
+
+            total_revenue = jobs_qs.filter(
+                payment_status=PaymentStatus.PAID
+            ).aggregate(
+                total=Coalesce(Sum("service__price", output_field=FloatField()), Value(0.0))
+            )["total"] or 0.0
+
+            recent_jobs_qs = (
+                jobs_qs.select_related("service", "client")
+                .order_by("-created_at")[:10]
+            )
+
+            for job in recent_jobs_qs:
+                client_user = getattr(job.client, "user", None)
+                recent_jobs.append({
+                    "id": job.id,
+                    "service_name": getattr(job.service, "name", None),
+                    "service_price": float(getattr(job.service, "price", 0) or 0),
+                    "scheduled_date": job.scheduled_date,
+                    "scheduled_time": job.scheduled_time,
+                    "is_completed": job.is_completed,
+                    "completed_at": job.completed_at,
+                    "payment_status": job.payment_status,
+                    "stripe_payment_id": job.stripe_payment_id,
+                    "client_profile_id": job.client_id,
+                    "client_id": client_user.id if client_user else None,
+                    "client_name": client_user.name if client_user else None,
+                    "client_email": client_user.email if client_user else None,
+                })
+
+        # -------------------------
+        # Recent audit logs
+        # -------------------------
+        recent_logs_qs = (
+            AdminAuditLog.objects
+            .filter(target_user=user)
+            .select_related("admin")
+            .order_by("-created_at")[:10]
+        )
+
+        recent_audit_logs = [{
+            "id": log.id,
+            "admin_id": log.admin.id,
+            "admin_email": log.admin.email,
+            "action": log.action,
+            "details": log.details,
+            "created_at": log.created_at,
+        } for log in recent_logs_qs]
+
+        payload = {
+            **AdminUserDetailSerializer(user).data,
+            "subscription": subscription_data,
+            "business_profile": business_profile_data,
+            "total_revenue": float(total_revenue),
+            "total_jobs": total_jobs,
+            "completed_jobs": completed_jobs,
+            "pending_jobs": pending_jobs,
+            "total_clients": total_clients,
+            "recent_jobs": recent_jobs,
+            "recent_audit_logs": recent_audit_logs,
+        }
+
+        return Response(payload, status=status.HTTP_200_OK)
+
+    def patch(self, request, user_id):
+        user = get_object_or_404(User, id=user_id)
+        serializer = AdminUserUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        action = serializer.validated_data.get("action")
+        admin_notes = serializer.validated_data.get("admin_notes")
+        role = serializer.validated_data.get("role")
+
+        changes = []
+
+        if action == "pause":
+            user.is_active = False
+            changes.append("paused user")
+        elif action == "unpause":
+            user.is_active = True
+            changes.append("unpaused user")
+        elif action == "flag":
+            user.is_flagged = True
+            changes.append("flagged user")
+        elif action == "unflag":
+            user.is_flagged = False
+            changes.append("unflagged user")
+
+        if admin_notes is not None:
+            user.admin_notes = admin_notes
+            changes.append("updated admin notes")
+
+        if role:
+            old_role = user.role
+            user.role = role
+            changes.append(f"changed role from {old_role} to {role}")
+
+        user.save()
+
+        if changes:
+            AdminAuditLog.objects.create(
+                admin=request.user,
+                action="Admin updated user",
+                target_user=user,
+                details="; ".join(changes)
+            )
+
+        return Response({
+            "status": "success",
+            "message": "User updated successfully",
+            "changes": changes
+        }, status=status.HTTP_200_OK)
+

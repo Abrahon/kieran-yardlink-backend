@@ -14,7 +14,9 @@ from .views import (
     SelfDeleteUserView,
     ReportUserAPIView,
     AdminAuditLogView,
-    AdminVerifyOTPView
+    AdminVerifyOTPView,
+    AdminUserDetailView
+
 )
 
 urlpatterns = [
@@ -37,6 +39,9 @@ urlpatterns = [
     path("admin/verify-otp/", AdminVerifyOTPView.as_view(), name="admin-verify-otp"),
     # audit log
     path("admin/audit-logs/", AdminAuditLogView.as_view(), name="admin-audit-logs"),
+    # user details
+    path("admin/users/<int:user_id>/", AdminUserDetailView.as_view(), name="admin-user-detail"),
+
 
 
 ]

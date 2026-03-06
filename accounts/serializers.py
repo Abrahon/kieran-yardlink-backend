@@ -340,8 +340,70 @@ class UserReportSerializer(serializers.ModelSerializer):
 
 # admin serializers
 
+from rest_framework import serializers
 
-# class AdminUserSerializer(serializers.ModelSerializer):
+from .models import User
+
+
+class AdminUserDetailSerializer(serializers.ModelSerializer):
+    subscription = serializers.DictField(read_only=True)
+    business_profile = serializers.DictField(read_only=True)
+    recent_jobs = serializers.ListField(read_only=True)
+
+    total_revenue = serializers.FloatField(read_only=True)
+    total_jobs = serializers.IntegerField(read_only=True)
+    completed_jobs = serializers.IntegerField(read_only=True)
+    pending_jobs = serializers.IntegerField(read_only=True)
+    total_clients = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = User
+        fields = [
+            "id",
+            "name",
+            "email",
+            "phone",
+            "address",
+            "role",
+            "is_active",
+            "is_flagged",
+            "admin_notes",
+            "date_joined",
+            "last_login",
+
+            "subscription",
+            "business_profile",
+
+            "total_revenue",
+            "total_jobs",
+            "completed_jobs",
+            "pending_jobs",
+            "total_clients",
+
+            "recent_jobs",
+        ]
+
+
+class AdminUserUpdateSerializer(serializers.Serializer):
+
+    action = serializers.ChoiceField(
+        choices=["pause", "unpause", "flag", "unflag"],
+        required=False
+    )
+
+    admin_notes = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        allow_null=True
+    )
+
+    role = serializers.CharField(required=False)
+
+
+# admin user serializers
+# accounts/serializers.py
+
+class AdminUserSerializer(serializers.ModelSerializer):
     landscaper_plan = serializers.SerializerMethodField()
     plan_type = serializers.SerializerMethodField()
 

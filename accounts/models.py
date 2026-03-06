@@ -166,3 +166,4 @@ class AdminAuditLog(models.Model):
 
     def __str__(self):
         return f"{self.admin.email} - {self.action}"
+    
