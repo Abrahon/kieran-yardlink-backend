@@ -33,7 +33,7 @@ from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from accounts.models import User, LoginActivity
 from accounts.models import LoginActivity  # add at top
-
+from django.db.models import Avg, Q
 from accounts.models import LoginActivity
 
 from django.db.models import Q, Sum, FloatField, Count
@@ -616,10 +616,9 @@ class ResendForgotOTPView(generics.GenericAPIView):
 
 # userlist views
 
-
 from datetime import timedelta
 from django.db.models import (
-    Q, Count, Sum, FloatField, Value, OuterRef, Subquery
+    Q, Count, Sum, FloatField, Value, OuterRef, Subquery, Avg
 )
 from django.db.models.functions import Coalesce
 from django.utils import timezone
@@ -724,6 +723,15 @@ class UserListView(APIView):
             total_jobs=Coalesce(Subquery(jobs_sq), Value(0)),
             completed_jobs=Coalesce(Subquery(completed_jobs_sq), Value(0)),
             total_clients=Coalesce(Subquery(clients_sq), Value(0)),
+            # average_rating=Coalesce(Avg("received_reviews__rating"), Value(0.0), output_field=FloatField()),
+        # average rating per landscaper
+
+            average_rating=Coalesce(
+                Avg("received_reviews__rating"),
+                Value(0.0),
+                output_field=FloatField()
+            ),
+            review_count=Count("received_reviews", distinct=True)
         )
 
         # --------------------------
@@ -735,6 +743,8 @@ class UserListView(APIView):
             users = users.order_by("-total_clients", "-date_joined")
         elif sort_by == "jobs":
             users = users.order_by("-total_jobs", "-date_joined")
+        elif sort_by == "rating":
+            users = users.order_by("-average_rating", "-date_joined")
         elif sort_by == "newest":
             users = users.order_by("-date_joined")
         else:
@@ -809,6 +819,10 @@ class UserListView(APIView):
         else:
             churn_rate = 0.0
 
+        overall_average_rating = users.aggregate(
+            avg_rating=Coalesce(Avg("received_reviews__rating"), Value(0.0), output_field=FloatField())
+        )["avg_rating"]
+
         # --------------------------
         # PAGINATION
         # --------------------------
@@ -817,7 +831,7 @@ class UserListView(APIView):
 
         page = paginator.paginate_queryset(users, request)
 
-        serializer = UserSerializer(page, many=True, context={"request": request})
+        serializer = AdminUserDetailSerializer(page, many=True, context={"request": request})
 
         return paginator.get_paginated_response({
             "status": "success",
@@ -833,10 +847,13 @@ class UserListView(APIView):
                 "cancelled_subscriptions": cancelled_subscriptions,
                 "expired_subscriptions": expired_subscriptions,
                 "churn_rate": churn_rate,
-                "platform_fee_collected": platform_fee_collected
+                "platform_fee_collected": platform_fee_collected,
+                "average_rating": round(overall_average_rating, 2) if overall_average_rating else 0.0
             },
             "data": serializer.data
         })
+
+
 
 #    delete admins
 class AdminDeleteUserView(generics.DestroyAPIView):

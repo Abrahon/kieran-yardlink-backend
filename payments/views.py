@@ -710,7 +710,6 @@ def admin_transaction_summary(request):
 
 
 # Admin: Payment Details
-from rest_framework.pagination import PageNumberPagination
 
 
 
@@ -719,9 +718,11 @@ from rest_framework.pagination import PageNumberPagination
 def stripe_all_payments(request):
     """
     Admin: All Stripe payments with user/job IDs.
-    Supports:
-    - pagination
+
+    Features:
+    - Pagination
     - CSV download (?download=csv)
+    - Payment status included
     """
 
     data = []
@@ -731,11 +732,11 @@ def stripe_all_payments(request):
     # =========================
     paid_jobs = (
         ServiceSchedule.objects
-        .filter(payment_status=PaymentStatus.PAID)
         .select_related("client__user", "service")
     )
 
     for job in paid_jobs:
+
         service_price = float(job.service.price)
         platform_fee = round(service_price * 0.02, 2)
 
@@ -748,6 +749,7 @@ def stripe_all_payments(request):
             "email": job.client.user.email,
             "amount_paid": round(service_price + platform_fee, 2),
             "platform_fee": platform_fee,
+            "status": job.payment_status,
             "transaction_id": job.stripe_payment_id,
             "date": job.scheduled_date
         })
@@ -762,6 +764,7 @@ def stripe_all_payments(request):
     )
 
     for sub in subscriptions:
+
         data.append({
             "record_id": sub.id,
             "user_id": sub.user.id,
@@ -771,6 +774,7 @@ def stripe_all_payments(request):
             "email": sub.user.email,
             "amount_paid": float(sub.plan.price),
             "platform_fee": 0.0,
+            "status": sub.status,
             "transaction_id": sub.stripe_subscription_id,
             "date": sub.created_at
         })
@@ -794,6 +798,7 @@ def stripe_all_payments(request):
             "Email",
             "Amount Paid",
             "Platform Fee",
+            "Status",
             "Transaction ID",
             "Date"
         ])
@@ -808,6 +813,7 @@ def stripe_all_payments(request):
                 item["email"],
                 item["amount_paid"],
                 item["platform_fee"],
+                item["status"],
                 item["transaction_id"],
                 item["date"]
             ])
@@ -821,7 +827,9 @@ def stripe_all_payments(request):
     paginator.page_size = 10
 
     result_page = paginator.paginate_queryset(data, request)
+
     return paginator.get_paginated_response(result_page)
+
 # delete views
 
 from django.shortcuts import get_object_or_404

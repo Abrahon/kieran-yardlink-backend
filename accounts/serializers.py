@@ -355,6 +355,8 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
     completed_jobs = serializers.IntegerField(read_only=True)
     pending_jobs = serializers.IntegerField(read_only=True)
     total_clients = serializers.IntegerField(read_only=True)
+    average_rating = serializers.SerializerMethodField()
+    review_count = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -379,9 +381,20 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
             "completed_jobs",
             "pending_jobs",
             "total_clients",
+            "average_rating",
+            "review_count",
 
             "recent_jobs",
         ]
+    def get_average_rating(self, obj):
+        if obj.role != "landscaper":
+            return 0.0
+        return round(float(getattr(obj, "average_rating", 0.0) or 0.0), 2)
+
+    def get_review_count(self, obj):
+        if obj.role != "landscaper":
+            return 0
+        return int(getattr(obj, "review_count", 0) or 0)
 
 
 class AdminUserUpdateSerializer(serializers.Serializer):
