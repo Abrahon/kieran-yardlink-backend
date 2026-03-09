@@ -1062,3 +1062,297 @@ class UpgradePlanAPIView(APIView):
             "detail": "Subscription upgraded to Pro successfully",
             "subscription": serializer.data
         }, status=status.HTTP_200_OK)
+
+# subscription invoice 
+# import stripe
+# from django.conf import settings
+
+# from rest_framework.views import APIView
+# from rest_framework.permissions import IsAdminUser
+# from rest_framework.response import Response
+# from rest_framework import status
+
+# from subscriptions.models import Subscription
+
+# stripe.api_key = settings.STRIPE_SECRET_KEY
+
+
+# class AdminAllSubscriptionUsersBillingView(APIView):
+#     permission_classes = [IsAdminUser]
+
+#     def get(self, request):
+#         subscriptions = (
+#             Subscription.objects
+#             .select_related("user", "plan")
+#             .order_by("-created_at")
+#         )
+
+#         data = []
+
+#         for sub in subscriptions:
+#             latest_invoice_data = None
+
+#             # Try Stripe invoice first
+#             if sub.stripe_customer_id and sub.stripe_subscription_id:
+#                 try:
+#                     invoices = stripe.Invoice.list(
+#                         customer=sub.stripe_customer_id,
+#                         subscription=sub.stripe_subscription_id,
+#                         limit=1
+#                     )
+
+#                     if invoices.data:
+#                         invoice = invoices.data[0]
+
+#                         description = f"{sub.plan.name} - {sub.plan.duration}"
+#                         lines = invoice.get("lines", {}).get("data", [])
+#                         if lines and lines[0].get("description"):
+#                             description = lines[0]["description"]
+
+#                         latest_invoice_data = {
+#                             "invoice_id": invoice.get("id"),
+#                             "invoice_number": invoice.get("number"),
+#                             "subscription_date": invoice.get("created"),
+#                             "description": description,
+#                             "amount": (invoice.get("amount_paid", 0) or invoice.get("amount_due", 0)) / 100.0,
+#                             "payment_status": invoice.get("status"),
+#                             "currency": invoice.get("currency"),
+#                             "invoice_pdf": invoice.get("invoice_pdf"),
+#                             "hosted_invoice_url": invoice.get("hosted_invoice_url"),
+#                         }
+#                 except Exception:
+#                     latest_invoice_data = None
+
+#             # Fallback to local subscription data
+#             if not latest_invoice_data:
+#                 latest_invoice_data = {
+#                     "invoice_id": None,
+#                     "invoice_number": None,
+#                     "subscription_date": sub.created_at,
+#                     "description": f"{sub.plan.name} - {sub.plan.duration}",
+#                     "amount": float(sub.plan.price),
+#                     "payment_status": sub.status,
+#                     "currency": "usd",
+#                     "invoice_pdf": None,
+#                     "hosted_invoice_url": None,
+#                 }
+
+#             data.append({
+#                 "user_id": sub.user.id,
+#                 "name": sub.user.name,
+#                 "email": sub.user.email,
+#                 "role": sub.user.role,
+#                 "subscription_id": sub.id,
+#                 "stripe_subscription_id": sub.stripe_subscription_id,
+#                 "is_active": sub.is_active,
+#                 "is_trial": sub.is_trial,
+#                 "auto_renew": sub.auto_renew,
+#                 "start_date": sub.start_date,
+#                 "end_date": sub.end_date,
+#                 **latest_invoice_data,
+#             })
+
+#         return Response({
+#             "status": "success",
+#             "count": len(data),
+#             "results": data
+#         }, status=status.HTTP_200_OK)
+
+import stripe
+from django.conf import settings
+
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAdminUser
+from rest_framework.response import Response
+from rest_framework import status
+
+from subscriptions.models import Subscription
+
+stripe.api_key = settings.STRIPE_SECRET_KEY
+
+
+class AdminAllSubscriptionUsersBillingView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        subscriptions = (
+            Subscription.objects
+            .select_related("user", "plan")
+            .order_by("-created_at")
+        )
+
+        data = []
+
+
+        for sub in subscriptions:
+            latest_invoice_data = None
+            stripe_customer_id = sub.stripe_customer_id
+            stripe_subscription_id = sub.stripe_subscription_id
+
+            # -----------------------------------------
+            # Step 1: recover missing customer id from Stripe
+            # -----------------------------------------
+            if stripe_subscription_id and not stripe_customer_id:
+                try:
+                    stripe_sub = stripe.Subscription.retrieve(stripe_subscription_id)
+                    stripe_customer_id = stripe_sub.get("customer")
+
+                    # optional: save back to DB for future use
+                    if stripe_customer_id and sub.stripe_customer_id != stripe_customer_id:
+                        sub.stripe_customer_id = stripe_customer_id
+                        sub.save(update_fields=["stripe_customer_id"])
+                except Exception:
+                    stripe_customer_id = None
+
+
+
+            # -----------------------------------------
+            # Step 2: fetch latest invoice from Stripe
+            # -----------------------------------------
+            if stripe_subscription_id:
+                try:
+                    invoices = stripe.Invoice.list(
+                        subscription=stripe_subscription_id,
+                        limit=1
+                    )
+
+                    if invoices.data:
+                        invoice = invoices.data[0]
+
+                        description = f"{sub.plan.name} - {sub.plan.duration}"
+                        lines = invoice.get("lines", {}).get("data", [])
+                        if lines and lines[0].get("description"):
+                            description = lines[0]["description"]
+
+                        amount_paid = invoice.get("amount_paid", 0) or 0
+                        amount_due = invoice.get("amount_due", 0) or 0
+
+                        latest_invoice_data = {
+                            "invoice_id": invoice.get("id"),
+                            "invoice_number": invoice.get("number"),
+                            "subscription_date": invoice.get("created"),
+                            "description": description,
+                            "amount": (amount_paid if amount_paid > 0 else amount_due) / 100.0,
+                            "payment_status": invoice.get("status"),
+                            "currency": invoice.get("currency"),
+                            "invoice_pdf": invoice.get("invoice_pdf"),
+                            "hosted_invoice_url": invoice.get("hosted_invoice_url"),
+                        }
+                except Exception:
+                    latest_invoice_data = None
+
+            # -----------------------------------------
+            # Step 3: fallback to local DB data
+            # -----------------------------------------
+            if not latest_invoice_data:
+                latest_invoice_data = {
+                    "invoice_id": None,
+                    "invoice_number": None,
+                    "subscription_date": sub.created_at,
+                    "description": f"{sub.plan.name} - {sub.plan.duration}",
+                    "amount": float(sub.plan.price),
+                    "payment_status": sub.status,
+                    "currency": "usd",
+                    "invoice_pdf": None,
+                    "hosted_invoice_url": None,
+                }
+
+            data.append({
+                "user_id": sub.user.id,
+                "name": sub.user.name,
+                "email": sub.user.email,
+                "role": sub.user.role,
+                "subscription_id": sub.id,
+                "stripe_customer_id": stripe_customer_id,
+                "stripe_subscription_id": stripe_subscription_id,
+                "is_active": sub.is_active,
+                "is_trial": sub.is_trial,
+                "auto_renew": sub.auto_renew,
+                "start_date": sub.start_date,
+                "end_date": sub.end_date,
+                **latest_invoice_data,
+            })
+
+        return Response({
+            "status": "success",
+            "count": len(data),
+            "results": data
+        }, status=status.HTTP_200_OK)
+
+# billing 
+
+class AdminUserBillingSummaryView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request, user_id):
+        user = get_object_or_404(User, id=user_id)
+
+        subscription = (
+            Subscription.objects
+            .select_related("plan")
+            .filter(user=user)
+            .order_by("-created_at")
+            .first()
+        )
+
+        if not subscription:
+            return Response({
+                "status": "success",
+                "current_plan": None,
+                "next_billing": None,
+                "lifetime_paid": {
+                    "amount": 0.0,
+                    "payments": 0
+                }
+            }, status=status.HTTP_200_OK)
+
+        lifetime_paid = 0.0
+        total_payments = 0
+
+        stripe_subscription_id = subscription.stripe_subscription_id
+
+        if stripe_subscription_id:
+            try:
+                invoices = stripe.Invoice.list(
+                    subscription=stripe_subscription_id,
+                    limit=100
+                )
+
+                for inv in invoices.auto_paging_iter():
+                    amount_paid = (inv.get("amount_paid", 0) or 0) / 100.0
+                    if inv.get("status") == "paid" and amount_paid > 0:
+                        lifetime_paid += amount_paid
+                        total_payments += 1
+            except Exception:
+                pass
+
+        # fallback if no Stripe paid invoices found
+        if lifetime_paid == 0 and total_payments == 0 and not subscription.is_trial:
+            if subscription.status in ["active", "expired", "cancelled"]:
+                lifetime_paid = float(subscription.plan.price)
+                total_payments = 1
+
+        cycle_map = {
+            "monthly": "month",
+            "yearly": "year"
+        }
+        cycle_label = cycle_map.get(subscription.plan.duration.lower(), subscription.plan.duration.lower())
+
+        return Response({
+            "status": "success",
+            "current_plan": {
+                "name": f"{subscription.plan.name} Plan",
+                "price": float(subscription.plan.price),
+                "billing_cycle": subscription.plan.duration,
+                "display_price": f"${float(subscription.plan.price):.2f} / {cycle_label}"
+            },
+            "next_billing": {
+                "date": subscription.end_date,
+                "auto_renew": subscription.auto_renew,
+                "text": f"Auto-renews {cycle_label}" if subscription.auto_renew else "Auto-renew off"
+            },
+            "lifetime_paid": {
+                "amount": round(lifetime_paid, 2),
+                "payments": total_payments
+            }
+        }, status=status.HTTP_200_OK)

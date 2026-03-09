@@ -1347,3 +1347,185 @@ class AdminUserLoginActivityView(APIView):
             "logins": data
         })
 
+# user list
+# subscriptions/admin_views.py
+
+import stripe
+from django.conf import settings
+from django.shortcuts import get_object_or_404
+
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAdminUser
+from rest_framework.response import Response
+from rest_framework import status
+
+from accounts.models import User
+from subscriptions.models import Subscription
+
+stripe.api_key = settings.STRIPE_SECRET_KEY
+
+
+class AdminSubscriptionBillingHistoryView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request, user_id):
+        user = get_object_or_404(User, id=user_id, role="landscaper")
+
+        subscription = (
+            Subscription.objects
+            .select_related("plan")
+            .filter(user=user)
+            .order_by("-created_at")
+            .first()
+        )
+
+        if not subscription:
+            return Response({
+                "status": "success",
+                "user_id": user.id,
+                "user_email": user.email,
+                "billing_history": []
+            }, status=status.HTTP_200_OK)
+
+        if not subscription.stripe_customer_id or not subscription.stripe_subscription_id:
+            # fallback: local subscription snapshot only
+            return Response({
+                "status": "success",
+                "user_id": user.id,
+                "user_email": user.email,
+                "billing_history": [
+                    {
+                        "date": subscription.created_at,
+                        "plan_type": subscription.plan.name,
+                        "plan_price": float(subscription.plan.price),
+                        "status": subscription.status,
+                        "invoice_id": None,
+                        "invoice_number": None,
+                        "invoice_pdf": None,
+                        "hosted_invoice_url": None,
+                    }
+                ]
+            }, status=status.HTTP_200_OK)
+
+        try:
+            invoices = stripe.Invoice.list(
+                customer=subscription.stripe_customer_id,
+                subscription=subscription.stripe_subscription_id,
+                limit=100
+            )
+        except Exception as e:
+            return Response(
+                {"detail": f"Stripe invoice fetch failed: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        billing_history = []
+
+        for inv in invoices.auto_paging_iter():
+            line_plan_name = None
+            line_plan_price = None
+
+            if inv.get("lines") and inv["lines"].get("data"):
+                first_line = inv["lines"]["data"][0]
+                pricing = first_line.get("pricing", {})
+                price_details = pricing.get("price_details", {})
+                line_plan_name = first_line.get("description") or subscription.plan.name
+                line_plan_price = (
+                    inv.get("amount_paid", 0) / 100.0
+                    if inv.get("amount_paid") is not None
+                    else float(subscription.plan.price)
+                )
+
+            billing_history.append({
+                "invoice_id": inv.get("id"),
+                "invoice_number": inv.get("number"),
+                "date": inv.get("created"),
+                "period_start": inv.get("period_start"),
+                "period_end": inv.get("period_end"),
+                "plan_type": line_plan_name or subscription.plan.name,
+                "plan_price": line_plan_price if line_plan_price is not None else float(subscription.plan.price),
+                "amount_paid": (inv.get("amount_paid", 0) / 100.0),
+                "amount_due": (inv.get("amount_due", 0) / 100.0),
+                "currency": inv.get("currency"),
+                "status": inv.get("status"),
+                "billing_reason": inv.get("billing_reason"),
+                "hosted_invoice_url": inv.get("hosted_invoice_url"),
+                "invoice_pdf": inv.get("invoice_pdf"),
+            })
+
+        return Response({
+            "status": "success",
+            "user_id": user.id,
+            "user_email": user.email,
+            "subscription_id": subscription.id,
+            "stripe_subscription_id": subscription.stripe_subscription_id,
+            "billing_history": billing_history
+        }, status=status.HTTP_200_OK)
+
+
+class AdminSubscriptionInvoiceDetailView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request, user_id, invoice_id):
+        user = get_object_or_404(User, id=user_id, role="landscaper")
+
+        subscription = (
+            Subscription.objects
+            .select_related("plan")
+            .filter(user=user)
+            .order_by("-created_at")
+            .first()
+        )
+
+        if not subscription or not subscription.stripe_customer_id:
+            return Response(
+                {"detail": "No Stripe subscription found for this user."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        try:
+            invoice = stripe.Invoice.retrieve(invoice_id)
+        except Exception as e:
+            return Response(
+                {"detail": f"Stripe invoice fetch failed: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if invoice.get("customer") != subscription.stripe_customer_id:
+            return Response(
+                {"detail": "Invoice does not belong to this user."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        invoice_lines = []
+        for line in invoice.get("lines", {}).get("data", []):
+            invoice_lines.append({
+                "description": line.get("description"),
+                "amount": (line.get("amount", 0) / 100.0),
+                "currency": line.get("currency"),
+                "period_start": line.get("period", {}).get("start"),
+                "period_end": line.get("period", {}).get("end"),
+            })
+
+        return Response({
+            "status": "success",
+            "user_id": user.id,
+            "user_email": user.email,
+            "invoice": {
+                "invoice_id": invoice.get("id"),
+                "invoice_number": invoice.get("number"),
+                "date": invoice.get("created"),
+                "customer": invoice.get("customer"),
+                "subscription": invoice.get("subscription"),
+                "status": invoice.get("status"),
+                "currency": invoice.get("currency"),
+                "amount_paid": (invoice.get("amount_paid", 0) / 100.0),
+                "amount_due": (invoice.get("amount_due", 0) / 100.0),
+                "subtotal": (invoice.get("subtotal", 0) / 100.0),
+                "total": (invoice.get("total", 0) / 100.0),
+                "billing_reason": invoice.get("billing_reason"),
+                "hosted_invoice_url": invoice.get("hosted_invoice_url"),
+                "invoice_pdf": invoice.get("invoice_pdf"),
+                "lines": invoice_lines
+            }
+        }, status=status.HTTP_200_OK)

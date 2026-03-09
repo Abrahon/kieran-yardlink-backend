@@ -46,4 +46,17 @@ urlpatterns = [
     path("subscription/upgrade/", views.UpgradePlanAPIView.as_view(), name="upgrade-plan"),
     path('admin/subscription/<int:subscription_id>/pause/',views. AdminPauseSubscriptionAPIView.as_view(), name='admin-pause-subscription'),
 
+    path(
+        "admin/subscription-users/",
+        views.AdminAllSubscriptionUsersBillingView.as_view(),
+        name="admin-all-subscription-users-billing"
+    ),
+    path(
+        "admin/users/<int:user_id>/billing-summary/",
+        views.AdminUserBillingSummaryView.as_view(),
+        name="admin-user-billing-summary"
+    ),
+
+
+
 ]
