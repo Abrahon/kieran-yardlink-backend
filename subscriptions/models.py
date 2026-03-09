@@ -74,6 +74,8 @@ class Subscription(models.Model):
 
     # 🔹 New field to track auto-renew toggle
     auto_renew = models.BooleanField(default=True)
+    
+    cancelled_at = models.DateTimeField(null=True, blank=True)
 
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)

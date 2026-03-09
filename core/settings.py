@@ -84,7 +84,9 @@ INSTALLED_APPS = [
     'jobs',
     'reviews',
     'payments',
-    'notifications'
+    'notifications',
+    'overview',
+    
 ]
 
 # ------------------------------------------------------------------------------

@@ -251,6 +251,7 @@ def stripe_webhook(request):
             is_trial=False,
             start_date=start,
             end_date=end,
+            updated_at=timezone.now(),
         )
 
     # ================================================
@@ -260,10 +261,12 @@ def stripe_webhook(request):
         invoice = event["data"]["object"]
         subscription_id = invoice.get("subscription")
         if subscription_id:
+
             Subscription.objects.filter(stripe_subscription_id=subscription_id).update(
                 status="past_due",
                 is_active=False,
-                is_trial=False
+                is_trial=False,
+                updated_at=timezone.now(),
             )
 
     # ================================================
@@ -284,17 +287,24 @@ def stripe_webhook(request):
             is_trial=stripe_sub["status"] == "trialing",
             start_date=start,
             end_date=end,
+            updated_at=timezone.now(),
         )
-
     # ================================================
     # 5️⃣ SUBSCRIPTION CANCELED
     # ================================================
+
+
     elif event_type == "customer.subscription.deleted":
         stripe_sub = event["data"]["object"]
-        Subscription.objects.filter(stripe_subscription_id=stripe_sub["id"]).update(
-            status="canceled",
+
+        Subscription.objects.filter(
+            stripe_subscription_id=stripe_sub["id"]
+        ).update(
+            status=SubscriptionStatus.CANCELLED,
             is_active=False,
-            is_trial=False
+            is_trial=False,
+            cancelled_at=timezone.now(),   # ✅ important
+            updated_at=timezone.now()
         )
 
     return HttpResponse(status=200)
@@ -754,43 +764,6 @@ class ExtendSubscriptionView(APIView):
         }, status=200)
 
 
-
-# admin subscriptions views list
-# views.py
-
-# # subscriptions/views.py
-# class SubscriptionListAPIView(APIView):
-#     """
-#     Admin-only API to list subscriptions with:
-#     - search: plan name, user email, or user full name
-#     - filter by plan (partial match): e.g., 'ProPlan' or 'BasicPlan'
-#     """
-#     permission_classes = [IsAuthenticated, IsAdmin]
-
-#     def get(self, request):
-#         search = request.query_params.get("search", "") 
-#         plan_name = request.query_params.get("plan", "")  
-
-#         queryset = Subscription.objects.select_related("user", "plan").order_by("-created_at")
-
-#         # Flexible plan filter (partial match)
-#         if plan_name:
-#             queryset = queryset.filter(plan__name__icontains=plan_name)
-
-#         # Apply search filter (plan name, user email, or user name)
-#         if search:
-#             queryset = queryset.filter(
-#                 Q(plan__name__icontains=search) |
-#                 Q(user__email__icontains=search) |
-#                 Q(user__name__icontains=search)
-#             )
-
-#         serializer = SubscriptionSerializer(queryset, many=True, context={"request": request})
-
-#         return Response({
-#             "count": queryset.count(),
-#             "subscriptions": serializer.data,
-#         }, status=status.HTTP_200_OK)
 
 
 # subscriptions/views.py

@@ -37,6 +37,7 @@ urlpatterns = [
     path("api/qr/", include("qr.urls")),
     path("api/", include("reviews.urls")),
     path("api/", include("payments.urls")),
+    path("api/", include("overview.urls")),
     path("api/", include("notifications.urls")),
 ]
 #

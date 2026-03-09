@@ -17,7 +17,7 @@ from .views import (
     AdminVerifyOTPView,
     AdminUserDetailView,
     AdminLoginActivityListView,
-    AdminUserLoginActivityView
+    AdminUserLoginActivityView,
 
 )
 
@@ -46,6 +46,7 @@ urlpatterns = [
     # login activities
     path("admin/login-activities/", AdminLoginActivityListView.as_view(), name="admin-login-activities"),
     path("admin/users/<int:user_id>/login-activities/", AdminUserLoginActivityView.as_view(), name="admin-user-login-activities"),
+ 
 
 
 

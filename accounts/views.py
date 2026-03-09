@@ -5,6 +5,8 @@ from django.contrib.auth.hashers import check_password
 from urllib.parse import urlencode, unquote
 from .serializers import UserSerializer
 import requests
+from reviews.models import LandscaperReview
+from django.db.models import Sum, Avg, FloatField, Value
 from django.conf import settings
 from django.shortcuts import render, redirect
 from django.contrib.auth import get_user_model
@@ -30,7 +32,7 @@ from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from accounts.models import User, LoginActivity
-
+from accounts.models import LoginActivity  # add at top
 
 from accounts.models import LoginActivity
 
@@ -457,6 +459,7 @@ class ResendForgotOTPView(generics.GenericAPIView):
 #                 "role": user.role   # now correctly shows "client", "landscaper", etc.
 #             }
 #         }, status=201)
+
 class VerifyOTPView(APIView):
     permission_classes = [AllowAny]
 
@@ -613,322 +616,6 @@ class ResendForgotOTPView(generics.GenericAPIView):
 
 # userlist views
 
-# class UserListView(APIView):
-#     permission_classes = [IsAdminUser]
-
-#     def get(self, request):
-#         role = request.query_params.get("role")
-#         plan = request.query_params.get("plan")  # basic | pro
-#         status_param = request.query_params.get("status")  # active | paused
-#         search_query = request.query_params.get("search", "").strip()
-
-#         users = User.objects.all()
-
-#         # --------------------------
-#         # Filters
-#         # --------------------------
-#         if role:
-#             users = users.filter(role=role)
-#         if plan:
-#             users = users.filter(
-#                 subscription__is_active=True,
-#                 subscription__plan__name__iexact=plan
-#             )
-#         if status_param:
-#             if status_param.lower() == "paused":
-#                 users = users.filter(is_active=False)
-#             elif status_param.lower() == "active":
-#                 users = users.filter(is_active=True)
-#         if search_query:
-#             users = users.filter(
-#                 Q(name__icontains=search_query) |
-#                 Q(email__icontains=search_query)
-#             )
-#         users = users.distinct()
-
-#         # --------------------------
-#         # Basic stats
-#         # --------------------------
-#         total_users = User.objects.count()
-#         total_clients = User.objects.filter(role="client").count()
-#         total_landscapers = User.objects.filter(role="landscaper").count()
-#         total_basic_landscapers = User.objects.filter(
-#             role="landscaper",
-#             subscription__is_active=True,
-#             subscription__plan__name__iexact="basic"
-#         ).distinct().count()
-#         total_pro_landscapers = User.objects.filter(
-#             role="landscaper",
-#             subscription__is_active=True,
-#             subscription__plan__name__iexact="pro"
-#         ).distinct().count()
-#         paused_users = User.objects.filter(is_active=False).count()
-#         active_users = User.objects.filter(is_active=True).count()
-#         last_24h = timezone.now() - timedelta(hours=24)
-#         daily_active_users = User.objects.filter(last_login__gte=last_24h).count()
-
-#         # --------------------------
-#         # Active / Inactive ratio
-#         # --------------------------
-#         if total_users > 0:
-#             active_ratio = round((active_users / total_users) * 100, 2)
-#             inactive_ratio = round((paused_users / total_users) * 100, 2)
-#         else:
-#             active_ratio = inactive_ratio = 0
-
-#         # --------------------------
-#         # Daily average users
-#         # --------------------------
-#         first_user = User.objects.order_by("date_joined").first()
-#         if first_user:
-#             days_active = max((timezone.now() - first_user.date_joined).days, 1)
-#             daily_average_users = round(total_users / days_active, 2)
-#         else:
-#             daily_average_users = 0
-
-#         # --------------------------
-#         # New signups weekly & total
-#         # --------------------------
-#         one_week_ago = timezone.now() - timedelta(days=7)
-#         weekly_new_users = User.objects.filter(date_joined__gte=one_week_ago).count()
-#         total_new_users = total_users
-
-#         # --------------------------
-#         # Active subscriptions & jobs
-#         # --------------------------
-#         active_subscriptions_count = Subscription.objects.filter(
-#             user__in=users, status=SubscriptionStatus.ACTIVE
-#         ).count()
-#         active_jobs_count = ServiceSchedule.objects.filter(
-#             is_completed=False, landscaper__user__in=users
-#         ).count()
-
-#         # --------------------------
-#         # Platform fees (2% from paid jobs)
-#         # --------------------------
-#         paid_jobs = ServiceSchedule.objects.filter(payment_status=PaymentStatus.PAID)
-#         total_job_amount = paid_jobs.aggregate(
-#             total=Sum('service__price', output_field=FloatField())
-#         )['total'] or 0.0
-#         job_platform_fee = round(total_job_amount * 0.02, 2)
-
-#         # --------------------------
-#         # Serialize users
-#         # --------------------------
-#         serializer = UserSerializer(users, many=True, context={"request": request})
-
-#         return Response({
-#             "status": "success",
-#             "summary": {
-#                 "total_users": total_users,
-#                 "total_clients": total_clients,
-#                 "total_landscapers": total_landscapers,
-#                 "basic_landscapers": total_basic_landscapers,
-#                 "pro_landscapers": total_pro_landscapers,
-#                 "paused_users": paused_users,
-#                 "active_users": active_users,
-#                 "active_ratio": active_ratio,
-#                 "inactive_ratio": inactive_ratio,
-#                 "daily_active_users": daily_active_users,
-#                 "daily_average_users": daily_average_users,
-#                 "weekly_new_signups": weekly_new_users,
-#                 "total_new_signups": total_new_users,
-#                 "active_subscriptions": active_subscriptions_count,
-#                 "active_jobs": active_jobs_count,
-#                 "platform_fee_collected": job_platform_fee
-#             },
-#             "data": serializer.data,
-#         }, status=200)
-
-# from django.db.models import (
-#     Q,
-#     Count,
-#     Sum,
-#     Avg,
-#     FloatField
-# )
-# from django.utils import timezone
-# from datetime import timedelta
-
-# from rest_framework.views import APIView
-# from rest_framework.permissions import IsAdminUser
-# from rest_framework.response import Response
-# from rest_framework.pagination import PageNumberPagination
-
-# class UserListView(APIView):
-#     permission_classes = [IsAdminUser]
-
-#     def get(self, request):
-
-#         role = request.query_params.get("role")
-#         plan = request.query_params.get("plan")
-#         status_param = request.query_params.get("status")
-#         location = request.query_params.get("location")
-#         search_query = request.query_params.get("search", "").strip()
-#         sort_by = request.query_params.get("sort")
-
-#         users = User.objects.all()
-
-#         # --------------------------------
-#         # FILTERS
-#         # --------------------------------
-
-#         if role:
-#             users = users.filter(role__iexact=role)
-
-#         if plan:
-#             users = users.filter(
-#                 subscription__is_active=True,
-#                 subscription__plan__name__iexact=plan
-#             )
-
-#         if status_param:
-#             if status_param.lower() == "paused":
-#                 users = users.filter(is_active=False)
-#             elif status_param.lower() == "active":
-#                 users = users.filter(is_active=True)
-
-#         if location:
-#             users = users.filter(address__icontains=location)
-
-#         # --------------------------------
-#         # GLOBAL SEARCH
-#         # --------------------------------
-
-#         if search_query:
-#             users = users.filter(
-#                 Q(name__icontains=search_query) |
-#                 Q(email__icontains=search_query) |
-#                 Q(role__icontains=search_query) |
-#                 Q(address__icontains=search_query) |
-#                 Q(subscription__plan__name__icontains=search_query) |
-#                 Q(subscription__status__icontains=search_query)
-#             )
-
-#         # --------------------------------
-#         # ANNOTATIONS (metrics)
-#         # --------------------------------
-
-#         users = users.annotate(
-
-#             total_clients=Count(
-#                 "landscaper_jobs__client",
-#                 distinct=True
-#             ),
-
-#             total_jobs=Count(
-#                 "landscaper_jobs",
-#                 distinct=True
-#             ),
-
-#             total_revenue=Sum(
-#                 "landscaper_jobs__service__price",
-#                 output_field=FloatField()
-#             ),
-
-#             average_rating=Avg(
-#                 "reviews__rating"
-#             )
-#         )
-
-#         # --------------------------------
-#         # SORTING
-#         # --------------------------------
-
-#         if sort_by == "revenue":
-#             users = users.order_by("-total_revenue")
-
-#         elif sort_by == "clients":
-#             users = users.order_by("-total_clients")
-
-#         elif sort_by == "rating":
-#             users = users.order_by("-average_rating")
-
-#         elif sort_by == "jobs":
-#             users = users.order_by("-total_jobs")
-
-#         elif sort_by == "newest":
-#             users = users.order_by("-date_joined")
-
-#         users = users.distinct()
-
-#         # --------------------------------
-#         # PAGINATION
-#         # --------------------------------
-
-#         paginator = PageNumberPagination()
-#         paginator.page_size = 20
-
-#         page = paginator.paginate_queryset(users, request)
-
-#         serializer = UserSerializer(
-#             page,
-#             many=True,
-#             context={"request": request}
-#         )
-
-#         # --------------------------------
-#         # DASHBOARD SUMMARY
-#         # --------------------------------
-
-#         total_users = User.objects.count()
-
-#         total_clients = User.objects.filter(
-#             role="client"
-#         ).count()
-
-#         total_landscapers = User.objects.filter(
-#             role="landscaper"
-#         ).count()
-
-#         paused_users = User.objects.filter(
-#             is_active=False
-#         ).count()
-
-#         active_users = User.objects.filter(
-#             is_active=True
-#         ).count()
-
-#         last_24h = timezone.now() - timedelta(hours=24)
-
-#         daily_active_users = User.objects.filter(
-#             last_login__gte=last_24h
-#         ).count()
-
-#         # Weekly new signups
-#         one_week_ago = timezone.now() - timedelta(days=7)
-
-#         weekly_new_users = User.objects.filter(
-#             date_joined__gte=one_week_ago
-#         ).count()
-
-#         # Platform fees from jobs
-#         paid_jobs = ServiceSchedule.objects.filter(
-#             payment_status=PaymentStatus.PAID
-#         )
-
-#         total_job_amount = paid_jobs.aggregate(
-#             total=Sum("service__price", output_field=FloatField())
-#         )["total"] or 0.0
-
-#         platform_fee = round(total_job_amount * 0.02, 2)
-
-#         return paginator.get_paginated_response({
-
-#             "summary": {
-
-#                 "total_users": total_users,
-#                 "total_clients": total_clients,
-#                 "total_landscapers": total_landscapers,
-#                 "active_users": active_users,
-#                 "paused_users": paused_users,
-#                 "daily_active_users": daily_active_users,
-#                 "weekly_new_signups": weekly_new_users,
-#                 "platform_fee_collected": platform_fee
-#             },
-
-#             "data": serializer.data
-#         })
 
 from datetime import timedelta
 from django.db.models import (
@@ -946,7 +633,7 @@ from accounts.models import User
 from accounts.serializers import UserSerializer
 from subscriptions.models import Subscription, SubscriptionStatus
 from services.models import ServiceSchedule, PaymentStatus
-from landscapers.models import BusinessProfile   # adjust import if needed
+from landscapers.models import BusinessProfile
 
 
 class UserListView(APIView):
@@ -966,7 +653,6 @@ class UserListView(APIView):
         # --------------------------
         # FILTERS
         # --------------------------
-
         if role:
             users = users.filter(role__iexact=role)
 
@@ -988,7 +674,6 @@ class UserListView(APIView):
         # --------------------------
         # GLOBAL SEARCH
         # --------------------------
-
         if search_query:
             users = users.filter(
                 Q(name__icontains=search_query) |
@@ -1004,7 +689,6 @@ class UserListView(APIView):
         # ==========================================================
         # Subqueries using BusinessProfile
         # ==========================================================
-
         business_profile_sq = BusinessProfile.objects.filter(
             user=OuterRef("pk")
         ).values("id")[:1]
@@ -1045,26 +729,20 @@ class UserListView(APIView):
         # --------------------------
         # SORTING
         # --------------------------
-
         if sort_by == "revenue":
             users = users.order_by("-total_revenue", "-date_joined")
-
         elif sort_by == "clients":
             users = users.order_by("-total_clients", "-date_joined")
-
         elif sort_by == "jobs":
             users = users.order_by("-total_jobs", "-date_joined")
-
         elif sort_by == "newest":
             users = users.order_by("-date_joined")
-
         else:
             users = users.order_by("-date_joined")
 
         # --------------------------
         # SUMMARY
         # --------------------------
-
         total_users = User.objects.count()
 
         total_clients = User.objects.filter(
@@ -1109,10 +787,31 @@ class UserListView(APIView):
             status=SubscriptionStatus.ACTIVE
         ).count()
 
+        cancelled_subscriptions = Subscription.objects.filter(
+            status=SubscriptionStatus.CANCELLED
+        ).count()
+
+        expired_subscriptions = Subscription.objects.filter(
+            status=SubscriptionStatus.EXPIRED
+        ).count()
+
+        total_subscription_pool = (
+            active_subscriptions +
+            cancelled_subscriptions +
+            expired_subscriptions
+        )
+
+        if total_subscription_pool > 0:
+            churn_rate = round(
+                ((cancelled_subscriptions + expired_subscriptions) / total_subscription_pool) * 100,
+                2
+            )
+        else:
+            churn_rate = 0.0
+
         # --------------------------
         # PAGINATION
         # --------------------------
-
         paginator = PageNumberPagination()
         paginator.page_size = 20
 
@@ -1121,11 +820,8 @@ class UserListView(APIView):
         serializer = UserSerializer(page, many=True, context={"request": request})
 
         return paginator.get_paginated_response({
-
             "status": "success",
-
             "summary": {
-
                 "total_users": total_users,
                 "total_clients": total_clients,
                 "total_landscapers": total_landscapers,
@@ -1134,9 +830,11 @@ class UserListView(APIView):
                 "daily_active_users": daily_active_users,
                 "weekly_new_signups": weekly_new_signups,
                 "active_subscriptions": active_subscriptions,
+                "cancelled_subscriptions": cancelled_subscriptions,
+                "expired_subscriptions": expired_subscriptions,
+                "churn_rate": churn_rate,
                 "platform_fee_collected": platform_fee_collected
             },
-
             "data": serializer.data
         })
 
@@ -1418,7 +1116,7 @@ class AdminUserDetailView(APIView):
                 "address": user.address,
             }
         
-        from accounts.models import LoginActivity  # add at top
+        
 
 
         # -------------------------
@@ -1439,7 +1137,6 @@ class AdminUserDetailView(APIView):
             "user_agent": x.user_agent,
             "created_at": x.created_at,
         } for x in login_qs]
-
         # -------------------------
         # Landscaper Profile info (jobs metrics)
         # -------------------------
@@ -1450,22 +1147,35 @@ class AdminUserDetailView(APIView):
         completed_jobs = 0
         pending_jobs = 0
         total_clients = 0
+        total_connected_clients = 0
+        total_reviews = 0
+        average_rating = 0.0
         recent_jobs = []
 
         if landscaper_profile:
-            # ✅ FIX: filter by LandscaperProfilies instance
             jobs_qs = ServiceSchedule.objects.filter(landscaper=landscaper_profile)
 
             total_jobs = jobs_qs.count()
             completed_jobs = jobs_qs.filter(is_completed=True).count()
             pending_jobs = jobs_qs.filter(is_completed=False).count()
+
+            # distinct clients from jobs
             total_clients = jobs_qs.values("client_id").distinct().count()
+            total_connected_clients = total_clients
 
             total_revenue = jobs_qs.filter(
                 payment_status=PaymentStatus.PAID
             ).aggregate(
                 total=Coalesce(Sum("service__price", output_field=FloatField()), Value(0.0))
             )["total"] or 0.0
+
+            # reviews are linked to User, not profile
+            reviews_qs = LandscaperReview.objects.filter(landscaper=user)
+            total_reviews = reviews_qs.count()
+
+            average_rating = reviews_qs.aggregate(
+                avg=Coalesce(Avg("rating", output_field=FloatField()), Value(0.0))
+            )["avg"] or 0.0
 
             recent_jobs_qs = (
                 jobs_qs.select_related("service", "client")
@@ -1488,8 +1198,8 @@ class AdminUserDetailView(APIView):
                     "client_id": client_user.id if client_user else None,
                     "client_name": client_user.name if client_user else None,
                     "client_email": client_user.email if client_user else None,
-                    
                 })
+
 
         # -------------------------
         # Recent audit logs
@@ -1519,6 +1229,9 @@ class AdminUserDetailView(APIView):
             "completed_jobs": completed_jobs,
             "pending_jobs": pending_jobs,
             "total_clients": total_clients,
+            "total_connected_clients": total_connected_clients,
+            "total_reviews": total_reviews,
+            "average_rating": round(float(average_rating), 2),
             "recent_jobs": recent_jobs,
             "recent_audit_logs": recent_audit_logs,
             "login_activity": login_activity,
@@ -1576,10 +1289,9 @@ class AdminUserDetailView(APIView):
         }, status=status.HTTP_200_OK)
 
 
-# login activities 
+
+
 # accounts/admin_security_views.py
-
-
 class AdminLoginActivityListView(APIView):
     permission_classes = [IsAdminUser]
 
