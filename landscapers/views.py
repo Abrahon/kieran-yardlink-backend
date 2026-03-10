@@ -216,159 +216,7 @@ class ServiceDetailView(generics.RetrieveUpdateDestroyAPIView):
         )
 
 
-
-class LandscaperFind(generics.ListAPIView):
-    """
-    Search and filter landscapers (BUSINESS PROFILES)
-    Optional query params:
-    - name: business name (partial match)
-    - city: filter by city
-    - service: filter by service ID
-    - previous_work: 'true' → landscapers client worked with
-    """
-    serializer_class = BusinessLandscaperProfileSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_queryset(self):
-        queryset = LandscaperProfile.objects.all()
-        user = self.request.user
-        params = self.request.query_params
-
-        #  Filter by BUSINESS NAME
-        name = params.get("name")
-        if name:
-            queryset = queryset.filter(
-                business_name__icontains=name
-            )
-
-        #  Filter by city
-        city = params.get("city")
-        if city:
-            queryset = queryset.filter(
-                city__icontains=city
-            )
-
-        # 🛠 Filter by service ID
-        service_id = params.get("service")
-        if service_id:
-            queryset = queryset.filter(
-                services__id=service_id
-            )
-
-        #  Filter by previous work
-        prev_work = params.get("previous_work")
-        if prev_work and prev_work.lower() == "true":
-            worked_landscaper_ids = ServiceBooking.objects.filter(
-                client=user,
-                status=BookingStatus.COMPLETED
-            ).values_list("landscaper_id", flat=True)
-
-            queryset = queryset.filter(
-                id__in=worked_landscaper_ids
-            )
-
-        return queryset.distinct()
-
-
-# set working hours for landscapers
-class WorkingHoursListCreateView(generics.ListCreateAPIView):
-    serializer_class = WorkingHoursSerializer
-    permission_classes = [IsAuthenticated, IsLandscaper]  
-
-    def get_queryset(self):
-        profile = BusinessProfile.objects.filter(
-            user=self.request.user
-        ).first()
-
-        if not profile:
-            return WorkingHours.objects.none()
-
-        return (
-            WorkingHours.objects
-            .filter(landscaper=profile)
-            .order_by("day")
-        )
-
-    def create(self, request, *args, **kwargs):
-        """
-        ✅ BASIC & PRO BOTH can create working hours
-        """
-        try:
-            profile = BusinessProfile.objects.get(user=request.user)
-        except BusinessProfile.DoesNotExist:
-            return Response(
-                {"detail": "Business profile not found."},
-                status=status.HTTP_404_NOT_FOUND
-            )
-
-        VALID_DAYS = [choice[0] for choice in DAYS_OF_WEEK]
-        data = request.data
-
-        created_hours = []
-        errors = []
-
-        if not isinstance(data, dict):
-            return Response(
-                {"detail": "Payload must be an object."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        days = data.get("days")
-        start_time = data.get("start_time")
-        end_time = data.get("end_time")
-
-        if not isinstance(days, list) or not days:
-            return Response(
-                {"detail": "`days` must be a non-empty list."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        if not start_time or not end_time:
-            return Response(
-                {"detail": "start_time and end_time are required."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        if start_time >= end_time:
-            return Response(
-                {"detail": "start_time must be before end_time."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        for day in days:
-            if day not in VALID_DAYS:
-                errors.append({"day": day, "detail": "Invalid day"})
-                continue
-
-            if WorkingHours.objects.filter(
-                landscaper=profile,
-                day=day
-            ).exists():
-                errors.append({
-                    "day": day,
-                    "detail": "Working hours already exist for this day"
-                })
-                continue
-
-            created_hours.append(
-                WorkingHours.objects.create(
-                    landscaper=profile,
-                    day=day,
-                    start_time=start_time,
-                    end_time=end_time
-                )
-            )
-
-        serializer = self.get_serializer(created_hours, many=True)
-
-        return Response(
-            {
-                "created_hours": serializer.data,
-                "errors": errors
-            },
-            status=status.HTTP_201_CREATED if created_hours else status.HTTP_400_BAD_REQUEST
-        )
-        
+       
 
 class ClientCustomServiceListCreateView(generics.ListCreateAPIView):
     serializer_class = ClientCustomServiceSerializer
@@ -664,6 +512,159 @@ class AddonDetailView(generics.RetrieveUpdateDestroyAPIView):
             status=status.HTTP_200_OK
         )
 
+
+class LandscaperFind(generics.ListAPIView):
+    """
+    Search and filter landscapers (BUSINESS PROFILES)
+    Optional query params:
+    - name: business name (partial match)
+    - city: filter by city
+    - service: filter by service ID
+    - previous_work: 'true' → landscapers client worked with
+    """
+    serializer_class = BusinessLandscaperProfileSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = LandscaperProfile.objects.all()
+        user = self.request.user
+        params = self.request.query_params
+
+        #  Filter by BUSINESS NAME
+        name = params.get("name")
+        if name:
+            queryset = queryset.filter(
+                business_name__icontains=name
+            )
+
+        #  Filter by city
+        city = params.get("city")
+        if city:
+            queryset = queryset.filter(
+                city__icontains=city
+            )
+
+        # 🛠 Filter by service ID
+        service_id = params.get("service")
+        if service_id:
+            queryset = queryset.filter(
+                services__id=service_id
+            )
+
+        #  Filter by previous work
+        prev_work = params.get("previous_work")
+        if prev_work and prev_work.lower() == "true":
+            worked_landscaper_ids = ServiceBooking.objects.filter(
+                client=user,
+                status=BookingStatus.COMPLETED
+            ).values_list("landscaper_id", flat=True)
+
+            queryset = queryset.filter(
+                id__in=worked_landscaper_ids
+            )
+
+        return queryset.distinct()
+
+
+# set working hours for landscapers
+class WorkingHoursListCreateView(generics.ListCreateAPIView):
+    serializer_class = WorkingHoursSerializer
+    permission_classes = [IsAuthenticated, IsLandscaper]  
+
+    def get_queryset(self):
+        profile = BusinessProfile.objects.filter(
+            user=self.request.user
+        ).first()
+
+        if not profile:
+            return WorkingHours.objects.none()
+
+        return (
+            WorkingHours.objects
+            .filter(landscaper=profile)
+            .order_by("day")
+        )
+
+    def create(self, request, *args, **kwargs):
+        """
+        ✅ BASIC & PRO BOTH can create working hours
+        """
+        try:
+            profile = BusinessProfile.objects.get(user=request.user)
+        except BusinessProfile.DoesNotExist:
+            return Response(
+                {"detail": "Business profile not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        VALID_DAYS = [choice[0] for choice in DAYS_OF_WEEK]
+        data = request.data
+
+        created_hours = []
+        errors = []
+
+        if not isinstance(data, dict):
+            return Response(
+                {"detail": "Payload must be an object."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        days = data.get("days")
+        start_time = data.get("start_time")
+        end_time = data.get("end_time")
+
+        if not isinstance(days, list) or not days:
+            return Response(
+                {"detail": "`days` must be a non-empty list."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not start_time or not end_time:
+            return Response(
+                {"detail": "start_time and end_time are required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if start_time >= end_time:
+            return Response(
+                {"detail": "start_time must be before end_time."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        for day in days:
+            if day not in VALID_DAYS:
+                errors.append({"day": day, "detail": "Invalid day"})
+                continue
+
+            if WorkingHours.objects.filter(
+                landscaper=profile,
+                day=day
+            ).exists():
+                errors.append({
+                    "day": day,
+                    "detail": "Working hours already exist for this day"
+                })
+                continue
+
+            created_hours.append(
+                WorkingHours.objects.create(
+                    landscaper=profile,
+                    day=day,
+                    start_time=start_time,
+                    end_time=end_time
+                )
+            )
+
+        serializer = self.get_serializer(created_hours, many=True)
+
+        return Response(
+            {
+                "created_hours": serializer.data,
+                "errors": errors
+            },
+            status=status.HTTP_201_CREATED if created_hours else status.HTTP_400_BAD_REQUEST
+        )
+ 
 
 
 # 4️⃣ Toggle active/inactive
