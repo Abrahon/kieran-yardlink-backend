@@ -163,19 +163,30 @@ class ServiceListCreateView(generics.ListCreateAPIView):
         return Service.objects.filter(business=business)
 
     def perform_create(self, serializer):
-        business, _ = BusinessProfile.objects.get_or_create(user=self.request.user)
+        # Get the logged-in landscaper's business profile
+        business = getattr(self.request.user, "landscaper_profile", None)
+        if not business:
+            raise PermissionDenied("You must have a business profile to create services.")
+
+        # Save service with the business automatically
+        serializer.save(business=business)
+
+        landscaper_id = self.request.data.get("landscaper")
+
         try:
-            with transaction.atomic():
-                serializer.save(business=business)
-        except IntegrityError as e:
-            if "unique_service_per_business" in str(e):
-                raise ValidationError({
-                    "name": "A service with this name already exists for your business."
-                })
-            raise ValidationError({"detail": "Service creation failed."})
+            landscaper = BusinessProfile.objects.get(id=landscaper_id)
+        except BusinessProfile.DoesNotExist:
+            raise ValidationError({"landscaper": "Invalid landscaper."})
+
+        serializer.save(
+            client=client,
+            landscaper=landscaper,
+            status="pending",
+            price=None
+        )
 
 
-# update custome service
+
 
 from django.db import transaction
 
@@ -217,7 +228,7 @@ class ServiceDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 
        
-
+# custom service
 class ClientCustomServiceListCreateView(generics.ListCreateAPIView):
     serializer_class = ClientCustomServiceSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -303,32 +314,26 @@ def client_confirm_service(request, pk):
 
 # landscapers
 # client see the custom service
-class LandscaperCustomServiceListView(generics.ListAPIView):
+class LandscaperCustomServicePendingListView(generics.ListAPIView):
     """
-    GET: List all active client custom service requests
-    for the authenticated landscaper to view.
-    Shows pending requests.
+    GET: List all active pending client custom service requests
+    for the authenticated landscaper.
     """
     serializer_class = ClientCustomServiceSerializer
     permission_classes = [IsLandscaper]
 
     def get_queryset(self):
-        # Optional: check if user has a profile
-        try:
-            self.request.user.landscaper_profile
-        except BusinessProfile.DoesNotExist:
+        landscaper = getattr(self.request.user, "landscaper_profile", None)
+        if not landscaper:
             return ClientCustomService.objects.none()
-
         return ClientCustomService.objects.filter(
             is_active=True,
-            status="pending"  # only pending requests
+            status="pending"
         ).order_by("-created_at")
 
 
 
 # accepet client custom service landscaper
-
-
 
 @api_view(["PATCH"])
 @permission_classes([IsLandscaper])
@@ -401,7 +406,6 @@ def landscaper_accept_service(request, pk):
         },
         status=status.HTTP_200_OK
     )
-
 
 # active inactive
 
@@ -477,6 +481,8 @@ class AddonListCreateView(generics.ListCreateAPIView):
             raise serializers.ValidationError({"error": "Landscaper profile not found."})
 
         serializer.save(business=business)
+
+        
 
 class AddonDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = AddonSerializer

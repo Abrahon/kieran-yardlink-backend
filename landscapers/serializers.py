@@ -168,39 +168,6 @@ class ServiceSerializer(serializers.ModelSerializer):
         return attrs  
 
 
-
-# class ClientCustomServiceSerializer(serializers.ModelSerializer):
-#     client = serializers.ReadOnlyField(source="client.id")
-#     price = serializers.DecimalField(
-#         max_digits=10,
-#         decimal_places=2,
-#         required=False,    # <--- make optional
-#         allow_null=True    # <--- allow null
-#     )
-
-#     class Meta:
-#         model = ClientCustomService
-#         fields = [
-#             "id", "client", "name", "description",
-#             "price", "status","note" ,"is_active", "created_at", "updated_at",
-#         ]
-#         read_only_fields = ["id", "client", "created_at", "updated_at", "status"]
-
-#     def validate_note(self, value):
-#         if not value.strip():
-#             raise serializers.ValidationError("Note is required.")
-#         return value
-
-#     def validate_name(self, value):
-#         value = value.strip()
-#         if not value:
-#             raise serializers.ValidationError("Service name cannot be empty.")
-#         return value
-
-#     def validate_price(self, value):
-#         if value is not None and value < 0:
-#             raise serializers.ValidationError("Price must be zero or positive.")
-#         return value
 from rest_framework import serializers
 from django.db import IntegrityError
 from .models import ClientCustomService
@@ -214,6 +181,7 @@ class ClientCustomServiceSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "client",
+            "landscaper",
             "name",
             "description",
             "note",
@@ -236,20 +204,26 @@ class ClientCustomServiceSerializer(serializers.ModelSerializer):
         value = value.strip()
 
         if not value:
-            raise serializers.ValidationError("Service name cannot be empty.")
+            raise serializers.ValidationError(
+                "Service name cannot be empty."
+            )
 
         request = self.context.get("request")
         client = getattr(request.user, "clientprofile", None)
 
-        if client:
+        landscaper = self.initial_data.get("landscaper")
+
+        if client and landscaper:
+
             exists = ClientCustomService.objects.filter(
                 client=client,
+                landscaper_id=landscaper,
                 name__iexact=value
             ).exists()
 
             if exists:
                 raise serializers.ValidationError(
-                    "You already have a custom service with this name."
+                    "You already requested this service from this landscaper."
                 )
 
         return value

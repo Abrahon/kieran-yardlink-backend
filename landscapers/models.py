@@ -172,12 +172,19 @@ class Service(models.Model):
         ]
 
     def clean(self):
-        # Fixed → base_price required
-        if self.pricing_type == self.PricingType.FIXED and self.base_price is None:
-            raise ValidationError("Fixed pricing requires base_price.")
-        # Request → base_price must be empty
-        if self.pricing_type == self.PricingType.REQUEST and self.base_price is not None:
-            raise ValidationError("Request pricing should not have base_price.")
+
+        if self.pricing_type == self.PricingType.FIXED:
+            if self.base_price is None:
+                raise ValidationError("Fixed pricing requires base_price.")
+
+        if self.pricing_type == self.PricingType.REQUEST:
+            if self.base_price is not None:
+                raise ValidationError("Request pricing should not have base_price.")
+
+            if self.min_price is None:
+                raise ValidationError(
+                    "Priced upon request services should have a minimum price."
+                )
 
     def __str__(self):
         return f"{self.name} ({self.business.business_name})"
@@ -190,6 +197,12 @@ class ClientCustomService(models.Model):
         "profiles.ClientProfile",
         on_delete=models.CASCADE,
         related_name="custom_services"
+    )
+
+    landscaper = models.ForeignKey(
+        BusinessProfile,
+        on_delete=models.CASCADE,
+        related_name="received_custom_requests",
     )
 
     name = models.CharField(
@@ -229,7 +242,7 @@ class ClientCustomService(models.Model):
         default="pending",
         help_text="Track landscaper response to the service"
     )
-    note = models.TextField() 
+    note = models.TextField(blank=True, null=True)
 
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
@@ -238,12 +251,13 @@ class ClientCustomService(models.Model):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["client"]),
+            models.Index(fields=["landscaper"]),
             models.Index(fields=["status"]),
         ]
         constraints = [
             models.UniqueConstraint(
-                fields=["client", "name"],
-                name="unique_custom_service_per_client"
+                fields=["client", "landscaper", "name"],
+                name="unique_custom_service_per_landscaper"
             )
         ]
 
@@ -277,13 +291,20 @@ class Addon(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ["name"]
+        ordering = ["created_at"]
         constraints = [
             models.UniqueConstraint(
                 fields=["business", "name"],
                 name="unique_addon_per_business"
             )
         ]
+    def clean(self):
+
+        for service in self.applicable_services.all():
+            if service.business != self.business:
+                raise ValidationError(
+                    "Addon can only be attached to services of the same business."
+                )
 
     def __str__(self):
         return f"{self.name} ({self.business.business_name})"
@@ -304,7 +325,6 @@ DAYS_OF_WEEK = [
     ('FRIDAY', 'Friday'),
     ('SATURDAY', 'Saturday'),
 ]
-
 
 class WorkingHours(models.Model):
     landscaper = models.ForeignKey(

@@ -18,7 +18,7 @@ from .views import (
     # ClientCustomServiceDeleteView,
     toggle_client_custom_service_active,
     ClientCustomServiceListCreateView,
-    LandscaperCustomServiceListView,
+    LandscaperCustomServicePendingListView,
     client_confirm_service,
     landscaper_accept_service,
 
@@ -49,7 +49,7 @@ urlpatterns = [
     path('client/custom-services/<int:pk>/toggle/', toggle_client_custom_service_active, name='toggle-client-custom-service'),
     
     # List all client custom services for landscaper (filter by status if needed)
-    path('landscaper/custom-service-requests/',LandscaperCustomServiceListView.as_view(), name='landscaper-custom-service-list'),
+    path('landscaper/custom-service-requests/',LandscaperCustomServicePendingListView.as_view(), name='landscaper-custom-service-list'),
     # Accept a pending service
     path('landscaper/custom-service-requests/<int:pk>/',landscaper_accept_service,name="landscaper-accept-custom-service"),
 
