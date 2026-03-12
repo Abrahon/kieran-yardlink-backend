@@ -23,6 +23,7 @@ class BusinessLandscaperProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = BusinessProfile
         fields = [
+            "id",
             "business_name",
             "business_email",
             "business_phone",
@@ -169,7 +170,6 @@ class ServiceSerializer(serializers.ModelSerializer):
 
 
 from rest_framework import serializers
-from django.db import IntegrityError
 from .models import ClientCustomService
 
 
@@ -190,14 +190,17 @@ class ClientCustomServiceSerializer(serializers.ModelSerializer):
             "is_active",
             "created_at",
             "updated_at",
+            # "booking",   # ✅ include only if you add booking field in model
         ]
         read_only_fields = [
             "id",
             "client",
             "created_at",
             "updated_at",
-            "status",
-            "price",
+            "status",   # ✅ client should not manually set status
+            "price",    # ✅ client should not manually set price
+            "is_active" # ✅ better to keep controlled by backend
+            # "booking", # ✅ read-only if added
         ]
 
     def validate_name(self, value):
@@ -208,26 +211,48 @@ class ClientCustomServiceSerializer(serializers.ModelSerializer):
                 "Service name cannot be empty."
             )
 
-        request = self.context.get("request")
-        client = getattr(request.user, "clientprofile", None)
-
-        landscaper = self.initial_data.get("landscaper")
-
-        if client and landscaper:
-
-            exists = ClientCustomService.objects.filter(
-                client=client,
-                landscaper_id=landscaper,
-                name__iexact=value
-            ).exists()
-
-            if exists:
-                raise serializers.ValidationError(
-                    "You already requested this service from this landscaper."
-                )
-
         return value
 
+    def validate(self, attrs):
+        """
+        ✅ Use object-level validation because duplicate check depends on:
+        - client from request.user
+        - landscaper from request data
+        - name from request data
+        """
+        request = self.context.get("request")
+        client = getattr(request.user, "clientprofile", None) if request else None
+
+        landscaper = attrs.get("landscaper")
+        name = attrs.get("name")
+
+        if not client:
+            raise serializers.ValidationError({
+                "client": "Client profile not found."
+            })
+
+        if not landscaper:
+            raise serializers.ValidationError({
+                "landscaper": "Landscaper is required."
+            })
+
+        # ✅ Prevent duplicate request with same name for same landscaper
+        queryset = ClientCustomService.objects.filter(
+            client=client,
+            landscaper=landscaper,
+            name__iexact=name.strip()
+        )
+
+        # ✅ Important for update case: exclude current instance
+        if self.instance:
+            queryset = queryset.exclude(pk=self.instance.pk)
+
+        if queryset.exists():
+            raise serializers.ValidationError({
+                "name": "You already requested this service from this landscaper."
+            })
+
+        return attrs
 
 class AddonSerializer(serializers.ModelSerializer):
     business = serializers.ReadOnlyField(source="business.id")

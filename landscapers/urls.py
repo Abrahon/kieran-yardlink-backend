@@ -42,16 +42,17 @@ urlpatterns = [
     path('services/<int:pk>/toggle/', toggle_service_active, name='toggle-service-active'),
 
     # custom service
-    path('client/custom-services/', ClientCustomServiceListCreateView.as_view(), name='client-custom-services'),
-    path('client/custom-services/<int:pk>/', ClientCustomServiceRetrieveDestroyView.as_view(), name='client-custom-service-update'),
-    path("client/custom-services/<int:pk>/confirm/",client_confirm_service, name="client-custom-service-confirm"),
-
-    path('client/custom-services/<int:pk>/toggle/', toggle_client_custom_service_active, name='toggle-client-custom-service'),
-    
+    path('client/custom-services/', ClientCustomServiceListCreateView.as_view(), name="client-custom-service-list-create"),
+    path('client/custom-services/<int:pk>/', ClientCustomServiceRetrieveDestroyView.as_view(), name="client-custom-service-detail"),
+    path("client/custom-services/<int:pk>/confirm/",client_confirm_service, name="client-confirm-service"),
     # List all client custom services for landscaper (filter by status if needed)
     path('landscaper/custom-service-requests/',LandscaperCustomServicePendingListView.as_view(), name='landscaper-custom-service-list'),
     # Accept a pending service
-    path('landscaper/custom-service-requests/<int:pk>/',landscaper_accept_service,name="landscaper-accept-custom-service"),
+    path('landscaper/custom-service-requests/<int:pk>/accept/',landscaper_accept_service,name="landscaper-accept-custom-service"),
+
+
+    path('client/custom-services/<int:pk>/toggle/', toggle_client_custom_service_active, name='toggle-client-custom-service'),
+
 
     # add ons
     path("addons/", AddonListCreateView.as_view(), name="addon-list-create"),

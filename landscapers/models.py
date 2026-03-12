@@ -190,6 +190,11 @@ class Service(models.Model):
         return f"{self.name} ({self.business.business_name})"
 
 
+from django.db import models
+from django.utils import timezone
+from django.core.validators import MinValueValidator
+
+
 
 
 class ClientCustomService(models.Model):
@@ -199,6 +204,7 @@ class ClientCustomService(models.Model):
         related_name="custom_services"
     )
 
+    # ✅ Keep landscaper required because client selects landscaper at request time
     landscaper = models.ForeignKey(
         BusinessProfile,
         on_delete=models.CASCADE,
@@ -216,12 +222,18 @@ class ClientCustomService(models.Model):
         help_text="Service description"
     )
 
+    note = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    # ✅ price stays nullable because landscaper sets it later
     price = models.DecimalField(
         max_digits=10,
         decimal_places=2,
         validators=[MinValueValidator(0)],
-        null=True,    # <-- allow null in DB
-        blank=True    
+        null=True,
+        blank=True
     )
 
     is_active = models.BooleanField(
@@ -240,9 +252,18 @@ class ClientCustomService(models.Model):
         max_length=10,
         choices=STATUS_CHOICES,
         default="pending",
-        help_text="Track landscaper response to the service"
+        help_text="Track custom service flow"
     )
-    note = models.TextField(blank=True, null=True)
+
+    # ✅ optional: store created booking after client confirms
+    # Uncomment only if you want direct relation with Booking model
+    # booking = models.OneToOneField(
+    #     "bookings.Booking",
+    #     on_delete=models.SET_NULL,
+    #     null=True,
+    #     blank=True,
+    #     related_name="custom_service_request"
+    # )
 
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
@@ -255,6 +276,8 @@ class ClientCustomService(models.Model):
             models.Index(fields=["status"]),
         ]
         constraints = [
+            # ✅ good constraint: same client cannot request same named service
+            # from same landscaper more than once
             models.UniqueConstraint(
                 fields=["client", "landscaper", "name"],
                 name="unique_custom_service_per_landscaper"
