@@ -477,10 +477,96 @@ class ClientCustomServiceRetrieveDestroyView(generics.RetrieveDestroyAPIView):
 
 
 # client confirm
+# @api_view(["PATCH"])
+# @permission_classes([permissions.IsAuthenticated])
+# def client_confirm_service(request, pk):
+
+#     action = request.data.get("action")
+
+#     if action not in ["confirm", "decline"]:
+#         return Response({"error": "Invalid action."}, status=400)
+
+#     client = getattr(request.user, "clientprofile", None)
+#     if not client:
+#         return Response({"error": "Client profile not found."}, status=403)
+
+#     try:
+#         service = ClientCustomService.objects.get(
+#             pk=pk,
+#             client=client,
+#             is_active=True
+#         )
+#     except ClientCustomService.DoesNotExist:
+#         return Response({"error": "Service not found."}, status=404)
+
+#     if service.status != "accepted":
+#         return Response({"error": "Service is not ready for confirmation."}, status=400)
+
+#     if action == "decline":
+#         service.status = "declined"
+#         service.save(update_fields=["status", "updated_at"])
+
+#         return Response({
+#             "message": "Service declined successfully.",
+#             "status": service.status
+#         })
+
+#     if not service.preferred_date or not service.preferred_time:
+#         return Response({"error": "Landscaper has not set schedule yet."}, status=400)
+#     with transaction.atomic():
+
+#         service = ClientCustomService.objects.select_for_update().get(
+#             pk=pk,
+#             client=client,
+#             is_active=True
+#         )
+
+#         # Determine booking type
+#         if service.recurring_type == "weekly":
+#             booking_type = BookingRequest.BookingType.WEEKLY
+#         elif service.recurring_type == "biweekly":
+#             booking_type = BookingRequest.BookingType.BIWEEKLY
+#         else:
+#             booking_type = BookingRequest.BookingType.CUSTOM
+
+#         booking = BookingRequest.objects.create(
+#             client=service.client,
+#             landscaper=service.landscaper,
+#             property=service.property,
+#             service=None,
+#             description=f"{service.name}\n\n{service.description or ''}".strip(),
+#             booking_type=booking_type,
+#             recurring_day_of_week=service.recurring_day_of_week,
+#             scheduled_date=service.preferred_date,
+#             scheduled_time=service.preferred_time,
+#             price=service.price,
+#             note=service.note,
+#             status=BookingRequest.Status.PENDING,
+#             is_active=True
+#         )
+#     if not service.landscaper:
+#         return response(
+#             {"error": "No Landscaper assign to service"},
+#             status=400
+#         )
+
+#         service.status = "confirmed"
+#         service.booking = booking
+#         service.save(update_fields=["status", "booking", "updated_at"])
+
+#     return Response({
+#         "message": "Service confirmed successfully.",
+#         "status": service.status,
+#         "booking_id": booking.id,
+#         "custom_service": ClientCustomServiceSerializer(service).data,
+#         "client": ClientProfileSerializer(client).data
+#     }, status=status.HTTP_200_OK)
+
+
+
 @api_view(["PATCH"])
 @permission_classes([permissions.IsAuthenticated])
 def client_confirm_service(request, pk):
-
     action = request.data.get("action")
 
     if action not in ["confirm", "decline"]:
@@ -505,29 +591,39 @@ def client_confirm_service(request, pk):
     if action == "decline":
         service.status = "declined"
         service.save(update_fields=["status", "updated_at"])
-
         return Response({
             "message": "Service declined successfully.",
             "status": service.status
-        })
+        }, status=200)
 
     if not service.preferred_date or not service.preferred_time:
         return Response({"error": "Landscaper has not set schedule yet."}, status=400)
-
     with transaction.atomic():
+        service = ClientCustomService.objects.select_for_update().get(
+            pk=pk,
+            client=client,
+            is_active=True
+        )
+
+        if not service.landscaper:
+            return Response(
+                {"error": "No landscaper assigned to this service."},
+                status=400
+            )
 
         booking = BookingRequest.objects.create(
             client=service.client,
-            landscaper=service.landscaper,   # ✅ important
+            landscaper=service.landscaper,
             property=service.property,
             service=None,
             description=f"{service.name}\n\n{service.description or ''}".strip(),
-            booking_type=BookingRequest.BookingType.CUSTOM,
+            booking_type=booking_type,
+            recurring_day_of_week=service.recurring_day_of_week,
             scheduled_date=service.preferred_date,
             scheduled_time=service.preferred_time,
             price=service.price,
             note=service.note,
-            status=BookingRequest.Status.PENDING,  # landscaper must accept booking
+            status=BookingRequest.Status.PENDING,
             is_active=True
         )
 
@@ -542,7 +638,6 @@ def client_confirm_service(request, pk):
         "custom_service": ClientCustomServiceSerializer(service).data,
         "client": ClientProfileSerializer(client).data
     }, status=status.HTTP_200_OK)
-
 
 # ================================
 # Landscaper Views

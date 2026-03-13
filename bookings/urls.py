@@ -11,7 +11,7 @@ from .views import (
     ClientBookingListView,
     BookingRequestRetrieveDestroyView,
     client_confirm_booking,
-    LandscaperBookingListView,
+    LandscaperPendingBookingListView,
     landscaper_accept_booking,
 )
 
@@ -22,6 +22,6 @@ urlpatterns = [
     path("bookings/<int:pk>/confirm/", client_confirm_booking, name="client-booking-confirm"),
 
     # Landscaper
-    path("landscaper/bookings/pending/", LandscaperBookingListView.as_view(), name="landscaper-pending-bookings"),
+    path("landscaper/bookings/pending/", LandscaperPendingBookingListView.as_view(), name="landscaper-pending-bookings"),
     path("landscaper/bookings/<int:pk>/accept/", landscaper_accept_booking, name="landscaper-accept-booking"),
 ]

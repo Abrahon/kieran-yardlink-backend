@@ -1,8 +1,6 @@
 from django.urls import path
-from .views import JobCreateAPIView, JobListAPIView, JobRetrieveUpdateAPIView
+from jobs.views import UpcomingJobsListView
 
 urlpatterns = [
-    path("job/create/", JobCreateAPIView.as_view(), name="job-create"),
-    path("job/list/", JobListAPIView.as_view(), name="job-list"),
-    path("job/<int:pk>/", JobRetrieveUpdateAPIView.as_view(), name="job-detail"),
+    path('landscaper/jobs/upcoming/', UpcomingJobsListView.as_view(), name='upcoming-jobs'),
 ]
