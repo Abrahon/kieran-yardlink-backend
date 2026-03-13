@@ -79,6 +79,13 @@ from common .permissions import IsLandscaper
 from decimal import Decimal, InvalidOperation
 from django.db import transaction
 from bookings.models import BookingRequest
+from property.models import Property
+from profiles.serializers import ClientProfileSerializer
+from rest_framework.decorators import api_view, permission_classes
+
+from django.db import transaction
+
+from profiles.serializers import ClientProfileSerializer
 
 
 
@@ -147,11 +154,7 @@ class GetBusinessProfileView(generics.RetrieveAPIView):
 
 
 
-from rest_framework import generics, permissions
-from rest_framework.exceptions import PermissionDenied
 
-from .models import Service, BusinessProfile
-from .serializers import ServiceSerializer
 
 
 class ServiceListCreateView(generics.ListCreateAPIView):
@@ -228,11 +231,192 @@ class ServiceDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 
        
-# custom service request client
+# # custom service request client
+# class ClientCustomServiceListCreateView(generics.ListCreateAPIView):
+#     """
+#     GET  -> client sees own custom service requests
+#     POST -> client creates a new custom service request for a landscaper
+#     """
+#     serializer_class = ClientCustomServiceSerializer
+#     permission_classes = [permissions.IsAuthenticated]
+
+#     def get_queryset(self):
+#         client = getattr(self.request.user, "clientprofile", None)
+#         if not client:
+#             return ClientCustomService.objects.none()
+
+#         return ClientCustomService.objects.filter(
+#             client=client,
+#             is_active=True
+#         ).order_by("-created_at")
+
+#     def perform_create(self, serializer):
+#         client = getattr(self.request.user, "clientprofile", None)
+#         if not client:
+#             raise PermissionDenied("Client profile not found.")
+
+#         serializer.save(
+#             client=client,
+#             status="pending",
+#             price=None
+#         )
+
+# class ClientCustomServiceRetrieveDestroyView(generics.RetrieveDestroyAPIView):
+#     """
+#     GET    -> client retrieves one of their own service requests
+#     DELETE -> client deletes only if request is still pending
+#     """
+#     serializer_class = ClientCustomServiceSerializer
+#     permission_classes = [permissions.IsAuthenticated]
+
+#     def get_queryset(self):
+#         client = getattr(self.request.user, "clientprofile", None)
+#         if not client:
+#             return ClientCustomService.objects.none()
+
+#         return ClientCustomService.objects.filter(
+#             client=client,
+#             is_active=True
+#         )
+
+#     def destroy(self, request, *args, **kwargs):
+#         instance = self.get_object()
+
+#         if instance.status != "pending":
+#             return Response(
+#                 {"error": "Only pending requests can be deleted."},
+#                 status=status.HTTP_400_BAD_REQUEST
+#             )
+
+#         instance.delete()
+#         return Response(
+#             {"message": "Service request deleted successfully."},
+#             status=status.HTTP_200_OK
+#         )
+
+
+# # clinet confirm or decline
+# @api_view(["PATCH"])
+# @permission_classes([permissions.IsAuthenticated])
+# def client_confirm_service(request, pk):
+#     action = request.data.get("action")
+
+#     if action not in ["confirm", "decline"]:
+#         return Response(
+#             {"error": "Invalid action. Must be 'confirm' or 'decline'."},
+#             status=status.HTTP_400_BAD_REQUEST
+#         )
+
+#     client = getattr(request.user, "clientprofile", None)
+#     if not client:
+#         return Response(
+#             {"error": "Client profile not found."},
+#             status=status.HTTP_403_FORBIDDEN
+#         )
+
+#     try:
+#         service = ClientCustomService.objects.get(
+#             pk=pk,
+#             client=client,
+#             is_active=True
+#         )
+#     except ClientCustomService.DoesNotExist:
+#         return Response(
+#             {"error": "Service not found."},
+#             status=status.HTTP_404_NOT_FOUND
+#         )
+
+#     if service.status != "accepted":
+#         return Response(
+#             {"error": "Service is not ready for confirmation."},
+#             status=status.HTTP_400_BAD_REQUEST
+#         )
+
+#     if action == "decline":
+#         service.status = "declined"
+#         service.save(update_fields=["status", "updated_at"])
+#         return Response(
+#             {
+#                 "message": "Service declined successfully.",
+#                 "status": service.status
+#             },
+#             status=status.HTTP_200_OK
+#         )
+
+#     with transaction.atomic():
+
+#         service = ClientCustomService.objects.select_for_update().get(
+#             pk=pk,
+#             client=client,
+#             is_active=True
+#         )
+
+#         if service.status != "accepted":
+#             return Response(
+#                 {"error": "Service is no longer available for confirmation."},
+#                 status=status.HTTP_400_BAD_REQUEST
+#             )
+
+#         booking = BookingRequest.objects.create(
+#             client=service.client,
+#             landscaper=service.landscaper,
+#             property=service.property,  # ADD THIS
+#             service=None,
+#             description=f"{service.name}\n\n{service.description or ''}".strip(),
+#             booking_type=BookingRequest.BookingType.CUSTOM,
+#             scheduled_date=service.preferred_date,   # ADD THIS
+#             scheduled_time=service.preferred_time,   # ADD THIS
+#             price=service.price,
+#             note=service.note,
+#             status=BookingRequest.Status.CONFIRMED
+#         )
+
+#         service.status = "confirmed"
+#         service.booking = booking   # OPTIONAL (good practice)
+#         service.save(update_fields=["status", "booking", "updated_at"])
+
+#     return Response(
+#         {
+#             "message": "Service confirmed successfully.",
+#             "status": service.status,
+#             "booking_id": booking.id
+#         },
+#         status=status.HTTP_200_OK
+#     )
+
+# # landscapers see pending  request
+# class LandscaperCustomServicePendingListView(generics.ListAPIView):
+#     """
+#     GET -> landscaper sees only pending requests sent to them
+#     """
+#     serializer_class = ClientCustomServiceSerializer
+#     permission_classes = [IsLandscaper]
+
+#     def get_queryset(self):
+#         landscaper = getattr(self.request.user, "landscaper_profile", None)
+#         if not landscaper:
+#             return ClientCustomService.objects.none()
+
+#         return ClientCustomService.objects.filter(
+#             landscaper=landscaper,
+#             status="pending",
+#             is_active=True
+#         ).order_by("-created_at")
+
+# views.py
+
+
+
+
+# ================================
+# Client Views
+# ================================
+
 class ClientCustomServiceListCreateView(generics.ListCreateAPIView):
     """
     GET  -> client sees own custom service requests
-    POST -> client creates a new custom service request for a landscaper
+    POST -> client creates a new custom service request
+           (one-time by default; recurring optional)
     """
     serializer_class = ClientCustomServiceSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -241,7 +425,6 @@ class ClientCustomServiceListCreateView(generics.ListCreateAPIView):
         client = getattr(self.request.user, "clientprofile", None)
         if not client:
             return ClientCustomService.objects.none()
-
         return ClientCustomService.objects.filter(
             client=client,
             is_active=True
@@ -252,11 +435,15 @@ class ClientCustomServiceListCreateView(generics.ListCreateAPIView):
         if not client:
             raise PermissionDenied("Client profile not found.")
 
+        # One-time: preferred_date/time will be null initially
         serializer.save(
             client=client,
             status="pending",
-            price=None
+            price=None,
+            preferred_date=None,
+            preferred_time=None
         )
+
 
 class ClientCustomServiceRetrieveDestroyView(generics.RetrieveDestroyAPIView):
     """
@@ -270,7 +457,6 @@ class ClientCustomServiceRetrieveDestroyView(generics.RetrieveDestroyAPIView):
         client = getattr(self.request.user, "clientprofile", None)
         if not client:
             return ClientCustomService.objects.none()
-
         return ClientCustomService.objects.filter(
             client=client,
             is_active=True
@@ -278,13 +464,11 @@ class ClientCustomServiceRetrieveDestroyView(generics.RetrieveDestroyAPIView):
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
-
         if instance.status != "pending":
             return Response(
                 {"error": "Only pending requests can be deleted."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-
         instance.delete()
         return Response(
             {"message": "Service request deleted successfully."},
@@ -292,26 +476,19 @@ class ClientCustomServiceRetrieveDestroyView(generics.RetrieveDestroyAPIView):
         )
 
 
-# clinet confirm or decline
-
-
+# client confirm
 @api_view(["PATCH"])
 @permission_classes([permissions.IsAuthenticated])
 def client_confirm_service(request, pk):
+
     action = request.data.get("action")
 
     if action not in ["confirm", "decline"]:
-        return Response(
-            {"error": "Invalid action. Must be 'confirm' or 'decline'."},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+        return Response({"error": "Invalid action."}, status=400)
 
     client = getattr(request.user, "clientprofile", None)
     if not client:
-        return Response(
-            {"error": "Client profile not found."},
-            status=status.HTTP_403_FORBIDDEN
-        )
+        return Response({"error": "Client profile not found."}, status=403)
 
     try:
         service = ClientCustomService.objects.get(
@@ -320,150 +497,179 @@ def client_confirm_service(request, pk):
             is_active=True
         )
     except ClientCustomService.DoesNotExist:
-        return Response(
-            {"error": "Service not found."},
-            status=status.HTTP_404_NOT_FOUND
-        )
+        return Response({"error": "Service not found."}, status=404)
 
     if service.status != "accepted":
-        return Response(
-            {"error": "Service is not ready for confirmation."},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+        return Response({"error": "Service is not ready for confirmation."}, status=400)
 
     if action == "decline":
         service.status = "declined"
         service.save(update_fields=["status", "updated_at"])
-        return Response(
-            {
-                "message": "Service declined successfully.",
-                "status": service.status
-            },
-            status=status.HTTP_200_OK
-        )
+
+        return Response({
+            "message": "Service declined successfully.",
+            "status": service.status
+        })
+
+    if not service.preferred_date or not service.preferred_time:
+        return Response({"error": "Landscaper has not set schedule yet."}, status=400)
 
     with transaction.atomic():
 
-        service = ClientCustomService.objects.select_for_update().get(
-            pk=pk,
-            client=client,
-            is_active=True
-        )
-
-        if service.status != "accepted":
-            return Response(
-                {"error": "Service is no longer available for confirmation."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
         booking = BookingRequest.objects.create(
             client=service.client,
-            landscaper=service.landscaper,
-            property=service.property,  # ADD THIS
+            landscaper=service.landscaper,   # ✅ important
+            property=service.property,
             service=None,
             description=f"{service.name}\n\n{service.description or ''}".strip(),
             booking_type=BookingRequest.BookingType.CUSTOM,
-            scheduled_date=service.preferred_date,   # ADD THIS
-            scheduled_time=service.preferred_time,   # ADD THIS
+            scheduled_date=service.preferred_date,
+            scheduled_time=service.preferred_time,
             price=service.price,
             note=service.note,
-            status=BookingRequest.Status.CONFIRMED
+            status=BookingRequest.Status.PENDING,  # landscaper must accept booking
+            is_active=True
         )
 
         service.status = "confirmed"
-        service.booking = booking   # OPTIONAL (good practice)
+        service.booking = booking
         service.save(update_fields=["status", "booking", "updated_at"])
 
-    return Response(
-        {
-            "message": "Service confirmed successfully.",
-            "status": service.status,
-            "booking_id": booking.id
-        },
-        status=status.HTTP_200_OK
-    )
+    return Response({
+        "message": "Service confirmed successfully.",
+        "status": service.status,
+        "booking_id": booking.id,
+        "custom_service": ClientCustomServiceSerializer(service).data,
+        "client": ClientProfileSerializer(client).data
+    }, status=status.HTTP_200_OK)
 
-# landscapers see pending  request
+
+# ================================
+# Landscaper Views
+# ================================
+
 class LandscaperCustomServicePendingListView(generics.ListAPIView):
-    """
-    GET -> landscaper sees only pending requests sent to them
-    """
     serializer_class = ClientCustomServiceSerializer
     permission_classes = [IsLandscaper]
 
     def get_queryset(self):
-        landscaper = getattr(self.request.user, "landscaper_profile", None)
-        if not landscaper:
+        # Get the landscaper profile for the logged-in user
+        try:
+            landscaper_profile = self.request.user.landscaper_profile
+        except AttributeError:
             return ClientCustomService.objects.none()
 
+        # Filter requests sent to this landscaper profile
         return ClientCustomService.objects.filter(
-            landscaper=landscaper,
+            landscaper=landscaper_profile,
             status="pending",
             is_active=True
         ).order_by("-created_at")
 
 
-# accepet client custom service landscaper
+from django.utils.dateparse import parse_date, parse_time
+
+
+
 @api_view(["PATCH"])
 @permission_classes([IsLandscaper])
 def landscaper_accept_service(request, pk):
     """
-    Landscaper accepts pending request and sets price.
+    Landscaper accepts pending service:
+    - sets price
+    - sets scheduled date & time (for one-time)
     """
     price = request.data.get("price")
+    scheduled_date_str = request.data.get("scheduled_date")
+    scheduled_time_str = request.data.get("scheduled_time")
 
     if price is None:
-        return Response(
-            {"error": "Price is required."},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+        return Response({"error": "Price is required."}, status=400)
 
     try:
         price = Decimal(price)
         if price <= 0:
-            return Response(
-                {"error": "Price must be greater than 0."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({"error": "Price must be greater than 0."}, status=400)
     except (InvalidOperation, TypeError, ValueError):
-        return Response(
-            {"error": "Invalid price format."},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+        return Response({"error": "Invalid price format."}, status=400)
 
     landscaper = getattr(request.user, "landscaper_profile", None)
     if not landscaper:
-        return Response(
-            {"error": "Landscaper profile not found."},
-            status=status.HTTP_403_FORBIDDEN
-        )
+        return Response({"error": "Landscaper profile not found."}, status=403)
 
     try:
         service = ClientCustomService.objects.get(
-            pk=pk,
-            landscaper=landscaper,
-            status="pending",
-            is_active=True
+            pk=pk, landscaper=landscaper, status="pending", is_active=True
         )
     except ClientCustomService.DoesNotExist:
-        return Response(
-            {"error": "Pending service not found."},
-            status=status.HTTP_404_NOT_FOUND
-        )
+        return Response({"error": "Pending service not found."}, status=404)
+
+    # For one-time, date/time must be provided
+    if not service.recurring_type:
+        if not scheduled_date_str or not scheduled_time_str:
+            return Response(
+                {"error": "Scheduled date and time are required for one-time service."}, status=400
+            )
+        scheduled_date = parse_date(scheduled_date_str)
+        scheduled_time = parse_time(scheduled_time_str)
+        if not scheduled_date or not scheduled_time:
+            return Response({"error": "Invalid date or time format."}, status=400)
+
+        service.preferred_date = scheduled_date
+        service.preferred_time = scheduled_time
 
     service.price = price
     service.status = "accepted"
-    service.save(update_fields=["price", "status", "updated_at"])
+    service.save(update_fields=["price", "preferred_date", "preferred_time", "status", "updated_at"])
 
-    return Response(
-        {
-            "message": "Service accepted and price set successfully.",
-            "service_id": service.id,
-            "price": str(service.price),
-            "status": service.status
-        },
-        status=status.HTTP_200_OK
-    )
+    return Response({
+        "message": "Service accepted and schedule set successfully.",
+        "service_id": service.id,
+        "price": str(service.price),
+        "status": service.status,
+        "scheduled_date": service.preferred_date,
+        "scheduled_time": service.preferred_time,
+    }, status=200)
+
+# accepet client custom service landscaper
+# @api_view(["PATCH"])
+# @permission_classes([IsLandscaper])
+# def landscaper_accept_service(request, pk):
+#     """
+#     Accepts custom service and sets price & scheduled date/time
+#     """
+#     price = request.data.get("price")
+#     scheduled_date = request.data.get("scheduled_date")
+#     scheduled_time = request.data.get("scheduled_time")
+
+#     if not price:
+#         return Response({"error": "Price is required."}, status=400)
+
+#     try:
+#         price = Decimal(price)
+#         if price <= 0:
+#             raise Response({"error": "Price must be > 0"}, status=400)
+#     except:
+#         return Response({"error": "Invalid price format"}, status=400)
+
+#     service = ClientCustomService.objects.filter(pk=pk, status="pending").first()
+#     if not service:
+#         return Response({"error": "Pending service not found"}, status=404)
+
+#     service.price = price
+#     service.scheduled_date = scheduled_date
+#     service.scheduled_time = scheduled_time
+#     service.status = "accepted"
+#     service.save()
+
+#     return Response({
+#         "message": "Service accepted with price & scheduled time.",
+#         "service_id": service.id,
+#         "price": str(service.price),
+#         "scheduled_date": service.scheduled_date,
+#         "scheduled_time": service.scheduled_time,
+#         "status": service.status
+#     })
 
 
 # active inactive
@@ -632,28 +838,24 @@ class LandscaperFind(generics.ListAPIView):
 
 
 # set working hours for landscapers
+
+
+
 class WorkingHoursListCreateView(generics.ListCreateAPIView):
     serializer_class = WorkingHoursSerializer
-    permission_classes = [IsAuthenticated, IsLandscaper]  
+    permission_classes = [permissions.IsAuthenticated, IsLandscaper]
 
     def get_queryset(self):
-        profile = BusinessProfile.objects.filter(
-            user=self.request.user
-        ).first()
-
+        profile = BusinessProfile.objects.filter(user=self.request.user).first()
         if not profile:
             return WorkingHours.objects.none()
 
-        return (
-            WorkingHours.objects
-            .filter(landscaper=profile)
-            .order_by("day")
-        )
+        return WorkingHours.objects.filter(
+            landscaper=profile
+        ).order_by("day", "start_time")
 
     def create(self, request, *args, **kwargs):
-        """
-        ✅ BASIC & PRO BOTH can create working hours
-        """
+
         try:
             profile = BusinessProfile.objects.get(user=request.user)
         except BusinessProfile.DoesNotExist:
@@ -662,74 +864,159 @@ class WorkingHoursListCreateView(generics.ListCreateAPIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        VALID_DAYS = [choice[0] for choice in DAYS_OF_WEEK]
         data = request.data
-
-        created_hours = []
-        errors = []
-
-        if not isinstance(data, dict):
-            return Response(
-                {"detail": "Payload must be an object."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
 
         days = data.get("days")
         start_time = data.get("start_time")
         end_time = data.get("end_time")
 
-        if not isinstance(days, list) or not days:
+        if not days:
             return Response(
-                {"detail": "`days` must be a non-empty list."},
+                {"error": "days field is required."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        if not start_time or not end_time:
-            return Response(
-                {"detail": "start_time and end_time are required."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        if isinstance(days, str):
+            days = [days]
 
-        if start_time >= end_time:
-            return Response(
-                {"detail": "start_time must be before end_time."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        VALID_DAYS = [d[0] for d in DAYS_OF_WEEK]
+
+        created_slots = []
+        errors = []
 
         for day in days:
-            if day not in VALID_DAYS:
-                errors.append({"day": day, "detail": "Invalid day"})
-                continue
 
-            if WorkingHours.objects.filter(
-                landscaper=profile,
-                day=day
-            ).exists():
+            if day not in VALID_DAYS:
                 errors.append({
                     "day": day,
-                    "detail": "Working hours already exist for this day"
+                    "detail": "Invalid day"
                 })
                 continue
 
-            created_hours.append(
-                WorkingHours.objects.create(
-                    landscaper=profile,
-                    day=day,
-                    start_time=start_time,
-                    end_time=end_time
-                )
+            # check time overlap
+            overlapping = WorkingHours.objects.filter(
+                landscaper=profile,
+                day=day,
+                start_time__lt=end_time,
+                end_time__gt=start_time
             )
 
-        serializer = self.get_serializer(created_hours, many=True)
+            if overlapping.exists():
+                errors.append({
+                    "day": day,
+                    "detail": "Slot overlaps existing slot"
+                })
+                continue
+
+            slot = WorkingHours.objects.create(
+                landscaper=profile,
+                day=day,
+                start_time=start_time,
+                end_time=end_time
+            )
+
+            created_slots.append(slot)
+
+        serializer = self.get_serializer(created_slots, many=True)
 
         return Response(
             {
-                "created_hours": serializer.data,
+                "created_slots": serializer.data,
                 "errors": errors
             },
-            status=status.HTTP_201_CREATED if created_hours else status.HTTP_400_BAD_REQUEST
+            status=status.HTTP_201_CREATED
+        )
+
+# update
+class WorkingHoursUpdateView(generics.UpdateAPIView):
+    serializer_class = WorkingHoursSerializer
+    permission_classes = [permissions.IsAuthenticated, IsLandscaper]
+
+    def get_queryset(self):
+        profile = BusinessProfile.objects.filter(user=self.request.user).first()
+        if not profile:
+            return WorkingHours.objects.none()
+
+        return WorkingHours.objects.filter(landscaper=profile)
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+
+        day = request.data.get("day", instance.day)
+        start_time = request.data.get("start_time", instance.start_time)
+        end_time = request.data.get("end_time", instance.end_time)
+
+        # check overlap
+        overlap = WorkingHours.objects.filter(
+            landscaper=instance.landscaper,
+            day=day,
+            start_time__lt=end_time,
+            end_time__gt=start_time
+        ).exclude(id=instance.id)
+
+        if overlap.exists():
+            return Response(
+                {"error": "Slot overlaps with existing slot"},
+                status=400
+            )
+
+        instance.day = day
+        instance.start_time = start_time
+        instance.end_time = end_time
+        instance.save()
+
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+
+# deleet
+class WorkingHoursDeleteView(generics.DestroyAPIView):
+    serializer_class = WorkingHoursSerializer
+    permission_classes = [permissions.IsAuthenticated, IsLandscaper]
+
+    def get_queryset(self):
+        profile = BusinessProfile.objects.filter(user=self.request.user).first()
+        if not profile:
+            return WorkingHours.objects.none()
+
+        return WorkingHours.objects.filter(landscaper=profile)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        instance.delete()
+
+        return Response(
+            {"message": "Working hour slot deleted successfully."},
+            status=status.HTTP_200_OK
         )
  
+# active dective
+
+@api_view(["PATCH"])
+@permission_classes([permissions.IsAuthenticated, IsLandscaper])
+def toggle_working_hour(request, pk):
+
+    try:
+        profile = BusinessProfile.objects.get(user=request.user)
+
+        slot = WorkingHours.objects.get(
+            id=pk,
+            landscaper=profile
+        )
+
+    except WorkingHours.DoesNotExist:
+        return Response(
+            {"error": "Slot not found"},
+            status=404
+        )
+
+    slot.is_active = not slot.is_active
+    slot.save()
+
+    return Response({
+        "message": "Slot status updated",
+        "is_active": slot.is_active
+    })
+
 
 
 # 4️⃣ Toggle active/inactive
@@ -820,8 +1107,8 @@ def service_performance_monthly(request):
         "service_count": counts
     })
 
-# pinned service /unpinned service
 
+# pinned service /unpinned service
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def toggle_service_pin(request, service_id):

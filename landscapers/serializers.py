@@ -169,88 +169,45 @@ class ServiceSerializer(serializers.ModelSerializer):
         return attrs  
 
 
-from rest_framework import serializers
-from .models import ClientCustomService
-
 
 class ClientCustomServiceSerializer(serializers.ModelSerializer):
     client = serializers.ReadOnlyField(source="client.id")
+    booking_id = serializers.ReadOnlyField(source="booking.id")  # link to BookingRequest
 
     class Meta:
         model = ClientCustomService
         fields = [
-            "id",
-            "client",
-            "landscaper",
-            "name",
-            "description",
-            "note",
-            "price",
-            "status",
-            "is_active",
-            "created_at",
-            "updated_at",
-            # "booking",   # ✅ include only if you add booking field in model
+            "id", "client", "landscaper", "property", "name", "description", "note",
+            "price", "status", "is_active",
+            "preferred_date", "preferred_time",
+            "recurring_type", "recurring_day_of_week",
+            "booking_id",  # new field for linked booking
+            "created_at", "updated_at"
         ]
         read_only_fields = [
-            "id",
-            "client",
-            "created_at",
-            "updated_at",
-            "status",   # ✅ client should not manually set status
-            "price",    # ✅ client should not manually set price
-            "is_active" # ✅ better to keep controlled by backend
-            # "booking", # ✅ read-only if added
+            "id", "client", "status", "price", "is_active",
+            "booking_id",
+            "created_at", "updated_at",
+            "preferred_date", "preferred_time"  # landscaper sets date/time
         ]
 
-    def validate_name(self, value):
-        value = value.strip()
-
-        if not value:
-            raise serializers.ValidationError(
-                "Service name cannot be empty."
-            )
-
-        return value
-
     def validate(self, attrs):
-        """
-        ✅ Use object-level validation because duplicate check depends on:
-        - client from request.user
-        - landscaper from request data
-        - name from request data
-        """
-        request = self.context.get("request")
-        client = getattr(request.user, "clientprofile", None) if request else None
+        recurring_type = attrs.get("recurring_type")
+        recurring_day_of_week = attrs.get("recurring_day_of_week")
 
-        landscaper = attrs.get("landscaper")
-        name = attrs.get("name")
-
-        if not client:
-            raise serializers.ValidationError({
-                "client": "Client profile not found."
-            })
-
-        if not landscaper:
-            raise serializers.ValidationError({
-                "landscaper": "Landscaper is required."
-            })
-
-        # ✅ Prevent duplicate request with same name for same landscaper
-        queryset = ClientCustomService.objects.filter(
-            client=client,
-            landscaper=landscaper,
-            name__iexact=name.strip()
-        )
-
-        # ✅ Important for update case: exclude current instance
-        if self.instance:
-            queryset = queryset.exclude(pk=self.instance.pk)
-
-        if queryset.exists():
-            raise serializers.ValidationError({
-                "name": "You already requested this service from this landscaper."
-            })
+        if not recurring_type:
+            # One-time service
+            if recurring_day_of_week:
+                raise serializers.ValidationError("One-time service cannot have day of week.")
+            # preferred_date and preferred_time will be set later by landscaper
+        else:
+            # Recurring service
+            if recurring_type not in ["weekly", "biweekly"]:
+                raise serializers.ValidationError("Invalid recurring type.")
+            if not recurring_day_of_week:
+                raise serializers.ValidationError("Recurring service must include day of week.")
+            # preferred_date can be optional; landscaper will set start date
+            attrs["preferred_time"] = None  # recurring services don't need a time
 
         return attrs
 

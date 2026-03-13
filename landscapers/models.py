@@ -3,7 +3,6 @@ from django.db import models
 from django.contrib.auth import get_user_model
 from cloudinary.models import CloudinaryField
 from django.utils.translation import gettext_lazy as _
-# from profiles.models import LandscaperProfilies
 from django.db import models
 from django.core.validators import MinValueValidator
 from django.core.exceptions import ValidationError
@@ -11,6 +10,7 @@ from django.utils import timezone
 from django.contrib.postgres.fields import ArrayField, JSONField  # PostgreSQL
 User = get_user_model()
 from django.core.exceptions import ValidationError
+# from bookings.models import BookingRequest
 
 
 # Landscaper Profile (business info)
@@ -18,7 +18,7 @@ class BusinessProfile(models.Model):
     user = models.OneToOneField(
         User,
         on_delete=models.CASCADE,
-        related_name="landscaper_profile"  # ✅
+        related_name="landscaper_profile"  
 )
 
 
@@ -190,104 +190,172 @@ class Service(models.Model):
         return f"{self.name} ({self.business.business_name})"
 
 
-from django.db import models
-from django.utils import timezone
-from django.core.validators import MinValueValidator
 
 
+
+# # custom service request
+# class ClientCustomService(models.Model):
+#     client = models.ForeignKey(
+#         "profiles.ClientProfile",
+#         on_delete=models.CASCADE,
+#         related_name="custom_services"
+#     )
+
+#     #  Keep landscaper required because client selects landscaper at request time
+#     landscaper = models.ForeignKey(
+#         BusinessProfile,
+#         on_delete=models.CASCADE,
+#         related_name="received_custom_requests",
+#     )
+
+#     name = models.CharField(
+#         max_length=150,
+#         help_text="Custom service name"
+#     )
+
+#     description = models.TextField(
+#         blank=True,
+#         null=True,
+#         help_text="Service description"
+#     )
+
+#     note = models.TextField(
+#         blank=True,
+#         null=True
+#     )
+
+#     #  price stays nullable because landscaper sets it later
+#     price = models.DecimalField(
+#         max_digits=10,
+#         decimal_places=2,
+#         validators=[MinValueValidator(0)],
+#         null=True,
+#         blank=True
+#     )
+
+#     is_active = models.BooleanField(
+#         default=True,
+#         help_text="Deactivate instead of delete"
+#     )
+
+#     STATUS_CHOICES = [
+#         ("pending", "Pending"),
+#         ("accepted", "Accepted"),
+#         ("completed", "Completed"),
+#         ("confirmed", "Confirmed"),
+#         ("declined", "Declined"),
+#     ]
+#     status = models.CharField(
+#         max_length=10,
+#         choices=STATUS_CHOICES,
+#         default="pending",
+#         help_text="Track custom service flow"
+#     )
+
+#     # ✅ optional: store created booking after client confirms
+#     # Uncomment only if you want direct relation with Booking model
+#     # booking = models.OneToOneField(
+#     #     "bookings.Booking",
+#     #     on_delete=models.SET_NULL,
+#     #     null=True,
+#     #     blank=True,
+#     #     related_name="custom_service_request"
+#     # )
+
+#     created_at = models.DateTimeField(default=timezone.now)
+#     updated_at = models.DateTimeField(auto_now=True)
+
+#     class Meta:
+#         ordering = ["-created_at"]
+#         indexes = [
+#             models.Index(fields=["client"]),
+#             models.Index(fields=["landscaper"]),
+#             models.Index(fields=["status"]),
+#         ]
+#         constraints = [
+#             #  good constraint: same client cannot request same named service
+#             # from same landscaper more than once
+#             models.UniqueConstraint(
+#                 fields=["client", "landscaper", "name"],
+#                 name="unique_custom_service_per_landscaper"
+#             )
+#         ]
+
+#     def __str__(self):
+#         return f"{self.name} ({self.client.user.email})"
 
 
 class ClientCustomService(models.Model):
-    client = models.ForeignKey(
-        "profiles.ClientProfile",
-        on_delete=models.CASCADE,
-        related_name="custom_services"
-    )
+    class RecurringType(models.TextChoices):
+        WEEKLY = "weekly", "Weekly"
+        BIWEEKLY = "biweekly", "Biweekly"
 
-    # ✅ Keep landscaper required because client selects landscaper at request time
-    landscaper = models.ForeignKey(
-        BusinessProfile,
-        on_delete=models.CASCADE,
-        related_name="received_custom_requests",
-    )
-
-    name = models.CharField(
-        max_length=150,
-        help_text="Custom service name"
-    )
-
-    description = models.TextField(
-        blank=True,
+    client = models.ForeignKey("profiles.ClientProfile", on_delete=models.CASCADE)
+    landscaper = models.ForeignKey(BusinessProfile, on_delete=models.CASCADE)
+    property = models.ForeignKey("property.Property",on_delete=models.CASCADE,related_name="custom_services")
+    booking = models.OneToOneField(
+        "bookings.BookingRequest",  # string instead of import
         null=True,
-        help_text="Service description"
-    )
-
-    note = models.TextField(
         blank=True,
-        null=True
+        on_delete=models.SET_NULL
     )
 
-    # ✅ price stays nullable because landscaper sets it later
-    price = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        validators=[MinValueValidator(0)],
+    name = models.CharField(max_length=150)
+    description = models.TextField(blank=True, null=True)
+    note = models.TextField(blank=True, null=True)
+    price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+
+    # One-time date/time
+    preferred_date = models.DateField(null=True, blank=True)
+    preferred_time = models.TimeField(null=True, blank=True)
+
+    # Only for recurring services
+    recurring_type = models.CharField(
+        max_length=10,
+        choices=RecurringType.choices,
+        null=True,
+        blank=True,
+        help_text="Set only for recurring services"
+    )
+    recurring_day_of_week = models.CharField(
+        max_length=10,
+        choices=[
+            ("MONDAY", "Monday"), ("TUESDAY", "Tuesday"), ("WEDNESDAY", "Wednesday"),
+            ("THURSDAY", "Thursday"), ("FRIDAY", "Friday"), ("SATURDAY", "Saturday"),
+            ("SUNDAY", "Sunday")
+        ],
         null=True,
         blank=True
-    )
-
-    is_active = models.BooleanField(
-        default=True,
-        help_text="Deactivate instead of delete"
     )
 
     STATUS_CHOICES = [
         ("pending", "Pending"),
         ("accepted", "Accepted"),
-        ("completed", "Completed"),
         ("confirmed", "Confirmed"),
         ("declined", "Declined"),
+        ("completed", "Completed"),
     ]
-    status = models.CharField(
-        max_length=10,
-        choices=STATUS_CHOICES,
-        default="pending",
-        help_text="Track custom service flow"
-    )
-
-    # ✅ optional: store created booking after client confirms
-    # Uncomment only if you want direct relation with Booking model
-    # booking = models.OneToOneField(
-    #     "bookings.Booking",
-    #     on_delete=models.SET_NULL,
-    #     null=True,
-    #     blank=True,
-    #     related_name="custom_service_request"
-    # )
-
-    created_at = models.DateTimeField(default=timezone.now)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="pending")
+    created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    class Meta:
-        ordering = ["-created_at"]
-        indexes = [
-            models.Index(fields=["client"]),
-            models.Index(fields=["landscaper"]),
-            models.Index(fields=["status"]),
-        ]
-        constraints = [
-            # ✅ good constraint: same client cannot request same named service
-            # from same landscaper more than once
-            models.UniqueConstraint(
-                fields=["client", "landscaper", "name"],
-                name="unique_custom_service_per_landscaper"
-            )
-        ]
-
-    def __str__(self):
-        return f"{self.name} ({self.client.user.email})"
+    def clean(self):
+        # If recurring_type is empty → one-time service
+        if not self.recurring_type:
+            if not self.preferred_date or not self.preferred_time:
+                raise ValidationError("One-time service requires date and time.")
+            self.recurring_day_of_week = None  # enforce no day for one-time
+        else:
+            # recurring service
+            if not self.recurring_day_of_week:
+                raise ValidationError("Recurring service must have a day of week.")
+            if not self.preferred_date:
+                raise ValidationError("Recurring service must have start date.")
+            self.preferred_time = None  # one-time time not required for recurring
 
 
+# add on
 class Addon(models.Model):
     business = models.ForeignKey(
         BusinessProfile,
@@ -336,9 +404,6 @@ class Addon(models.Model):
 
 
 # working_hours/models.py
-from django.db import models
-from django.core.exceptions import ValidationError
-
 DAYS_OF_WEEK = [
     ('SUNDAY', 'Sunday'),
     ('MONDAY', 'Monday'),

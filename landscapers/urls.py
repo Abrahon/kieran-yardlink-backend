@@ -21,6 +21,9 @@ from .views import (
     LandscaperCustomServicePendingListView,
     client_confirm_service,
     landscaper_accept_service,
+    WorkingHoursUpdateView,
+    WorkingHoursDeleteView,
+    toggle_working_hour
 
 )
 
@@ -62,6 +65,24 @@ urlpatterns = [
     # landscaper search
     path("landscapers/search/", LandscaperFind.as_view(), name="landscaper-search"),
     path('working-hours/', WorkingHoursListCreateView.as_view(), name='working-hours'),
+
+    path(
+        "working-hours/<int:pk>/update/",
+        WorkingHoursUpdateView.as_view(),
+        name="update-working-hour"
+    ),
+
+    path(
+        "working-hours/<int:pk>/delete/",
+        WorkingHoursDeleteView.as_view(),
+        name="delete-working-hour"
+    ),
+
+    path(
+        "working-hours/<int:pk>/toggle/",
+        toggle_working_hour,
+        name="toggle-working-hour"
+    ),
 
     path("services/stats/", ServiceStatsAPIView.as_view(), name="service-stats"),
     path("services/performance/", service_performance_monthly, name="service-performance-monthly"),

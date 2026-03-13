@@ -335,6 +335,7 @@ class BookingRequest(models.Model):
         blank=True,
         null=True
     )
+    is_active = models.BooleanField(default=True)
 
     # NEW ⭐ helps track job creation
     job_created = models.BooleanField(

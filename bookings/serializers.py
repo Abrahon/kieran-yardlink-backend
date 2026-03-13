@@ -23,9 +23,9 @@ class ServiceBookingRescheduleSerializer(serializers.ModelSerializer):
 
 # update serializers
 from rest_framework import serializers
-from .models import BookingRequest, BookingAddon
+from .models import BookingRequest
 from property.models import Property
-from services.models import Service, Addon
+from landscapers.models import Service, Addon
 from django.utils import timezone
 
 
