@@ -19,14 +19,16 @@ from .views import (
     ClientDetailWithChatView,
     ReminderToggleAPIView,
     LandscaperReminderToggleAPIView,
-    ClientReminderToggleAPIView
+    ClientReminderToggleAPIView,
+    LandscaperPersonalProfileView
 )
 
 urlpatterns = [
     # -------------------- Profiles -------------------- #
     path("admin/profile/", AdminProfileView.as_view(), name="admin-profile"),
     path("worker/profile/", WorkerProfileView.as_view(), name="worker-profile"),
-    path("landscaper/profile/", LandScaperProfileView.as_view(), name="pro-landscaper-profile"),
+    path("landscaper/profile/", LandscaperPersonalProfileView.as_view(), name="pro-landscaper-profile"),
+    path("landscaper/profiles/", LandScaperProfileView.as_view(), name="pro-landscaper-profile"),
     path("pro-landscaper/workers/", ProLandscaperWorkersView.as_view(), name="pro-landscaper-workers"),
     path("client/profile/", ClientProfileView.as_view(), name="client-profile"),
 

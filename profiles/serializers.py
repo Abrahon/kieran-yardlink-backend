@@ -22,9 +22,10 @@ from services.models import ClientService
 from connections.models import ConnectionRequest
 from subscriptions.models import Plan,Subscription
 from subscriptions.enums import SubscriptionStatus
-from profiles.models import BusinessProfile
+# from profiles.models import BusinessProfile
 from geopy.geocoders import Nominatim
 from django.utils import timezone
+# from jobs .models import Job
 # from subscr.models import Plan
 User = get_user_model()
 
@@ -82,66 +83,6 @@ class WorkerProfileSerializer(serializers.ModelSerializer):
             return obj.image.url
               # return full Cloudinary URL
         return None
-
-
-from landscapers.models import BusinessProfile  # NOT LandscaperProfilies
-
-from rest_framework import serializers
-from django.utils import timezone
-from services.models import ServiceSchedule
-
-
-class JobSerializer(serializers.ModelSerializer):
-    service_name = serializers.CharField(source="service.name", read_only=True)
-    scheduled_date = serializers.DateField()
-    scheduled_time = serializers.TimeField()
-    completed_at = serializers.DateTimeField()
-    completion_note = serializers.CharField()
-    completed_services = serializers.SerializerMethodField()
-
-    completion_images = serializers.SerializerMethodField()
-    payment_status = serializers.CharField(read_only=True)
-
-    class Meta:
-        model = ServiceSchedule
-        fields = [
-            "id",
-            "service_name",
-            "scheduled_date",
-            "scheduled_time",
-            "is_completed",
-            "completed_at",
-            "completion_note",
-            "completed_services",
-            "payment_status",
-            "completion_images"
-            
-        ]
-    def get_completed_services(self, obj):
-        """
-        Return only services that landscaper marked completed.
-        """
-        return [
-            {
-                "id": service.id,
-                "name": service.name,
-                "price": service.price
-            }
-            for service in obj.completed_services.all()
-        ]
-    
-    def get_payment_status(self, obj):
-        return obj.get_payment_status_display()
-
-
-    def get_completion_images(self, obj):
-        """
-        Return image URLs for completed job.
-        """
-        if not obj.is_completed:
-            return []
-
-        return [img.image.url for img in obj.images.all()]
 
 
 
@@ -347,76 +288,260 @@ class JobSerializer(serializers.ModelSerializer):
 #         ).select_related("client").order_by("-created_at")
 #         return LandscaperReviewSerializer(reviews, many=True).data
 
+from rest_framework import serializers
+from django.db.models import Avg
+from django.utils import timezone
+from landscapers.models import BusinessProfile
+from subscriptions.models import Subscription, SubscriptionStatus
+from jobs.models import Job
+
+
+
+class LandscaperPersonalProfileSerializer(serializers.ModelSerializer):
+    email = serializers.EmailField(source="user.email", read_only=True)
+    profile_image = serializers.ImageField(source="image", required=False, allow_null=True)
+
+    class Meta:
+        model = LandscaperProfilies
+        fields = ["email", "name", "phone", "profile_image"]
+
+    def update(self, instance, validated_data):
+        instance.name = validated_data.get("name", instance.name)
+        instance.phone = validated_data.get("phone", instance.phone)
+
+        if "image" in validated_data:
+            instance.image = validated_data["image"]
+
+        instance.save()
+        return instance
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data["profile_image"] = instance.image.url if instance.image else None
+        return data
+
+
+
+# class LandscaperProfileSerializer(serializers.ModelSerializer):
+#     # Read-only user info
+#     user_id = serializers.IntegerField(source="user.id", read_only=True)
+#     email = serializers.EmailField(source="user.email", read_only=True)
+#     plan = serializers.SerializerMethodField()
+
+#     # Personal info
+#     name = serializers.CharField(required=False)
+#     phone = serializers.CharField(required=False)
+
+#     # Business info
+#     image = serializers.ImageField(source="profile_image", required=False, allow_null=True)
+#     business_name = serializers.CharField(read_only=True)
+#     latitude = serializers.FloatField(required=False, allow_null=True)
+#     longitude = serializers.FloatField(required=False, allow_null=True)
+#     address = serializers.SerializerMethodField()
+
+#     # Related info
+#     services = serializers.SerializerMethodField()
+#     upcoming_jobs = serializers.SerializerMethodField()
+#     completed_jobs = serializers.SerializerMethodField()
+#     average_rating = serializers.SerializerMethodField()
+#     total_reviews = serializers.SerializerMethodField()
+#     reviews = serializers.SerializerMethodField()
+
+#     class Meta:
+#         model = BusinessProfile
+#         fields = [
+#             "id", "user_id", "email", "plan",
+#             "name", "phone",
+#             "latitude", "longitude", "business_name", "address", "image",
+#             "services", "upcoming_jobs", "completed_jobs",
+#             "average_rating", "total_reviews", "reviews",
+#         ]
+
+#     # --------------------------
+#     # SerializerMethodField methods
+#     # --------------------------
+#     def get_plan(self, obj):
+#         subscription = Subscription.objects.filter(
+#             user=obj.user, is_active=True, status=SubscriptionStatus.ACTIVE
+#         ).select_related("plan").first()
+#         return subscription.plan.name.lower() if subscription else "free"
+
+#     def get_address(self, obj):
+#         if obj.latitude and obj.longitude:
+#             geolocator = Nominatim(user_agent="yardlink_app")
+#             try:
+#                 location = geolocator.reverse(f"{obj.latitude}, {obj.longitude}")
+#                 return location.address if location else None
+#             except:
+#                 return None
+#         return None
+
+#     def get_services(self, obj):
+#         services = Service.objects.filter(business=obj)
+#         return [
+#             {
+#                 "id": s.id,
+#                 "name": s.name,
+#                 "description": s.description,
+#                 "price": float(s.base_price) if s.base_price else 0,
+#                 "pricing_type": s.pricing_type,
+#                 "min_price": float(s.min_price) if s.min_price else 0,
+#                 "latitude": float(s.latitude) if s.latitude else None,
+#                 "longitude": float(s.longitude) if s.longitude else None,
+#                 "is_active": s.is_active,
+#                 "created_at": s.created_at,
+#                 "updated_at": s.updated_at,
+#             }
+#             for s in services
+#         ]
+
+#     def get_upcoming_jobs(self, obj):
+#         jobs = Job.objects.filter(
+#             landscaper=obj.user, status=Job.Status.UPCOMING, is_active=True
+#         ).order_by("scheduled_date", "scheduled_time")
+#         return JobSerializer(jobs, many=True).data
+
+#     def get_completed_jobs(self, obj):
+#         jobs = Job.objects.filter(
+#             landscaper=obj.user, status=Job.Status.COMPLETED, is_active=True
+#         ).order_by("-completed_at")
+#         return JobSerializer(jobs, many=True).data
+
+#     def get_average_rating(self, obj):
+#         avg = LandscaperReview.objects.filter(
+#             landscaper=obj.user
+#         ).aggregate(avg=Avg("rating"))["avg"] or 0
+#         return round(avg, 1)
+
+#     def get_total_reviews(self, obj):
+#         return LandscaperReview.objects.filter(landscaper=obj.user).count()
+
+#     def get_reviews(self, obj):
+#         reviews = LandscaperReview.objects.filter(
+#             landscaper=obj.user
+#         ).select_related("client").order_by("-created_at")
+#         return LandscaperReviewSerializer(reviews, many=True).data
+
+#     # --------------------------
+#     # Override to_representation for image URL
+#     # --------------------------
+#     # --------------------------
+#     # Override to_representation for image URL
+#     # --------------------------
+#     def to_representation(self, instance):
+#         data = super().to_representation(instance)
+#         data["image"] = instance.profile_image.url if instance.profile_image else None
+
+#         profile, _ = LandscaperProfilies.objects.get_or_create(user=instance.user)
+#         data["name"] = profile.name
+#         data["phone"] = profile.phone
+
+#         return data
+
+#     # --------------------------
+#     # Override update to handle personal info + business profile
+#     # --------------------------
+#     def update(self, instance, validated_data):
+#         # remove personal fields from validated_data
+#         name = validated_data.pop("name", None)
+#         phone = validated_data.pop("phone", None)
+
+#         # update BusinessProfile fields
+#         instance.latitude = validated_data.get("latitude", instance.latitude)
+#         instance.longitude = validated_data.get("longitude", instance.longitude)
+
+#         if "profile_image" in validated_data:
+#             instance.profile_image = validated_data["profile_image"]
+
+#         instance.save()
+
+#         # update/create LandscaperProfilies
+#         profile, _ = LandscaperProfilies.objects.get_or_create(user=instance.user)
+
+#         if name is not None:
+#             profile.name = name
+#         if phone is not None:
+#             profile.phone = phone
+
+#         profile.save()
+
+#         return instance
+
+
+from rest_framework import serializers
+from django.db.models import Avg
+from geopy.geocoders import Nominatim
+from landscapers.serializers import WorkingHoursSerializer
+
+
+# from subscriptions.models import Subscription, SubscriptionStatus
+
 class LandscaperProfileSerializer(serializers.ModelSerializer):
     user_id = serializers.IntegerField(source="user.id", read_only=True)
     email = serializers.EmailField(source="user.email", read_only=True)
     plan = serializers.SerializerMethodField()
-
-    name = serializers.CharField(required=False)
-    phone = serializers.CharField(required=False)
-    image = serializers.ImageField(source="profile_image", required=False, allow_null=True)
-
-    business_name = serializers.CharField(read_only=True)
-    latitude = serializers.SerializerMethodField()
-    longitude = serializers.SerializerMethodField()
+    name = serializers.SerializerMethodField()
+    phone = serializers.SerializerMethodField()
+    image = serializers.SerializerMethodField()
     address = serializers.SerializerMethodField()
-
     services = serializers.SerializerMethodField()
-    upcoming_jobs = serializers.SerializerMethodField()
-    completed_jobs = serializers.SerializerMethodField()
+    working_hours = serializers.SerializerMethodField()
+
+    already_sent = serializers.SerializerMethodField()
+    connection_request_id = serializers.SerializerMethodField()
     average_rating = serializers.SerializerMethodField()
     total_reviews = serializers.SerializerMethodField()
     reviews = serializers.SerializerMethodField()
 
+
     class Meta:
-        model = BusinessProfile  # Must use BusinessProfile
+        model = BusinessProfile
         fields = [
-            "id", "user_id", "email", "plan", "name", "phone",
-            "latitude", "longitude", "business_name", "address",
-            "image", "services", "upcoming_jobs", "completed_jobs",
-            "average_rating", "total_reviews", "reviews",
+            "id",
+            "user_id",
+            "email",
+            "plan",
+            "name",
+            "phone",
+            "business_name",
+            "business_email",
+            "business_phone",
+            "latitude",
+            "longitude",
+            "address",
+            "image",
+            "working_hours",
+            "services",
+            "already_sent",
+            "connection_request_id",
+            "average_rating",
+            "total_reviews",
+            "reviews",
         ]
 
-    # -------------------------------
-    # SerializerMethodField methods
-    # -------------------------------
     def get_plan(self, obj):
-        """
-        Plan is derived from ACTIVE subscription (Stripe-controlled)
-        """
-        subscription = (
-            Subscription.objects
-            .filter(
-                user=obj.user,
-                is_active=True,
-                status=SubscriptionStatus.ACTIVE
-            )
-            .select_related("plan")
-            .first()
-        )
-        if subscription:
-            return subscription.plan.name.lower()  # e.g. "basic", "pro"
-        return "free"
+        subscription = Subscription.objects.filter(
+            user=obj.user,
+            is_active=True,
+            status=SubscriptionStatus.ACTIVE
+        ).select_related("plan").first()
+        return subscription.plan.name.lower() if subscription else "free"
 
-    def get_latitude(self, obj):
-        lat = getattr(obj, "latitude", None)
-        return float(lat) if lat is not None else None
+    def get_name(self, obj):
+        profile, _ = LandscaperProfilies.objects.get_or_create(user=obj.user)
+        return profile.name
 
-    def get_longitude(self, obj):
-        lon = getattr(obj, "longitude", None)
-        return float(lon) if lon is not None else None
+    def get_phone(self, obj):
+        profile, _ = LandscaperProfilies.objects.get_or_create(user=obj.user)
+        return profile.phone
 
+    def get_image(self, obj):
+        return obj.profile_image.url if obj.profile_image else None
+    
+    def get_working_hours(self, obj):
+        hours = obj.working_hours.filter(is_active=True)
+        return WorkingHoursSerializer(hours, many=True).data
 
-    def get_address(self, obj):
-        if obj.latitude and obj.longitude:
-            from geopy.geocoders import Nominatim
-            geolocator = Nominatim(user_agent="yardlink_app")
-            try:
-                location = geolocator.reverse(f"{obj.latitude}, {obj.longitude}")
-                return location.address if location else None
-            except:
-                return None
-        return None
 
     def get_services(self, obj):
         services = Service.objects.filter(business=obj)
@@ -424,33 +549,34 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
             {
                 "id": s.id,
                 "name": s.name,
-                "description": s.description,
-                "price": float(s.base_price) if s.base_price else 0,
-                "pricing_type": s.pricing_type,
-                "min_price": float(s.min_price) if s.min_price else 0,
-                "latitude": float(s.latitude) if s.latitude else None,
-                "longitude": float(s.longitude) if s.longitude else None,
-                "is_active": s.is_active,
-                "created_at": s.created_at,
-                "updated_at": s.updated_at,
             }
             for s in services
         ]
 
-    def get_upcoming_jobs(self, obj):
-        jobs = ServiceSchedule.objects.filter(
-            landscaper=obj.user,
-            is_completed=False,
-            scheduled_date__gte=timezone.now().date()
-        ).order_by("scheduled_date", "scheduled_time")
-        return JobSerializer(jobs, many=True).data
+    def get_already_sent(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            return False
 
-    def get_completed_jobs(self, obj):
-        jobs = ServiceSchedule.objects.filter(
-            landscaper=obj.user,
-            is_completed=True
-        ).order_by("-completed_at")
-        return JobSerializer(jobs, many=True).data
+        return ConnectionRequest.objects.filter(
+            sender=request.user,
+            receiver=obj.user,
+            is_accepted=False
+        ).exists()
+
+
+    def get_connection_request_id(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            return None
+
+        connection = ConnectionRequest.objects.filter(
+            sender=request.user,
+            receiver=obj.user,
+            is_accepted=False
+        ).first()
+
+        return connection.id if connection else None
 
     def get_average_rating(self, obj):
         avg = LandscaperReview.objects.filter(
@@ -459,7 +585,9 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
         return round(avg, 1)
 
     def get_total_reviews(self, obj):
-        return LandscaperReview.objects.filter(landscaper=obj.user).count()
+        return LandscaperReview.objects.filter(
+            landscaper=obj.user
+        ).count()
 
     def get_reviews(self, obj):
         reviews = LandscaperReview.objects.filter(
@@ -467,12 +595,15 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
         ).select_related("client").order_by("-created_at")
         return LandscaperReviewSerializer(reviews, many=True).data
 
-    # Override to_representation to fix image URL
-    def to_representation(self, instance):
-        data = super().to_representation(instance)
-        data["image"] = instance.profile_image.url if instance.profile_image else None
-        return data
-
+    def get_address(self, obj):
+        if obj.latitude and obj.longitude:
+            geolocator = Nominatim(user_agent="yardlink_app")
+            try:
+                location = geolocator.reverse(f"{obj.latitude}, {obj.longitude}")
+                return location.address if location else None
+            except Exception:
+                return None
+        return None
 
 
 # serializers.py for client
@@ -515,7 +646,7 @@ class ClientProfileSerializer(serializers.ModelSerializer):
             "connection_request_id",
         ]
 
-# new
+
     def get_address(self, obj):
         # Get address from related User model
         return getattr(obj.user, "address", None)

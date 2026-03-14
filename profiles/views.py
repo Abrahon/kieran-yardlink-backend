@@ -40,7 +40,7 @@ from accounts.enums import RoleChoices
 from profiles.models import LandscaperProfilies
 from reviews.models import LandscaperReview
 from connections.models import ConnectionRequest
-from profiles.serializers import LandscaperProfileSerializer
+from profiles.serializers import LandscaperProfileSerializer,LandscaperPersonalProfileSerializer
 from rest_framework import generics, permissions, status
 from django.contrib.auth import update_session_auth_hash
 from .serializers import ChangePasswordSerializer
@@ -143,35 +143,40 @@ class ProLandscaperWorkersView(generics.ListAPIView):
 
 
 # prolandscaer profile views
-class LandScaperProfileView(generics.RetrieveUpdateAPIView):
+# class LandScaperProfileView(generics.RetrieveUpdateAPIView):
+#     serializer_class = LandscaperProfileSerializer
+#     permission_classes = [IsAuthenticated, IsLandscaper]
+
+#     def get_object(self):
+#         profile, created = BusinessProfile.objects.get_or_create(
+#             user=self.request.user
+#         )
+#         return profile
+
+
+from common.permissions import IsLandscaper
+
+
+class LandScaperProfileView(generics.RetrieveAPIView):
     serializer_class = LandscaperProfileSerializer
     permission_classes = [IsAuthenticated, IsLandscaper]
 
     def get_object(self):
-        profile, created = BusinessProfile.objects.get_or_create(
-            user=self.request.user
-        )
+        return BusinessProfile.objects.get(user=self.request.user)
+
+
+
+
+class LandscaperPersonalProfileView(generics.RetrieveUpdateAPIView):
+    serializer_class = LandscaperPersonalProfileSerializer
+    permission_classes = [IsAuthenticated, IsLandscaper]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def get_object(self):
+        profile, _ = LandscaperProfilies.objects.get_or_create(user=self.request.user)
         return profile
 
 
-
-
-
-# class AllLandscapersListView(generics.ListAPIView):
-#     serializer_class = LandscaperProfileSerializer
-#     permission_classes = [IsAuthenticated]
-
-#     def get_queryset(self):
-#         # Subquery to filter users with active subscription
-#         active_sub = Subscription.objects.filter(
-#             user=OuterRef("user"),
-#             is_active=True,
-#             status=SubscriptionStatus.ACTIVE
-#         )
-
-#         return LandscaperProfilies.objects.annotate(
-#             has_active_sub=Subquery(active_sub.values('id')[:1])
-#         ).filter(has_active_sub__isnull=False).select_related("user")
 
 
 
@@ -329,20 +334,28 @@ from django.db.models import Q
 
 from django.db.models import Exists
 
+from rest_framework import generics, permissions
+from django.db.models import Exists, OuterRef
+
+from landscapers.models import BusinessProfile
+from subscriptions.models import Subscription, SubscriptionStatus
+from .serializers import LandscaperProfileSerializer
+
 class AllLandscapersListView(generics.ListAPIView):
     serializer_class = LandscaperProfileSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
+        # Only show landscapers with active subscriptions
         active_sub = Subscription.objects.filter(
             user=OuterRef("user"),
             is_active=True,
             status=SubscriptionStatus.ACTIVE
         )
 
-        return LandscaperProfilies.objects.annotate(
+        return BusinessProfile.objects.annotate(
             has_active_sub=Exists(active_sub)
-        ).select_related("user")
+        ).select_related("user").order_by("id")
 
 
 # ---------------- All Clients ----------------

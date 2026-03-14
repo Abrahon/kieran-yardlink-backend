@@ -830,7 +830,8 @@ from rest_framework.response import Response
 
 from subscriptions.models import  Subscription, SubscriptionStatus
 from connections.models import ConnectionRequest
-from profiles.serializers import LandscaperProfileSerializer, ClientProfileSerializer, JobSerializer
+from profiles.serializers import LandscaperProfileSerializer, ClientProfileSerializer
+from jobs .serializers import JobSerializer
 
 
 # Accepted Connections / Auto Schedule

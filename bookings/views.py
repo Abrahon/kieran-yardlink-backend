@@ -1,29 +1,4 @@
-# # bookings/views.py
-# from rest_framework.views import APIView
-# from rest_framework.permissions import IsAuthenticated
-# from rest_framework.response import Response
-# from rest_framework import status
-# from django.shortcuts import get_object_or_404
-# from .models import ServiceBooking
-# from .serializers import ServiceBookingRescheduleSerializer
 
-
-# class ServiceBookingRescheduleAPIView(APIView):
-#     permission_classes = [IsAuthenticated]
-
-#     def post(self, request, booking_id):
-#         booking = get_object_or_404(ServiceBooking, id=booking_id, client=request.user)
-
-#         serializer = ServiceBookingRescheduleSerializer(booking, data=request.data, partial=True)
-#         serializer.is_valid(raise_exception=True)
-#         serializer.save()
-
-#         return Response({
-#             "message": "Booking rescheduled successfully",
-#             "booking_id": booking.id,
-#             "new_date": serializer.data.get("scheduled_date"),
-#             "new_time": serializer.data.get("scheduled_time")
-#         }, status=status.HTTP_200_OK)
 
 
 
@@ -177,7 +152,7 @@ from rest_framework.response import Response
 from django.db import transaction
 from bookings.models import BookingRequest
 from jobs.models import Job
-from property.models import Property
+
 
 @api_view(["PATCH"])
 @permission_classes([permissions.IsAuthenticated])
@@ -204,17 +179,17 @@ def landscaper_accept_booking(request, pk):
                 status=400
             )
 
-        # Create Job from booking
         job = Job.objects.create(
             booking=booking,
             client=booking.client,
             landscaper=booking.landscaper,
-            # property=booking.property,
             scheduled_date=booking.scheduled_date,
             scheduled_time=booking.scheduled_time,
+            total_price=booking.price or 0,
             status=Job.Status.UPCOMING,
             is_active=True
         )
+
 
         booking.status = BookingRequest.Status.ACCEPTED
         booking.job_created = True
@@ -224,9 +199,10 @@ def landscaper_accept_booking(request, pk):
         "message": "Booking accepted and job created successfully.",
         "booking_id": booking.id,
         "job_id": job.id,
-        "booking_status": booking.status
+        "booking_status": booking.status,
+        "booking_price": float(booking.price) if booking.price is not None else 0,
+        "job_total_price": float(job.total_price) if job.total_price is not None else 0,
     }, status=status.HTTP_200_OK)
-
 
 
 class ClientBookingListView(generics.ListAPIView):

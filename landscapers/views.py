@@ -823,24 +823,36 @@ def toggle_client_custom_service_active(request, pk):
 #             status=status.HTTP_201_CREATED
 #         )
 
+from rest_framework import generics, permissions, serializers
+from django.db import IntegrityError
+from landscapers.models import Addon, BusinessProfile
+from landscapers.serializers import AddonSerializer
+
 class AddonListCreateView(generics.ListCreateAPIView):
     serializer_class = AddonSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        try:
-            business = self.request.user.landscaper_profile
-        except BusinessProfile.DoesNotExist:
+        business = getattr(self.request.user, "landscaper_profile", None)
+        if not business:
             return Addon.objects.none()
         return Addon.objects.filter(business=business)
 
     def perform_create(self, serializer):
-        try:
-            business = self.request.user.landscaper_profile
-        except BusinessProfile.DoesNotExist:
+        business = getattr(self.request.user, "landscaper_profile", None)
+        if not business:
             raise serializers.ValidationError({"error": "Landscaper profile not found."})
 
-        serializer.save(business=business)
+        try:
+            serializer.save(business=business)
+        except IntegrityError as e:
+            # Check if it is the unique constraint error
+            if "unique_addon_per_business" in str(e):
+                raise serializers.ValidationError({
+                    "error": "Addon with this name already exists for your business."
+                })
+            # Re-raise any other database errors
+            raise e
 
 
 
@@ -933,8 +945,6 @@ class LandscaperFind(generics.ListAPIView):
 
 
 # set working hours for landscapers
-
-
 
 class WorkingHoursListCreateView(generics.ListCreateAPIView):
     serializer_class = WorkingHoursSerializer

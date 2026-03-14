@@ -10,7 +10,7 @@ from django.utils import timezone
 from django.contrib.postgres.fields import ArrayField, JSONField  # PostgreSQL
 User = get_user_model()
 from django.core.exceptions import ValidationError
-# from bookings.models import BookingRequest
+
 
 
 # Landscaper Profile (business info)
@@ -18,8 +18,7 @@ class BusinessProfile(models.Model):
     user = models.OneToOneField(
         User,
         on_delete=models.CASCADE,
-        related_name="landscaper_profile"  
-)
+        related_name="landscaper_profile")
 
 
     # Business info
