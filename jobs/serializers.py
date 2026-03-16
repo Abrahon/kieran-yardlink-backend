@@ -207,3 +207,80 @@ class JobSerializer(serializers.ModelSerializer):
 #     def get_reschedules(self, obj):
 #         return JobRescheduleSerializer(obj.reschedules.all(), many=True).data
 
+# completd job serializers
+from rest_framework import serializers
+from jobs.models import Job, JobImage, JobReschedule
+from profiles.serializers import ClientProfileSerializer
+
+
+class CompletedJobSerializer(serializers.ModelSerializer):
+    booking_price = serializers.SerializerMethodField()
+    client = ClientProfileSerializer(read_only=True)
+    landscaper_info = serializers.SerializerMethodField()
+    job_property = serializers.StringRelatedField()
+
+    completed_items_list = serializers.SerializerMethodField()
+    before_images = serializers.SerializerMethodField()
+    after_images = serializers.SerializerMethodField()
+    images = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Job
+        fields = [
+            "id",
+            "booking",
+            "client",
+            "landscaper_info",
+            "job_property",
+            "scheduled_date",
+            "scheduled_time",
+            "booking_price",
+            "total_price",
+            "payment_status",
+            "note",
+            "status",
+            "is_active",
+            "completed_at",
+            "completed_items_list",
+            "before_images",
+            "after_images",
+            "images",
+        ]
+
+    def get_booking_price(self, obj):
+        if obj.booking and obj.booking.price is not None:
+            return str(obj.booking.price)
+        return "0.00"
+
+    def get_landscaper_info(self, obj):
+        business = obj.landscaper
+        if not business:
+            return None
+
+        user = business.user
+        personal = getattr(user, "landscaperprofilies", None)
+
+        return {
+            "id": business.id,
+            "name": personal.name if personal else None,
+            "phone": personal.phone if personal else None,
+            "image": personal.image.url if personal and personal.image else None,
+            "business_name": business.business_name,
+            "business_email": business.business_email,
+            "business_phone": business.business_phone,
+        }
+
+    def get_completed_items_list(self, obj):
+        completed_items = obj.items.filter(is_completed=True).order_by("sort_order", "id")
+        return JobItemSerializer(completed_items, many=True).data
+
+    def get_before_images(self, obj):
+        before = obj.images.filter(image_type=JobImage.ImageType.BEFORE)
+        return JobImageSerializer(before, many=True).data
+
+    def get_after_images(self, obj):
+        after = obj.images.filter(image_type=JobImage.ImageType.AFTER)
+        return JobImageSerializer(after, many=True).data
+
+    def get_images(self, obj):
+        return JobImageSerializer(obj.images.all(), many=True).data

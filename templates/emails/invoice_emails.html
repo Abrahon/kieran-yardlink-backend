@@ -1,0 +1,24 @@
+<h3>Invoice {{ invoice.invoice_number }}</h3>
+
+<p>Hello {{ client.name|default:"Client" }},</p>
+
+<p>Your completed job invoice is ready.</p>
+
+<p><strong>Job ID:</strong> {{ job.id }}</p>
+<p><strong>Property:</strong> {{ job.job_property }}</p>
+<p><strong>Total:</strong> {{ invoice.total }}</p>
+
+<h4>Items</h4>
+<ul>
+  {% for item in line_items %}
+    <li>{{ item.name }} - {{ item.line_total }}</li>
+  {% endfor %}
+</ul>
+
+{% if pay_url %}
+  <p><a href="{{ pay_url }}">Pay now</a></p>
+{% endif %}
+
+{% if frontend_invoice_url %}
+  <p><a href="{{ frontend_invoice_url }}">View invoice</a></p>
+{% endif %}

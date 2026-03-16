@@ -16,12 +16,12 @@ from profiles.models import ClientProfile
 from property.models import Property
 
 
-class TimeStampedModel(models.Model):
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+# class TimeStampedModel(models.Model):
+#     created_at = models.DateTimeField(auto_now_add=True)
+#     updated_at = models.DateTimeField(auto_now=True)
 
-    class Meta:
-        abstract = True
+#     class Meta:
+#         abstract = True
 
 # class Job(TimeStampedModel):
 #     class Status(models.TextChoices):
@@ -52,12 +52,6 @@ class TimeStampedModel(models.Model):
 
 #     class Meta:
 #         ordering = ["-created_at"]
-#         indexes = [
-#             models.Index(fields=["client"]),
-#             models.Index(fields=["landscaper"]),
-#             models.Index(fields=["status"]),
-#             models.Index(fields=["scheduled_date"]),
-#         ]
 
 #     def clean(self):
 #         if self.booking and self.booking.client != self.client:
@@ -72,25 +66,6 @@ class TimeStampedModel(models.Model):
 #     @property
 #     def completed_items(self):
 #         return self.items.filter(is_completed=True).count()
-        
-#     # def recalculate_total_price(self, save=True):
-#     #     base_total = Decimal("0.00")
-
-#     #     # Base price from booking
-#     #     if self.booking and self.booking.price is not None:
-#     #         base_total = self.booking.price
-
-#     #     # Sum completed item prices
-#     #     items_total = self.items.filter(is_completed=True).aggregate(
-#     #         total=models.Sum("price")
-#     #     )["total"] or Decimal("0.00")
-
-#     #     self.total_price = base_total + items_total
-
-#     #     if save:
-#     #         self.save(update_fields=["total_price", "updated_at"])
-
-#     #     return self.total_price
 
 #     def recalculate_total_price(self, save=True):
 #         total = self.items.filter(is_completed=True).aggregate(
@@ -103,8 +78,6 @@ class TimeStampedModel(models.Model):
 #             self.save(update_fields=["total_price", "updated_at"])
 
 #         return self.total_price
-
-
 
 #     def has_before_images(self):
 #         return self.images.filter(image_type=JobImage.ImageType.BEFORE).exists()
@@ -142,7 +115,6 @@ class TimeStampedModel(models.Model):
 #         if completed_items != total_items:
 #             raise ValidationError("All job items must be completed first.")
 
-
 #     def mark_completed(self):
 #         self.can_be_completed()
 #         self.recalculate_total_price(save=False)
@@ -153,6 +125,16 @@ class TimeStampedModel(models.Model):
 #     def __str__(self):
 #         return f"Job #{self.id} - {self.client.user.email} - {self.status}"
 
+
+
+class TimeStampedModel(models.Model):
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        abstract = True
+
+
 class Job(TimeStampedModel):
     class Status(models.TextChoices):
         UPCOMING = "upcoming", "Upcoming"
@@ -161,8 +143,16 @@ class Job(TimeStampedModel):
         RESCHEDULED = "rescheduled", "Rescheduled"
         CANCELLED = "cancelled", "Cancelled"
 
+    # ADD THIS
+    class PaymentStatus(models.TextChoices):
+        PENDING = "pending", "Pending"
+        PAID = "paid", "Paid"
+
     booking = models.OneToOneField(
-        BookingRequest, on_delete=models.CASCADE, related_name="job", null=True,
+        BookingRequest,
+        on_delete=models.CASCADE,
+        related_name="job",
+        null=True,
     )
     client = models.ForeignKey(ClientProfile, on_delete=models.CASCADE, related_name="jobs")
     landscaper = models.ForeignKey(BusinessProfile, on_delete=models.CASCADE, related_name="jobs")
@@ -175,6 +165,14 @@ class Job(TimeStampedModel):
         default=Decimal("0.00"),
         validators=[MinValueValidator(0)],
     )
+
+    # ADD THIS
+    payment_status = models.CharField(
+        max_length=20,
+        choices=PaymentStatus.choices,
+        default=PaymentStatus.PENDING,   # after completed works it will still show pending until paid
+    )
+
     note = models.TextField(blank=True, null=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.UPCOMING)
     is_active = models.BooleanField(default=True)
@@ -250,11 +248,17 @@ class Job(TimeStampedModel):
         self.recalculate_total_price(save=False)
         self.status = self.Status.COMPLETED
         self.completed_at = timezone.now()
-        self.save(update_fields=["total_price", "status", "completed_at", "updated_at"])
+
+        # KEEP payment pending after completion
+        if not self.payment_status:
+            self.payment_status = self.PaymentStatus.PENDING
+
+        self.save(update_fields=["total_price", "status", "completed_at", "payment_status", "updated_at"])
 
     def __str__(self):
         return f"Job #{self.id} - {self.client.user.email} - {self.status}"
-        
+
+
 
 class JobItem(TimeStampedModel):
     class ItemType(models.TextChoices):
@@ -304,6 +308,7 @@ class JobItem(TimeStampedModel):
 
     def __str__(self):
         return f"Job #{self.job.id} - {self.name}"
+
 
 
 from cloudinary.models import CloudinaryField
