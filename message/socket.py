@@ -78,7 +78,11 @@ async def connect(sid, environ, auth):
     connected_users[sid] = str(user.id)
     user_sockets[str(user.id)] = sid
     await sio.save_session(sid, {'user': user})
-    await sio.enter_room(sid, str(user.id))  # personal room
+    await sio.enter_room(sid, str(user.id)) 
+
+    # ✅ Admin monitoring room
+    if user.is_staff:
+        await sio.enter_room(sid, "admins")
 
     full_name = user.get_full_name().strip() or user.email
     logger.info(f"Connected: {full_name} ({user.id}) - SID {sid}")

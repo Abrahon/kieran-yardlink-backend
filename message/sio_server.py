@@ -42,6 +42,18 @@ async def send_message(sid, data):
             sender_id=user_id,
             content=message
         )
+    preview = {
+        "title": f"New message from {sender.get_full_name() or sender.email}",
+        "body": text or "Sent a file",
+        "thread_id": thread.id
+    }
+
+    # ✅ SEND PREVIEW TO ADMIN DASHBOARD
+    await sio.emit(
+        "notification_preview",
+        preview,
+        room="admins"
+    )
 
     await asyncio.to_thread(save_message)
 
@@ -52,3 +64,4 @@ async def send_message(sid, data):
 @sio.event
 async def disconnect(sid):
     print("Client disconnected:", sid)
+

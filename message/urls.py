@@ -1,6 +1,6 @@
 
 from django.urls import path
-from .views import ConversationListAPIView,ConversationDetailAPIView,DeleteMultipleConversationsAPIView,StartConversationAPIView
+from .views import ConversationListAPIView,ConversationDetailAPIView,DeleteMultipleConversationsAPIView,StartConversationAPIView,AdminTagConversationAPIView
 
 urlpatterns = [
     path("conversations/", ConversationListAPIView.as_view(), name="conversation-list"),
@@ -15,7 +15,11 @@ urlpatterns = [
         StartConversationAPIView.as_view(),
         name="start-conversation"
 ),
-
+    path(
+        "conversations/<int:thread_id>/tag/",
+        AdminTagConversationAPIView.as_view(),
+        name="tag-conversation"
+    ),
 
 ]
 

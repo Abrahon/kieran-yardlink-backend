@@ -11,7 +11,9 @@ from decouple import config
 from dotenv import load_dotenv
 from pathlib import Path
 
+from pathlib import Path
 
+BASE_DIR = Path(__file__).resolve().parent.parent
 # ------------------------------------------------------------------------------
 # LOAD ENV
 # ------------------------------------------------------------------------------
@@ -116,8 +118,8 @@ ROOT_URLCONF = "core.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],  # can leave empty, we will use app directories
-        "APP_DIRS": True,  # this is important
+        "DIRS": [BASE_DIR / "templates"],   # add this
+        "APP_DIRS": True,                   # keep this True
         "OPTIONS": {
             "context_processors": [
                 "django.template.context_processors.debug",
@@ -128,6 +130,22 @@ TEMPLATES = [
         },
     },
 ]
+
+# TEMPLATES = [
+#     {
+#         "BACKEND": "django.template.backends.django.DjangoTemplates",
+#         "DIRS": [],  # can leave empty, we will use app directories
+#         "APP_DIRS": True,  # this is important
+#         "OPTIONS": {
+#             "context_processors": [
+#                 "django.template.context_processors.debug",
+#                 "django.template.context_processors.request",
+#                 "django.contrib.auth.context_processors.auth",
+#                 "django.contrib.messages.context_processors.messages",
+#             ],
+#         },
+#     },
+# ]
 
 
 WSGI_APPLICATION = "core.wsgi.application"
@@ -289,6 +307,7 @@ MEDIA_URL = "/media/"
 STRIPE_SECRET_KEY = config("STRIPE_SECRET_KEY", default="")
 STRIPE_PUBLIC_KEY = config("STRIPE_PUBLIC_KEY", default="")
 STRIPE_WEBHOOK_SECRET = config("STRIPE_WEBHOOK_SECRET", default="")
+STRIPE_CURRENCY = "usd"
 
 # ------------------------------------------------------------------------------
 # EMAIL

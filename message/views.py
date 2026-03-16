@@ -188,3 +188,28 @@ class StartConversationAPIView(APIView):
             "client_id": thread.client.id,
             "landscaper_id": thread.landscaper.id,
         }, status=status.HTTP_200_OK)
+
+
+class AdminTagConversationAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, thread_id):
+        tag = request.data.get("tag")
+
+        try:
+            thread = ChatThread.objects.get(id=thread_id)
+        except ChatThread.DoesNotExist:
+            return Response({"error": "Thread not found"}, status=404)
+
+        # ✅ Only admin can tag
+        if not request.user.is_staff:
+            return Response({"error": "Admin only"}, status=403)
+
+        thread.tag = tag
+        thread.save(update_fields=["tag"])
+
+        return Response({
+            "message": "Conversation tagged",
+            "thread_id": thread.id,
+            "tag": thread.tag
+        })

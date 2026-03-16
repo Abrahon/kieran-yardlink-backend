@@ -1,161 +1,113 @@
-# from rest_framework import serializers
-# # from bookings.models import ServiceBooking
-# from services.models import ServiceSchedule
-# from profiles.models import LandscaperProfilies, ClientProfile
-# from services.serializers import CompletedServiceSerializer
 
-# class PaymentHistorySerializer(serializers.ModelSerializer):
-#     client_name = serializers.CharField(source='client.user.name')
-#     client_email = serializers.CharField(source='client.user.email')
-#     landscaper_name = serializers.CharField(source='landscaper.name')
-#     service_name = serializers.CharField(source='service.name')
-#     property_address = serializers.SerializerMethodField()
-#     completed_services = CompletedServiceSerializer(many=True, read_only=True)  # if you want nested services
-
-#     class Meta:
-#         model = ServiceSchedule
-#         fields = [
-#             'id', 'client_name', 'client_email', 'landscaper_name', 'service_name',
-#             'property_address', 'scheduled_date', 'scheduled_time', 'payment_status', "completed_services",  'stripe_payment_id'
-#         ]
-
-#     def get_property_address(self, obj):
-#         """
-#         Returns the first property address of the client.
-#         """
-#         user = getattr(obj.client, 'user', None)
-#         if user:
-#             prop = user.properties.first()  # use the related_name from Property model
-#             if prop:
-#                 return prop.address
-#         return ""
-    
-#     def get_total_amount(self, obj):
-#         # use annotated paid_amount if exists, else calculate
-#         if hasattr(obj, "paid_amount"):
-#             return round(obj.paid_amount, 2)
-#         return round(obj.service.price * 1.02, 2)
-
-
-# from rest_framework import serializers
-# from services.models import ServiceSchedule
-# from profiles.models import LandscaperProfilies, ClientProfile
-# from services.serializers import CompletedServiceSerializer
-
-# class PaymentHistorySerializer(serializers.ModelSerializer):
-#     client_name = serializers.CharField(source='client.user.name')
-#     client_email = serializers.CharField(source='client.user.email')
-#     landscaper_name = serializers.CharField(source='landscaper.name')
-#     service_name = serializers.CharField(source='service.name')
-#     property_address = serializers.SerializerMethodField()
-#     completed_services = CompletedServiceSerializer(many=True, read_only=True)  # nested services
-#     total_amount = serializers.SerializerMethodField()  
-
-#     class Meta:
-#         model = ServiceSchedule
-#         fields = [
-#             'id', 'client_name', 'client_email', 'landscaper_name', 'service_name',
-#             'property_address', 'scheduled_date', 'scheduled_time', 'payment_status',
-#             'completed_services', 'stripe_payment_id', 'total_amount'  # include total_amount here
-#         ]
-
-#     def get_property_address(self, obj):
-#         """
-#         Returns the first property address of the client.
-#         """
-#         user = getattr(obj.client, 'user', None)
-#         if user:
-#             prop = user.properties.first()  
-#             if prop:
-#                 return prop.address
-#         return ""
-
-#     def get_total_amount(self, obj):
-#         """
-#         Returns the total paid amount for this job, including 2% markup.
-#         """
-#         if hasattr(obj, "paid_amount"):
-#             return round(obj.paid_amount, 2)
-#         # fallback to service price if annotation not present
-#         return round(obj.service.price * 1.02, 2)
 from rest_framework import serializers
-from services.models import ServiceSchedule
-from profiles.models import LandscaperProfilies, ClientProfile
-from services.serializers import CompletedServiceSerializer
+from invoice.models import Invoice
 
 class PaymentHistorySerializer(serializers.ModelSerializer):
+    invoice_id = serializers.IntegerField(source="id", read_only=True)
+    invoice_number = serializers.CharField(read_only=True)
+
     client_name = serializers.SerializerMethodField()
     client_email = serializers.SerializerMethodField()
+
     landscaper_name = serializers.SerializerMethodField()
-    service_name = serializers.CharField(source='service.name', default="")
+    landscaper_email = serializers.SerializerMethodField()
+
     property_address = serializers.SerializerMethodField()
-    completed_services = CompletedServiceSerializer(many=True, read_only=True)
+    completed_at = serializers.SerializerMethodField()
+    completed_items = serializers.SerializerMethodField()
+
+    payment_status = serializers.CharField(source="status", read_only=True)
+    stripe_payment_id = serializers.CharField(source="stripe_session_id", read_only=True)
     total_amount = serializers.SerializerMethodField()
+    job_id = serializers.IntegerField(source="job.id", read_only=True)
+    booking_price = serializers.SerializerMethodField()
+    pay_url = serializers.CharField(source="stripe_checkout_url", read_only=True)
 
     class Meta:
-        model = ServiceSchedule
+        model = Invoice
         fields = [
-            'id',
-            'client_name',
-            'client_email',
-            'landscaper_name',
-            'service_name',
-            # 'service_price',
-            'property_address',
-            'scheduled_date',
-            'scheduled_time',
-            'payment_status',
-            'completed_services',
-            'stripe_payment_id',
-            'total_amount',
+            "invoice_id",
+            "invoice_number",
+            "job_id",
+            "client_name",
+            "client_email",
+            "landscaper_name",
+            "landscaper_email",
+            "property_address",
+            "completed_at",
+            "payment_status",
+            "completed_items",
+            "stripe_payment_id",
+            "booking_price",
+            "total_amount",
+            "pay_url",
+            "issued_at",
+            "due_at",
+            "paid_at",
         ]
 
     def get_client_name(self, obj):
-        """
-        Returns the full name of the client safely.
-        """
-        client_user = getattr(obj.client, "user", None)
-        if client_user:
-            return getattr(client_user, "name", "Unknown Client")
-        return "Unknown Client"
+        client = getattr(obj.job, "client", None)
+        if not client:
+            return "Unknown Client"
+        return getattr(client, "name", None) or getattr(client.user, "name", "Unknown Client")
 
     def get_client_email(self, obj):
-        """
-        Returns the email of the client safely.
-        """
-        client_user = getattr(obj.client, "user", None)
-        if client_user:
-            return getattr(client_user, "email", "")
+        client = getattr(obj.job, "client", None)
+        if client and getattr(client, "user", None):
+            return client.user.email
         return ""
 
     def get_landscaper_name(self, obj):
-        """
-        Returns the full name of the landscaper safely.
-        """
-        landscaper = getattr(obj, "landscaper", None)
-        if landscaper:
-            return getattr(landscaper, "name", "Unknown Landscaper")
-        return "Unknown Landscaper"
+        business = getattr(obj.job, "landscaper", None)
+        if not business:
+            return "Unknown Landscaper"
 
-    def get_property_address(self, obj):
-        """
-        Returns the first property address of the client, or empty string if none.
-        """
-        client_user = getattr(obj.client, "user", None)
-        if client_user:
-            prop = getattr(client_user, "properties", None)
-            if prop:
-                first_property = prop.first()
-                if first_property:
-                    return getattr(first_property, "address", "")
+        personal = getattr(business.user, "landscaperprofilies", None)
+        if personal and personal.name:
+            return personal.name
+
+        return business.business_name or "Unknown Landscaper"
+
+    def get_landscaper_email(self, obj):
+        business = getattr(obj.job, "landscaper", None)
+        if business and getattr(business, "user", None):
+            return business.user.email
         return ""
 
-    def get_total_amount(self, obj):
-        """
-        Returns the total paid amount for this job, including 2% markup if no paid_amount exists.
-        """
-        if hasattr(obj, "paid_amount") and obj.paid_amount is not None:
-            return round(float(obj.paid_amount), 2)
-        if getattr(obj, "service", None) and getattr(obj.service, "price", None) is not None:
-            return round(float(obj.service.price) * 1.02, 2)
+    def get_property_address(self, obj):
+        job_property = getattr(obj.job, "job_property", None)
+        return str(job_property) if job_property else ""
+
+    def get_completed_at(self, obj):
+        completed_at = getattr(obj.job, "completed_at", None)
+        if completed_at:
+            return completed_at.strftime("%Y-%m-%d %H:%M:%S")
+        return None
+
+    def get_completed_items(self, obj):
+        job = getattr(obj, "job", None)
+        if not job:
+            return []
+
+        return [
+            {
+                "id": item.id,
+                "item_type": item.item_type,
+                "name": item.name,
+                "description": item.description,
+                "price": round(float(item.price or 0), 2),
+                "is_completed": item.is_completed,
+            }
+            for item in job.items.filter(is_completed=True).order_by("sort_order", "id")
+        ]
+
+    def get_booking_price(self, obj):
+        job = getattr(obj, "job", None)
+        booking = getattr(job, "booking", None)
+        if booking and booking.price is not None:
+            return round(float(booking.price), 2)
         return 0.0
+
+    def get_total_amount(self, obj):
+        return round(float(obj.total or 0), 2)

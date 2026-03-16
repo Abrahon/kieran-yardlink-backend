@@ -1,0 +1,23 @@
+Hello {{ client.name|default:"Client" }},
+
+Your completed job invoice is ready.
+
+Invoice Number: {{ invoice.invoice_number }}
+Job ID: {{ job.id }}
+Property: {{ job.job_property }}
+Total: {{ invoice.total }}
+
+Completed Items:
+{% for item in line_items %}
+- {{ item.name }} - {{ item.line_total }}
+{% endfor %}
+
+{% if pay_url %}
+Pay now: {{ pay_url }}
+{% endif %}
+
+{% if frontend_invoice_url %}
+View invoice: {{ frontend_invoice_url }}
+{% endif %}
+
+Thank you.

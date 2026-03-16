@@ -14,6 +14,13 @@ class ChatThread(models.Model):
         on_delete=models.CASCADE,
         related_name="landscaper_threads"
     )
+        # NEW FIELD (ADMIN TAGGING)
+    tag = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        help_text="Admin tag like Support, Quote Inquiry"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

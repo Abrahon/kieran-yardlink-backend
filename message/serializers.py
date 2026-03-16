@@ -47,7 +47,7 @@ class MessageSerializer(serializers.ModelSerializer):
             'message_type',
             'created_at',
             'updated_at',
-            'is_deleted',
+            'is_deleted_for_all',
         ]
         read_only_fields = [
             'id',
@@ -56,7 +56,7 @@ class MessageSerializer(serializers.ModelSerializer):
             'message_type',
             'created_at',
             'updated_at',
-            'is_deleted',
+            'is_deleted_for_all',
         ]
         extra_kwargs = {
             'file': {'write_only': True}  # 🔥 THIS FIXES CLOUDINARY ERROR

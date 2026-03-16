@@ -1,6 +1,6 @@
 from django.urls import path
 from .views import (
-    create_schedule_checkout_session,
+    create_invoice_checkout_session,
     CashPaymentScheduleAPIView,
     stripe_webhook,
     payment_success,
@@ -25,7 +25,7 @@ urlpatterns = [
 
     # Client Payments
 
-    path("schedule/pay-online/", create_schedule_checkout_session),
+    path("schedule/pay-online/", create_invoice_checkout_session),
        # -------------------------------
     # Client selects cash payment for a completed service
     # POST: /client/services/<schedule_id>/cash-payment/

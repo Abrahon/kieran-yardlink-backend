@@ -66,93 +66,103 @@ from services.models import ServiceSchedule, PaymentStatus
 from datetime import datetime
 from collections import OrderedDict
 from calendar import monthrange
+import stripe
+from django.conf import settings
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+from invoice.models import Invoice
+from payments.serializers import PaymentHistorySerializer
+from invoice.models import Invoice
+from jobs.models import Job
+import stripe
+from django.conf import settings
+from django.http import HttpResponse
+from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
+from django.shortcuts import get_object_or_404
+from django.db import transaction
+from django.db.models import Q
+from django.contrib.auth.models import User
 
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAdminUser
+from rest_framework.response import Response
+from rest_framework import status
+from django.contrib.auth import get_user_model
+User = get_user_model()
+
+from invoice.models import Invoice
+from jobs.models import Job
 
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
-def create_schedule_checkout_session(request):
-    """
-    Client pays for completed job.
-    If client already paid this landscaper before,
-    new jobs auto-mark as PAID.
-    """
+def create_invoice_checkout_session(request):
+    invoice_id = request.data.get("invoice_id")
+    if not invoice_id:
+        return Response({"error": "invoice_id is required"}, status=status.HTTP_400_BAD_REQUEST)
 
-    import stripe
-    from django.conf import settings
-
-    schedule_id = request.data.get("schedule_id")
-    if not schedule_id:
-        return Response({"error": "schedule_id is required"}, status=400)
+    client = getattr(request.user, "clientprofile", None)
+    if not client:
+        return Response({"error": "Client profile not found"}, status=status.HTTP_403_FORBIDDEN)
 
     try:
-        schedule = ServiceSchedule.objects.get(
-            id=schedule_id,
-            client=request.user.clientprofile
+        invoice = Invoice.objects.select_related("job", "job__client", "job__landscaper").get(
+            id=invoice_id,
+            job__client=client
         )
-    except ServiceSchedule.DoesNotExist:
-        return Response({"error": "Schedule not found"}, status=404)
+    except Invoice.DoesNotExist:
+        return Response({"error": "Invoice not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    if not schedule.is_completed:
-        return Response({"error": "Job is not completed yet"}, status=400)
+    if invoice.status == Invoice.Status.PAID:
+        return Response({"message": "Invoice already paid"}, status=status.HTTP_200_OK)
 
-    if schedule.payment_status == PaymentStatus.PAID:
-        return Response({"message": "Already paid"}, status=200)
-
-    #  AUTO-PAY CHECK
-    already_paid_before = ServiceSchedule.objects.filter(
-        client=schedule.client,
-        landscaper=schedule.landscaper,
-        payment_status=PaymentStatus.PAID
-    ).exists()
-
-    if already_paid_before:
-        schedule.payment_status = PaymentStatus.PAID
-        schedule.save(update_fields=["payment_status"])
-
-        return Response({
-            "message": "Auto-paid (existing trusted landscaper)",
-            "payment_status": schedule.payment_status
-        })
-
-    # ------------------------------
-    # If no previous payment → create Stripe checkout
-    # ------------------------------
-
-    amount = int(schedule.service.price * 100)
-    total_amount = amount + int(amount * 0.02)
+    amount = int(invoice.total * 100)
 
     try:
         session = stripe.checkout.Session.create(
             payment_method_types=["card"],
             mode="payment",
-            customer_email=schedule.client.user.email,
+            customer_email=invoice.job.client.user.email,
             line_items=[{
                 "price_data": {
                     "currency": "usd",
-                    "unit_amount": total_amount,
+                    "unit_amount": amount,
                     "product_data": {
-                        "name": f"{schedule.service.name} (Job ID {schedule.id})",
-                        "description": f"Completed by: {schedule.landscaper.user.name}"
+                        "name": f"Invoice {invoice.invoice_number}",
+                        "description": f"Completed Job #{invoice.job.id} - {invoice.job.landscaper.business_name}"
                     },
                 },
                 "quantity": 1,
             }],
-            success_url=f"https://zznkjkkp-8000.inc1.devtunnels.ms/api/success/?schedule_id={schedule.id}",
-            cancel_url=f"https://zznkjkkp-8000.inc1.devtunnels.ms/api/cancel/?schedule_id={schedule.id}",
+            success_url=f"https://zznkjkkp-8000.inc1.devtunnels.ms/api/success/?invoice_id={invoice.id}",
+            cancel_url=f"https://zznkjkkp-8000.inc1.devtunnels.ms/api/payment-cancel?invoice_id={invoice.id}",
+
+#             success_url=f"https://zznkjkkp-8000.inc1.devtunnels.ms/api/success/?schedule_id={schedule.id}",
+#             cancel_url=f"https://zznkjkkp-8000.inc1.devtunnels.ms/api/cancel/?schedule_id={schedule.id}",
             metadata={
-                "schedule_id": str(schedule.id),
-                "landscaper_id": str(schedule.landscaper.id)
+                "invoice_id": str(invoice.id),
+                "job_id": str(invoice.job.id),
+                "client_id": str(invoice.job.client.id),
+                "landscaper_id": str(invoice.job.landscaper.id),
             }
         )
     except stripe.error.StripeError as e:
-        return Response({"error": str(e)}, status=500)
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    schedule.payment_status = PaymentStatus.PENDING
-    schedule.stripe_payment_id = session.id
-    schedule.save(update_fields=["payment_status", "stripe_payment_id"])
+    invoice.status = Invoice.Status.PENDING
+    invoice.stripe_session_id = session.id
+    invoice.stripe_checkout_url = session.url
+    invoice.save(update_fields=["status", "stripe_session_id", "stripe_checkout_url", "updated_at"])
 
-    return Response({"checkout_url": session.url})
+    return Response({
+        "invoice_id": invoice.id,
+        "invoice_number": invoice.invoice_number,
+        "checkout_url": session.url,
+    }, status=status.HTTP_200_OK)
+
 
 
 # Success / Cancel Endpoints
@@ -242,144 +252,123 @@ class ConfirmCashPaymentAPIView(APIView):
 
 @csrf_exempt
 def stripe_webhook(request):
-    """
-    Stripe webhook for handling checkout.session.completed.
-    Always returns 200 to Stripe to prevent retries.
-    Logs all events for debugging.
-    """
     payload = request.body
     sig_header = request.META.get("HTTP_STRIPE_SIGNATURE")
     endpoint_secret = settings.STRIPE_WEBHOOK_SECRET
 
-    if sig_header is None:
-        print("[Webhook] Missing Stripe signature header")
-        return HttpResponse(status=200)  # Always return 200
+    if not sig_header:
+        return HttpResponse(status=400)
 
     try:
-        # Construct the event
         event = stripe.Webhook.construct_event(
             payload=payload,
             sig_header=sig_header,
             secret=endpoint_secret
         )
-    except ValueError as e:
-        # Invalid payload
-        print(f"[Webhook] Invalid payload: {e}")
-        return HttpResponse(status=200)
-    except stripe.error.SignatureVerificationError as e:
-        # Invalid signature
-        print(f"[Webhook] Invalid signature: {e}")
-        return HttpResponse(status=200)
-    except Exception as e:
-        print(f"[Webhook] Unknown error: {e}")
-        return HttpResponse(status=200)
+    except ValueError:
+        return HttpResponse(status=400)
+    except stripe.error.SignatureVerificationError:
+        return HttpResponse(status=400)
 
-    # Log all events for debugging
-    print(f"[Webhook] Event received: {event['type']}")
+    event_type = event["type"]
+    data_object = event["data"]["object"]
 
-    # Handle checkout.session.completed
-    if event["type"] == "checkout.session.completed":
-        session = event["data"]["object"]
-        metadata = session.get("metadata", {})
-        schedule_id = metadata.get("schedule_id")
+    # Main success event
+    if event_type in ["checkout.session.completed", "checkout.session.async_payment_succeeded"]:
+        invoice_id = data_object.get("metadata", {}).get("invoice_id")
+        stripe_session_id = data_object.get("id")
 
-        if schedule_id:
+        if invoice_id:
             try:
-                schedule = ServiceSchedule.objects.get(id=schedule_id)
-                schedule.payment_status = PaymentStatus.PAID
-                schedule.stripe_payment_id = session.get("id")
-                schedule.save(update_fields=["payment_status", "stripe_payment_id"])
-                print(f"[Webhook] Schedule {schedule_id} marked as PAID")
-            except ServiceSchedule.DoesNotExist:
-                print(f"[Webhook] Schedule {schedule_id} not found")
-                # Do not fail webhook; just log
+                invoice = Invoice.objects.select_related("job").get(id=invoice_id)
 
-    # Optional: log other event types for debugging
-    else:
-        print(f"[Webhook] Ignored event type: {event['type']}")
+                invoice.status = Invoice.Status.PAID
+                invoice.paid_at = timezone.now()
+                invoice.stripe_session_id = stripe_session_id
+                invoice.save(update_fields=["status", "paid_at", "stripe_session_id", "updated_at"])
 
-    # Always return 200 to Stripe
+                if invoice.job:
+                    invoice.job.payment_status = Job.PaymentStatus.PAID
+                    invoice.job.save(update_fields=["payment_status", "updated_at"])
+
+            except Invoice.DoesNotExist:
+                pass
+
     return HttpResponse(status=200)
-
-
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def landscaper_payment_history(request):
     """
-    Returns landscaper payment history with revenue summary:
-    - monthly_paid / monthly_pending
-    - yearly_paid / yearly_pending
-    - total_paid / total_pending
-    Each job includes total_amount = service price * 1.02
+    Landscaper view:
+    - payment history for all completed jobs/invoices
+    - revenue summary:
+        - monthly_paid / monthly_pending
+        - yearly_paid / yearly_pending
+        - total_paid / total_pending
     """
-    user = request.user
-
-    # Get landscaper profile
-    try:
-        landscaper = user.landscaperprofilies
-    except LandscaperProfilies.DoesNotExist:
+    landscaper = getattr(request.user, "landscaper_profile", None)
+    if not landscaper:
         return Response({"error": "No landscaper profile found"}, status=404)
 
-    # All completed jobs for this landscaper
-    schedules = ServiceSchedule.objects.filter(
-        landscaper=landscaper,
-        is_completed=True
-    ).select_related('client', 'service').order_by('-scheduled_date')
+    invoices = Invoice.objects.filter(
+        job__landscaper=landscaper,
+        job__status="completed"
+    ).select_related(
+        "job",
+        "job__client",
+        "job__client__user",
+        "job__landscaper",
+        "job__landscaper__user",
+        "job__job_property",
+    ).prefetch_related(
+        "job__items"
+    ).order_by("-job__completed_at", "-created_at")
 
-    # Annotate each job with paid_amount (price * 1.02)
-    schedules = schedules.annotate(
-        paid_amount=Cast(F('service__price'), FloatField()) * Value(1.02, output_field=FloatField())
-    )
+    serializer = PaymentHistorySerializer(invoices, many=True)
 
-    # Serialize payment history
-    serializer = PaymentHistorySerializer(schedules, many=True)
-
-    # Get current date
     today = now()
     current_month = today.month
     current_year = today.year
 
-    # Monthly revenue
-    monthly_jobs = schedules.filter(scheduled_date__year=current_year, scheduled_date__month=current_month)
-    monthly_paid = monthly_jobs.filter(payment_status=PaymentStatus.PAID).aggregate(
-        total=Coalesce(Sum('paid_amount'), 0.0)
-    )['total']
-    monthly_pending = monthly_jobs.filter(payment_status=PaymentStatus.PENDING).aggregate(
-        total=Coalesce(Sum('paid_amount'), 0.0)
-    )['total']
+    monthly_invoices = invoices.filter(created_at__year=current_year, created_at__month=current_month)
+    yearly_invoices = invoices.filter(created_at__year=current_year)
 
-    # Yearly revenue
-    yearly_jobs = schedules.filter(scheduled_date__year=current_year)
-    yearly_paid = yearly_jobs.filter(payment_status=PaymentStatus.PAID).aggregate(
-        total=Coalesce(Sum('paid_amount'), 0.0)
-    )['total']
-    yearly_pending = yearly_jobs.filter(payment_status=PaymentStatus.PENDING).aggregate(
-        total=Coalesce(Sum('paid_amount'), 0.0)
-    )['total']
+    monthly_paid = monthly_invoices.filter(status="paid").aggregate(
+        total=Coalesce(Sum("total"), 0)
+    )["total"]
 
-    # Total revenue (all time)
-    total_paid = schedules.filter(payment_status=PaymentStatus.PAID).aggregate(
-        total=Coalesce(Sum('paid_amount'), 0.0)
-    )['total']
-    total_pending = schedules.filter(payment_status=PaymentStatus.PENDING).aggregate(
-        total=Coalesce(Sum('paid_amount'), 0.0)
-    )['total']
+    monthly_pending = monthly_invoices.filter(status__in=["pending", "sent"]).aggregate(
+        total=Coalesce(Sum("total"), 0)
+    )["total"]
 
-    # Return response
+    yearly_paid = yearly_invoices.filter(status="paid").aggregate(
+        total=Coalesce(Sum("total"), 0)
+    )["total"]
+
+    yearly_pending = yearly_invoices.filter(status__in=["pending", "sent"]).aggregate(
+        total=Coalesce(Sum("total"), 0)
+    )["total"]
+
+    total_paid = invoices.filter(status="paid").aggregate(
+        total=Coalesce(Sum("total"), 0)
+    )["total"]
+
+    total_pending = invoices.filter(status__in=["pending", "sent"]).aggregate(
+        total=Coalesce(Sum("total"), 0)
+    )["total"]
+
     return Response({
         "payment_history": serializer.data,
         "revenue_summary": {
-            "monthly_paid": round(monthly_paid, 2),
-            "monthly_pending": round(monthly_pending, 2),
-            "yearly_paid": round(yearly_paid, 2),
-            "yearly_pending": round(yearly_pending, 2),
-            "total_paid": round(total_paid, 2),
-            "total_pending": round(total_pending, 2)
+            "monthly_paid": round(float(monthly_paid or 0), 2),
+            "monthly_pending": round(float(monthly_pending or 0), 2),
+            "yearly_paid": round(float(yearly_paid or 0), 2),
+            "yearly_pending": round(float(yearly_pending or 0), 2),
+            "total_paid": round(float(total_paid or 0), 2),
+            "total_pending": round(float(total_pending or 0), 2),
         }
-    })
-
-
+    }, status=200)
 
 
 @api_view(["GET"])
@@ -387,56 +376,83 @@ def landscaper_payment_history(request):
 def client_payment_history(request):
     """
     Client view:
-    - Shows all landscapers the client worked with
-    - Each landscaper includes:
+    - shows all landscapers the client worked with
+    - each landscaper includes:
         - name, email
-        - completed services
+        - completed jobs/invoices
         - property/location
-        - date of completed job
-        - total jobs worked for this client
-        - total amount paid to this landscaper
+        - completed date
+        - total jobs worked
+        - total amount invoiced
+        - pay_url if still pending
     """
-    client = request.user.clientprofile
+    client = getattr(request.user, "clientprofile", None)
+    if not client:
+        return Response({"error": "Client profile not found"}, status=404)
 
-    # Completed jobs for this client
-    jobs = ServiceSchedule.objects.filter(
-        client=client,
-        is_completed=True
-    ).select_related("landscaper", "service").order_by("-completed_at")
+    invoices = Invoice.objects.filter(
+        job__client=client,
+        job__status="completed"
+    ).select_related(
+        "job",
+        "job__client",
+        "job__client__user",
+        "job__landscaper",
+        "job__landscaper__user",
+        "job__job_property",
+    ).prefetch_related(
+        "job__items"
+    ).order_by("-job__completed_at", "-created_at")
 
-    # Group jobs by landscaper
     landscaper_dict = {}
-    for job in jobs:
-        landscaper_id = job.landscaper.id
+
+    for invoice in invoices:
+        landscaper = invoice.job.landscaper
+        landscaper_id = landscaper.id
+
+        personal = getattr(landscaper.user, "landscaperprofilies", None)
+        landscaper_name = personal.name if personal and personal.name else landscaper.business_name
+        landscaper_email = landscaper.user.email if landscaper.user else ""
+
         if landscaper_id not in landscaper_dict:
             landscaper_dict[landscaper_id] = {
                 "landscaper_id": landscaper_id,
-                "landscaper_name": job.landscaper.user.name,
-                "landscaper_email": job.landscaper.user.email,
+                "landscaper_name": landscaper_name,
+                "landscaper_email": landscaper_email,
                 "jobs_count": 0,
                 "total_amount": 0.0,
                 "jobs": []
             }
 
-        # Add job info
-        job_amount = float(job.service.price or 0)  # price in USD
+        invoice_amount = float(invoice.total or 0)
+
         landscaper_dict[landscaper_id]["jobs"].append({
-            "service_name": job.service.name,
-            "property_address": getattr(job.client.user.properties.first(), "address", ""),
-            "completed_at": job.completed_at.strftime("%Y-%m-%d %H:%M:%S"),
-            "amount": round(job_amount, 2)
+            "invoice_id": invoice.id,
+            "invoice_number": invoice.invoice_number,
+            "job_id": invoice.job.id,
+            "property_address": str(invoice.job.job_property) if invoice.job.job_property else "",
+            "completed_at": invoice.job.completed_at.strftime("%Y-%m-%d %H:%M:%S") if invoice.job.completed_at else None,
+            "payment_status": invoice.status,
+            "amount": round(invoice_amount, 2),
+            "pay_url": invoice.stripe_checkout_url,
+            "completed_items": [
+                {
+                    "id": item.id,
+                    "name": item.name,
+                    "item_type": item.item_type,
+                    "price": round(float(item.price or 0), 2)
+                }
+                for item in invoice.job.items.filter(is_completed=True).order_by("sort_order", "id")
+            ]
         })
 
-        # Update count and total amount
         landscaper_dict[landscaper_id]["jobs_count"] += 1
-        landscaper_dict[landscaper_id]["total_amount"] += job_amount
+        landscaper_dict[landscaper_id]["total_amount"] += invoice_amount
 
-    # Round total amounts
-    for v in landscaper_dict.values():
-        v["total_amount"] = round(v["total_amount"], 2)
+    for value in landscaper_dict.values():
+        value["total_amount"] = round(value["total_amount"], 2)
 
     return Response(list(landscaper_dict.values()), status=200)
-
 
 
 
@@ -832,17 +848,6 @@ def stripe_all_payments(request):
 
 # delete views
 
-from django.shortcuts import get_object_or_404
-from django.db import transaction
-from django.db.models import Q
-from django.contrib.auth.models import User
-
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAdminUser
-from rest_framework.response import Response
-from rest_framework import status
-from django.contrib.auth import get_user_model
-User = get_user_model()
 
 
 @api_view(["DELETE"])
