@@ -416,3 +416,72 @@ class BookingRequest(models.Model):
             return f"{self.client.user.email} - {self.service.name} ({self.status})"
 
         return f"{self.client.user.email} - Custom Service ({self.status})"
+
+
+from decimal import Decimal
+from django.db import models
+from django.core.validators import MinValueValidator
+from django.core.exceptions import ValidationError
+
+from bookings.models import BookingRequest
+from landscapers.models import Service, Addon
+
+
+class BookingRequestItem(models.Model):
+    class ItemType(models.TextChoices):
+        STANDARD_SERVICE = "standard_service", "Standard Service"
+        ADDON = "addon", "Addon"
+        CUSTOM = "custom", "Custom"
+
+    booking = models.ForeignKey(
+        BookingRequest,
+        on_delete=models.CASCADE,
+        related_name="items"
+    )
+
+    item_type = models.CharField(
+        max_length=20,
+        choices=ItemType.choices
+    )
+
+    service = models.ForeignKey(
+        Service,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="booking_items"
+    )
+
+    addon = models.ForeignKey(
+        Addon,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="booking_items"
+    )
+
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+
+    price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        validators=[MinValueValidator(0)]
+    )
+
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["sort_order", "id"]
+
+    def clean(self):
+        if self.item_type == self.ItemType.STANDARD_SERVICE and not self.service:
+            raise ValidationError("Standard service booking item must have a service.")
+        if self.item_type == self.ItemType.ADDON and not self.addon:
+            raise ValidationError("Addon booking item must have an addon.")
+        if self.item_type == self.ItemType.CUSTOM and not self.name:
+            raise ValidationError("Custom booking item must have a name.")
+
+    def __str__(self):
+        return f"Booking #{self.booking.id} - {self.name}"

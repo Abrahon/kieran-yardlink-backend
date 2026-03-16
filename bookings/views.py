@@ -4,50 +4,78 @@
 
 
 
-# updated views 
-from rest_framework import generics, permissions, status
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.response import Response
-from decimal import Decimal, InvalidOperation
-from .models import BookingRequest
-from .serializers import BookingRequestSerializer
-from landscapers.models import BusinessProfile
-from rest_framework.exceptions import PermissionDenied
+# # updated views 
+# from rest_framework import generics, permissions, status
+# from rest_framework.decorators import api_view, permission_classes
+# from rest_framework.response import Response
+# from decimal import Decimal, InvalidOperation
+# from .models import BookingRequest
+# from .serializers import BookingRequestSerializer
+# from landscapers.models import BusinessProfile
+# from rest_framework.exceptions import PermissionDenied
 
 
 
-# Landscaper sees pending bookings
-# Landscaper sees pending bookings
-class LandscaperPendingBookingListView(generics.ListAPIView):
-    serializer_class = BookingRequestSerializer
-    permission_classes = [permissions.IsAuthenticated]
+# # Landscaper sees pending bookings
+# # Landscaper sees pending bookings
+# class LandscaperPendingBookingListView(generics.ListAPIView):
+#     serializer_class = BookingRequestSerializer
+#     permission_classes = [permissions.IsAuthenticated]
 
-    def get_queryset(self):
-        landscaper = getattr(self.request.user, "landscaper_profile", None)
+#     def get_queryset(self):
+#         landscaper = getattr(self.request.user, "landscaper_profile", None)
 
-        if not landscaper:
-            return BookingRequest.objects.none()
+#         if not landscaper:
+#             return BookingRequest.objects.none()
 
-        qs = BookingRequest.objects.filter(landscaper=landscaper)
-        print("all for landscaper:", qs.count())
+#         qs = BookingRequest.objects.filter(landscaper=landscaper)
+#         print("all for landscaper:", qs.count())
 
-        qs2 = qs.filter(status=BookingRequest.Status.PENDING)
-        print("pending only:", qs2.count())
+#         qs2 = qs.filter(status=BookingRequest.Status.PENDING)
+#         print("pending only:", qs2.count())
 
-        qs3 = qs2.filter(is_active=True)
-        print("pending + active:", qs3.count())
+#         qs3 = qs2.filter(is_active=True)
+#         print("pending + active:", qs3.count())
 
-        return qs3.order_by("-created_at")
+#         return qs3.order_by("-created_at")
 
 
-# accept booking
+# # accept booking
 
+# from decimal import Decimal
+# from django.db import transaction
 # from rest_framework import status, permissions
 # from rest_framework.decorators import api_view, permission_classes
 # from rest_framework.response import Response
-# from django.db import transaction
+
 # from bookings.models import BookingRequest
-# from jobs.models import Job
+# from jobs.models import Job, JobItem
+
+
+# def create_job_items_from_client_services(job):
+#     """
+#     Copy client selected services into JobItem checklist.
+#     Uses CUSTOM type so you don't need landscaper.Service ids.
+#     """
+
+#     client_services = job.client.services.all()   # change this only if your relation name is different
+#     created_items = []
+
+#     for idx, service in enumerate(client_services):
+#         job_item, created = JobItem.objects.get_or_create(
+#             job=job,
+#             name=service.name,
+#             defaults={
+#                 "item_type": JobItem.ItemType.CUSTOM,
+#                 "description": getattr(service, "description", "") or "",
+#                 "price": getattr(service, "price", Decimal("0.00")) or Decimal("0.00"),
+#                 "sort_order": idx,
+#             }
+#         )
+#         if created:
+#             created_items.append(job_item)
+
+#     return created_items
 
 
 # @api_view(["PATCH"])
@@ -56,7 +84,7 @@ class LandscaperPendingBookingListView(generics.ListAPIView):
 #     landscaper = getattr(request.user, "landscaper_profile", None)
 
 #     if not landscaper:
-#         return Response({"error": "Landscaper profile not found."}, status=403)
+#         return Response({"error": "Landscaper profile not found."}, status=status.HTTP_403_FORBIDDEN)
 
 #     with transaction.atomic():
 #         try:
@@ -67,25 +95,27 @@ class LandscaperPendingBookingListView(generics.ListAPIView):
 #                 is_active=True
 #             )
 #         except BookingRequest.DoesNotExist:
-#             return Response({"error": "Pending booking not found."}, status=404)
+#             return Response({"error": "Pending booking not found."}, status=status.HTTP_404_NOT_FOUND)
 
 #         if booking.job_created:
 #             return Response(
 #                 {"error": "Job already created for this booking."},
-#                 status=400
+#                 status=status.HTTP_400_BAD_REQUEST
 #             )
 
 #         job = Job.objects.create(
 #             booking=booking,
 #             client=booking.client,
 #             landscaper=booking.landscaper,
+#             job_property=getattr(booking, "property", None),
 #             scheduled_date=booking.scheduled_date,
 #             scheduled_time=booking.scheduled_time,
-#             total_price=booking.price or 0,
+#             total_price=Decimal("0.00"),   # starts at 0, grows as items are completed
 #             status=Job.Status.UPCOMING,
 #             is_active=True
 #         )
 
+#         created_items = create_job_items_from_client_services(job)
 
 #         booking.status = BookingRequest.Status.ACCEPTED
 #         booking.job_created = True
@@ -96,127 +126,58 @@ class LandscaperPendingBookingListView(generics.ListAPIView):
 #         "booking_id": booking.id,
 #         "job_id": job.id,
 #         "booking_status": booking.status,
-#         "booking_price": float(booking.price) if booking.price is not None else 0,
-#         "job_total_price": float(job.total_price) if job.total_price is not None else 0,
+#         "created_items_count": len(created_items),
+#         "items": [
+#             {
+#                 "id": item.id,
+#                 "name": item.name,
+#                 "price": str(item.price),
+#                 "is_completed": item.is_completed,
+#             }
+#             for item in created_items
+#         ]
 #     }, status=status.HTTP_200_OK)
 
-from decimal import Decimal
-from django.db import transaction
-from rest_framework import status, permissions
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.response import Response
 
-from bookings.models import BookingRequest
-from jobs.models import Job, JobItem
+# class ClientBookingListView(generics.ListAPIView):
 
+#     serializer_class = BookingRequestSerializer
+#     permission_classes = [permissions.IsAuthenticated]
 
-def create_job_items_from_client_services(job):
-    """
-    Copy client selected services into JobItem checklist.
-    Uses CUSTOM type so you don't need landscaper.Service ids.
-    """
+#     def get_queryset(self):
 
-    client_services = job.client.services.all()   # change this only if your relation name is different
-    created_items = []
+#         client = getattr(self.request.user, "clientprofile", None)
 
-    for idx, service in enumerate(client_services):
-        job_item, created = JobItem.objects.get_or_create(
-            job=job,
-            name=service.name,
-            defaults={
-                "item_type": JobItem.ItemType.CUSTOM,
-                "description": getattr(service, "description", "") or "",
-                "price": getattr(service, "price", Decimal("0.00")) or Decimal("0.00"),
-                "sort_order": idx,
-            }
-        )
-        if created:
-            created_items.append(job_item)
+#         if not client:
+#             return BookingRequest.objects.none()
 
-    return created_items
+#         return BookingRequest.objects.filter(
+#             client=client,
+#             is_active=True
+#         ).order_by("-created_at")
 
 
-@api_view(["PATCH"])
-@permission_classes([permissions.IsAuthenticated])
-def landscaper_accept_booking(request, pk):
-    landscaper = getattr(request.user, "landscaper_profile", None)
+# # Client creates booking (one-time, recurring, custom)
+# # class BookingRequestListCreateView(generics.ListCreateAPIView):
+# #     serializer_class = BookingRequestSerializer
+# #     permission_classes = [permissions.IsAuthenticated]
 
-    if not landscaper:
-        return Response({"error": "Landscaper profile not found."}, status=status.HTTP_403_FORBIDDEN)
+# #     def get_queryset(self):
+# #         client = getattr(self.request.user, "clientprofile", None)
+# #         if not client:
+# #             return BookingRequest.objects.none()
+# #         return BookingRequest.objects.filter(client=client).order_by("-created_at")
 
-    with transaction.atomic():
-        try:
-            booking = BookingRequest.objects.select_for_update().get(
-                pk=pk,
-                landscaper=landscaper,
-                status=BookingRequest.Status.PENDING,
-                is_active=True
-            )
-        except BookingRequest.DoesNotExist:
-            return Response({"error": "Pending booking not found."}, status=status.HTTP_404_NOT_FOUND)
+# #     def perform_create(self, serializer):
+# #         client = getattr(self.request.user, "clientprofile", None)
+# #         if not client:
+# #             raise PermissionDenied("Client profile not found.")
 
-        if booking.job_created:
-            return Response(
-                {"error": "Job already created for this booking."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        job = Job.objects.create(
-            booking=booking,
-            client=booking.client,
-            landscaper=booking.landscaper,
-            job_property=getattr(booking, "property", None),
-            scheduled_date=booking.scheduled_date,
-            scheduled_time=booking.scheduled_time,
-            total_price=Decimal("0.00"),   # starts at 0, grows as items are completed
-            status=Job.Status.UPCOMING,
-            is_active=True
-        )
-
-        created_items = create_job_items_from_client_services(job)
-
-        booking.status = BookingRequest.Status.ACCEPTED
-        booking.job_created = True
-        booking.save(update_fields=["status", "job_created", "updated_at"])
-
-    return Response({
-        "message": "Booking accepted and job created successfully.",
-        "booking_id": booking.id,
-        "job_id": job.id,
-        "booking_status": booking.status,
-        "created_items_count": len(created_items),
-        "items": [
-            {
-                "id": item.id,
-                "name": item.name,
-                "price": str(item.price),
-                "is_completed": item.is_completed,
-            }
-            for item in created_items
-        ]
-    }, status=status.HTTP_200_OK)
-    
-
-class ClientBookingListView(generics.ListAPIView):
-
-    serializer_class = BookingRequestSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_queryset(self):
-
-        client = getattr(self.request.user, "clientprofile", None)
-
-        if not client:
-            return BookingRequest.objects.none()
-
-        return BookingRequest.objects.filter(
-            client=client,
-            is_active=True
-        ).order_by("-created_at")
+# #         serializer.save(client=client, status="pending", price=None)
 
 
-# Client creates booking (one-time, recurring, custom)
-# class BookingRequestListCreateView(generics.ListCreateAPIView):
+# # Client can view / delete only pending requests
+# class BookingRequestRetrieveDestroyView(generics.RetrieveDestroyAPIView):
 #     serializer_class = BookingRequestSerializer
 #     permission_classes = [permissions.IsAuthenticated]
 
@@ -224,62 +185,43 @@ class ClientBookingListView(generics.ListAPIView):
 #         client = getattr(self.request.user, "clientprofile", None)
 #         if not client:
 #             return BookingRequest.objects.none()
-#         return BookingRequest.objects.filter(client=client).order_by("-created_at")
+#         return BookingRequest.objects.filter(client=client)
 
-#     def perform_create(self, serializer):
-#         client = getattr(self.request.user, "clientprofile", None)
-#         if not client:
-#             raise PermissionDenied("Client profile not found.")
-
-#         serializer.save(client=client, status="pending", price=None)
-
-
-# Client can view / delete only pending requests
-class BookingRequestRetrieveDestroyView(generics.RetrieveDestroyAPIView):
-    serializer_class = BookingRequestSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_queryset(self):
-        client = getattr(self.request.user, "clientprofile", None)
-        if not client:
-            return BookingRequest.objects.none()
-        return BookingRequest.objects.filter(client=client)
-
-    def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        if instance.status != "pending":
-            return Response(
-                {"error": "Only pending bookings can be deleted."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        instance.delete()
-        return Response({"message": "Booking deleted successfully."})
+#     def destroy(self, request, *args, **kwargs):
+#         instance = self.get_object()
+#         if instance.status != "pending":
+#             return Response(
+#                 {"error": "Only pending bookings can be deleted."},
+#                 status=status.HTTP_400_BAD_REQUEST
+#             )
+#         instance.delete()
+#         return Response({"message": "Booking deleted successfully."})
 
 
-# Client confirm/decline price set by landscaper
-@api_view(["PATCH"])
-@permission_classes([permissions.IsAuthenticated])
-def client_confirm_booking(request, pk):
-    action = request.data.get("action")
-    if action not in ["confirm", "decline"]:
-        return Response({"error": "Invalid action."}, status=400)
+# # Client confirm/decline price set by landscaper
+# @api_view(["PATCH"])
+# @permission_classes([permissions.IsAuthenticated])
+# def client_confirm_booking(request, pk):
+#     action = request.data.get("action")
+#     if action not in ["confirm", "decline"]:
+#         return Response({"error": "Invalid action."}, status=400)
 
-    client = getattr(request.user, "clientprofile", None)
-    if not client:
-        return Response({"error": "Client profile not found."}, status=403)
+#     client = getattr(request.user, "clientprofile", None)
+#     if not client:
+#         return Response({"error": "Client profile not found."}, status=403)
 
-    try:
-        booking = BookingRequest.objects.get(pk=pk, client=client)
-    except BookingRequest.DoesNotExist:
-        return Response({"error": "Booking not found."}, status=404)
+#     try:
+#         booking = BookingRequest.objects.get(pk=pk, client=client)
+#     except BookingRequest.DoesNotExist:
+#         return Response({"error": "Booking not found."}, status=404)
 
-    if booking.status != "accepted":
-        return Response({"error": "Booking is not ready for confirmation."}, status=400)
+#     if booking.status != "accepted":
+#         return Response({"error": "Booking is not ready for confirmation."}, status=400)
 
-    booking.status = "confirmed" if action == "confirm" else "declined"
-    booking.save()
+#     booking.status = "confirmed" if action == "confirm" else "declined"
+#     booking.save()
 
-    return Response({"message": f"Booking {booking.status} successfully.", "status": booking.status})
+#     return Response({"message": f"Booking {booking.status} successfully.", "status": booking.status})
 
 
 # Landscaper views pending bookings
@@ -340,3 +282,206 @@ def client_confirm_booking(request, pk):
 #         "price": booking.price,
 #         "status": booking.status
 #     })
+
+
+from decimal import Decimal
+from django.db import transaction
+from rest_framework import generics, permissions, status
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.response import Response
+
+from .models import BookingRequest
+from .serializers import BookingRequestSerializer
+from jobs.models import Job, JobItem
+
+
+# -----------------------------
+# Client creates booking
+# -----------------------------
+class BookingRequestCreateView(generics.CreateAPIView):
+    serializer_class = BookingRequestSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def perform_create(self, serializer):
+        client = getattr(self.request.user, "clientprofile", None)
+        if not client:
+            raise PermissionDenied("Client profile not found.")
+
+        serializer.save(
+            client=client,
+            status=BookingRequest.Status.PENDING,
+            job_created=False,
+            is_active=True
+        )
+
+
+# -----------------------------
+# Client booking list
+# -----------------------------
+class ClientBookingListView(generics.ListAPIView):
+    serializer_class = BookingRequestSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        client = getattr(self.request.user, "clientprofile", None)
+        if not client:
+            return BookingRequest.objects.none()
+
+        return BookingRequest.objects.filter(
+            client=client,
+            is_active=True
+        ).order_by("-created_at")
+
+
+# -----------------------------
+# Client booking detail/delete
+# -----------------------------
+class BookingRequestRetrieveDestroyView(generics.RetrieveDestroyAPIView):
+    serializer_class = BookingRequestSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        client = getattr(self.request.user, "clientprofile", None)
+        if not client:
+            return BookingRequest.objects.none()
+        return BookingRequest.objects.filter(client=client)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.status != BookingRequest.Status.PENDING:
+            return Response(
+                {"error": "Only pending bookings can be deleted."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        instance.delete()
+        return Response({"message": "Booking deleted successfully."}, status=status.HTTP_200_OK)
+
+
+# -----------------------------
+# Client confirm/decline booking
+# -----------------------------
+@api_view(["PATCH"])
+@permission_classes([permissions.IsAuthenticated])
+def client_confirm_booking(request, pk):
+    action = request.data.get("action")
+    if action not in ["confirm", "decline"]:
+        return Response({"error": "Invalid action."}, status=status.HTTP_400_BAD_REQUEST)
+
+    client = getattr(request.user, "clientprofile", None)
+    if not client:
+        return Response({"error": "Client profile not found."}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        booking = BookingRequest.objects.get(pk=pk, client=client)
+    except BookingRequest.DoesNotExist:
+        return Response({"error": "Booking not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    if booking.status != BookingRequest.Status.ACCEPTED:
+        return Response({"error": "Booking is not ready for confirmation."}, status=status.HTTP_400_BAD_REQUEST)
+
+    booking.status = BookingRequest.Status.CONFIRMED if action == "confirm" else BookingRequest.Status.DECLINED
+    booking.save(update_fields=["status", "updated_at"])
+
+    return Response({
+        "message": f"Booking {booking.status} successfully.",
+        "status": booking.status
+    }, status=status.HTTP_200_OK)
+
+
+# -----------------------------
+# Landscaper sees pending bookings
+# -----------------------------
+class LandscaperPendingBookingListView(generics.ListAPIView):
+    serializer_class = BookingRequestSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        landscaper = getattr(self.request.user, "landscaper_profile", None)
+        if not landscaper:
+            return BookingRequest.objects.none()
+
+        return BookingRequest.objects.filter(
+            landscaper=landscaper,
+            status=BookingRequest.Status.PENDING,
+            is_active=True
+        ).order_by("-created_at")
+
+
+# -----------------------------
+# Landscaper accepts booking
+# Creates Job + JobItems from BookingRequestItem
+# -----------------------------
+@api_view(["PATCH"])
+@permission_classes([permissions.IsAuthenticated])
+def landscaper_accept_booking(request, pk):
+    landscaper = getattr(request.user, "landscaper_profile", None)
+
+    if not landscaper:
+        return Response({"error": "Landscaper profile not found."}, status=status.HTTP_403_FORBIDDEN)
+
+    with transaction.atomic():
+        try:
+            booking = BookingRequest.objects.select_for_update().get(
+                pk=pk,
+                landscaper=landscaper,
+                status=BookingRequest.Status.PENDING,
+                is_active=True
+            )
+        except BookingRequest.DoesNotExist:
+            return Response({"error": "Pending booking not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if booking.job_created:
+            return Response(
+                {"error": "Job already created for this booking."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        job = Job.objects.create(
+            booking=booking,
+            client=booking.client,
+            landscaper=booking.landscaper,
+            job_property=booking.property,
+            scheduled_date=booking.scheduled_date,
+            scheduled_time=booking.scheduled_time,
+            total_price=Decimal("0.00"),
+            status=Job.Status.UPCOMING,
+            is_active=True
+        )
+
+        created_items = []
+        for idx, booking_item in enumerate(booking.items.all().order_by("sort_order", "id")):
+            item = JobItem.objects.create(
+                job=job,
+                item_type=booking_item.item_type,
+                service=booking_item.service,
+                addon=booking_item.addon,
+                name=booking_item.name,
+                description=booking_item.description,
+                price=booking_item.price,
+                sort_order=idx,
+            )
+            created_items.append(item)
+
+        job.recalculate_total_price()
+        job.update_status_from_items()
+
+        booking.status = BookingRequest.Status.ACCEPTED
+        booking.job_created = True
+        booking.save(update_fields=["status", "job_created", "updated_at"])
+
+    return Response({
+        "message": "Booking accepted and job created successfully.",
+        "booking_id": booking.id,
+        "job_id": job.id,
+        "booking_status": booking.status,
+        "created_items_count": len(created_items),
+        "items": [
+            {
+                "id": item.id,
+                "name": item.name,
+                "price": str(item.price),
+                "is_completed": item.is_completed,
+            }
+            for item in created_items
+        ]
+    }, status=status.HTTP_200_OK)

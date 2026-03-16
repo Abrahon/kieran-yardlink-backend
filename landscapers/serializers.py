@@ -355,6 +355,44 @@ class AddonSerializer(serializers.ModelSerializer):
         return services
 
 
+
+# client
+class PublicServiceSerializer(serializers.ModelSerializer):
+    business_id = serializers.IntegerField(source="business.id", read_only=True)
+    business_name = serializers.CharField(source="business.business_name", read_only=True)
+
+    class Meta:
+        model = Service
+        fields = [
+            "id",
+            "business_id",
+            "business_name",
+            "name",
+            "description",
+            "base_price",
+            "pricing_type",
+            "min_price",
+            "latitude",
+            "longitude",
+            "is_active",
+        ]
+
+
+class PublicAddonSerializer(serializers.ModelSerializer):
+    business_id = serializers.IntegerField(source="business.id", read_only=True)
+    business_name = serializers.CharField(source="business.business_name", read_only=True)
+
+    class Meta:
+        model = Addon
+        fields = [
+            "id",
+            "business_id",
+            "business_name",
+            "name",
+            "price",
+            "is_active",
+        ]
+
 # # landscapers/serializers.py
 class WorkingHoursSerializer(serializers.ModelSerializer):
     day_display = serializers.CharField(source='get_day_display', read_only=True)

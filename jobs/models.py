@@ -23,6 +23,136 @@ class TimeStampedModel(models.Model):
     class Meta:
         abstract = True
 
+# class Job(TimeStampedModel):
+#     class Status(models.TextChoices):
+#         UPCOMING = "upcoming", "Upcoming"
+#         IN_PROGRESS = "in_progress", "In Progress"
+#         COMPLETED = "completed", "Completed"
+#         RESCHEDULED = "rescheduled", "Rescheduled"
+#         CANCELLED = "cancelled", "Cancelled"
+
+#     booking = models.OneToOneField(
+#         BookingRequest, on_delete=models.CASCADE, related_name="job", null=True,
+#     )
+#     client = models.ForeignKey(ClientProfile, on_delete=models.CASCADE, related_name="jobs")
+#     landscaper = models.ForeignKey(BusinessProfile, on_delete=models.CASCADE, related_name="jobs")
+#     job_property = models.ForeignKey(Property, on_delete=models.CASCADE, related_name="jobs", null=True, blank=True)
+#     scheduled_date = models.DateField()
+#     scheduled_time = models.TimeField()
+#     total_price = models.DecimalField(
+#         max_digits=10,
+#         decimal_places=2,
+#         default=Decimal("0.00"),
+#         validators=[MinValueValidator(0)],
+#     )
+#     note = models.TextField(blank=True, null=True)
+#     status = models.CharField(max_length=20, choices=Status.choices, default=Status.UPCOMING)
+#     is_active = models.BooleanField(default=True)
+#     completed_at = models.DateTimeField(null=True, blank=True)
+
+#     class Meta:
+#         ordering = ["-created_at"]
+#         indexes = [
+#             models.Index(fields=["client"]),
+#             models.Index(fields=["landscaper"]),
+#             models.Index(fields=["status"]),
+#             models.Index(fields=["scheduled_date"]),
+#         ]
+
+#     def clean(self):
+#         if self.booking and self.booking.client != self.client:
+#             raise ValidationError("Job client must match booking client.")
+#         if self.booking and self.booking.landscaper != self.landscaper:
+#             raise ValidationError("Job landscaper must match booking landscaper.")
+
+#     @property
+#     def total_items(self):
+#         return self.items.count()
+
+#     @property
+#     def completed_items(self):
+#         return self.items.filter(is_completed=True).count()
+        
+#     # def recalculate_total_price(self, save=True):
+#     #     base_total = Decimal("0.00")
+
+#     #     # Base price from booking
+#     #     if self.booking and self.booking.price is not None:
+#     #         base_total = self.booking.price
+
+#     #     # Sum completed item prices
+#     #     items_total = self.items.filter(is_completed=True).aggregate(
+#     #         total=models.Sum("price")
+#     #     )["total"] or Decimal("0.00")
+
+#     #     self.total_price = base_total + items_total
+
+#     #     if save:
+#     #         self.save(update_fields=["total_price", "updated_at"])
+
+#     #     return self.total_price
+
+#     def recalculate_total_price(self, save=True):
+#         total = self.items.filter(is_completed=True).aggregate(
+#             total=models.Sum("price")
+#         )["total"] or Decimal("0.00")
+
+#         self.total_price = total
+
+#         if save:
+#             self.save(update_fields=["total_price", "updated_at"])
+
+#         return self.total_price
+
+
+
+#     def has_before_images(self):
+#         return self.images.filter(image_type=JobImage.ImageType.BEFORE).exists()
+
+#     def has_after_images(self):
+#         return self.images.filter(image_type=JobImage.ImageType.AFTER).exists()
+
+#     def update_status_from_items(self, save=True):
+#         total_items = self.items.count()
+#         completed_items = self.items.filter(is_completed=True).count()
+
+#         if total_items == 0:
+#             new_status = self.Status.UPCOMING
+#         elif completed_items == 0:
+#             new_status = self.Status.UPCOMING
+#         elif completed_items < total_items:
+#             new_status = self.Status.IN_PROGRESS
+#         else:
+#             new_status = self.Status.COMPLETED
+
+#         self.status = new_status
+#         self.completed_at = timezone.now() if new_status == self.Status.COMPLETED else None
+
+#         if save:
+#             self.save(update_fields=["status", "completed_at", "updated_at"])
+
+#         return new_status
+
+#     def can_be_completed(self):
+#         total_items = self.items.count()
+#         completed_items = self.items.filter(is_completed=True).count()
+
+#         if total_items == 0:
+#             raise ValidationError("This job has no items.")
+#         if completed_items != total_items:
+#             raise ValidationError("All job items must be completed first.")
+
+
+#     def mark_completed(self):
+#         self.can_be_completed()
+#         self.recalculate_total_price(save=False)
+#         self.status = self.Status.COMPLETED
+#         self.completed_at = timezone.now()
+#         self.save(update_fields=["total_price", "status", "completed_at", "updated_at"])
+
+#     def __str__(self):
+#         return f"Job #{self.id} - {self.client.user.email} - {self.status}"
+
 class Job(TimeStampedModel):
     class Status(models.TextChoices):
         UPCOMING = "upcoming", "Upcoming"
@@ -52,12 +182,6 @@ class Job(TimeStampedModel):
 
     class Meta:
         ordering = ["-created_at"]
-        indexes = [
-            models.Index(fields=["client"]),
-            models.Index(fields=["landscaper"]),
-            models.Index(fields=["status"]),
-            models.Index(fields=["scheduled_date"]),
-        ]
 
     def clean(self):
         if self.booking and self.booking.client != self.client:
@@ -72,19 +196,13 @@ class Job(TimeStampedModel):
     @property
     def completed_items(self):
         return self.items.filter(is_completed=True).count()
+
     def recalculate_total_price(self, save=True):
-        base_total = Decimal("0.00")
-
-        # Base price from booking
-        if self.booking and self.booking.price is not None:
-            base_total = self.booking.price
-
-        # Sum completed item prices
-        items_total = self.items.filter(is_completed=True).aggregate(
+        total = self.items.filter(is_completed=True).aggregate(
             total=models.Sum("price")
         )["total"] or Decimal("0.00")
 
-        self.total_price = base_total + items_total
+        self.total_price = total
 
         if save:
             self.save(update_fields=["total_price", "updated_at"])
@@ -126,10 +244,6 @@ class Job(TimeStampedModel):
             raise ValidationError("This job has no items.")
         if completed_items != total_items:
             raise ValidationError("All job items must be completed first.")
-        if not self.has_before_images():
-            raise ValidationError("Before image is required.")
-        if not self.has_after_images():
-            raise ValidationError("After image is required.")
 
     def mark_completed(self):
         self.can_be_completed()
@@ -140,7 +254,7 @@ class Job(TimeStampedModel):
 
     def __str__(self):
         return f"Job #{self.id} - {self.client.user.email} - {self.status}"
-
+        
 
 class JobItem(TimeStampedModel):
     class ItemType(models.TextChoices):

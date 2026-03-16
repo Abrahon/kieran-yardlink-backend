@@ -23,7 +23,11 @@ from .views import (
     landscaper_accept_service,
     WorkingHoursUpdateView,
     WorkingHoursDeleteView,
-    toggle_working_hour
+    toggle_working_hour,
+    get_landscaper_available_dates,
+    get_landscaper_available_slots,
+    PublicLandscaperServiceListView,
+    ServiceAddonListView
 
 )
 
@@ -40,6 +44,9 @@ urlpatterns = [
     # standard service crud 
     path("services/", ServiceListCreateView.as_view(), name="service-list-create"),
     path("services/<int:pk>/", ServiceDetailView.as_view(), name="service-detail"),
+     # Client booking selection
+    path("landscapers/<int:business_id>/services/", PublicLandscaperServiceListView.as_view(), name="public-landscaper-services"),
+    path("services/<int:service_id>/addons/", ServiceAddonListView.as_view(), name="service-addons"),
 
     # taggle 
     path('services/<int:pk>/toggle/', toggle_service_active, name='toggle-service-active'),
@@ -52,7 +59,6 @@ urlpatterns = [
     path('landscaper/custom-service-requests/',LandscaperCustomServicePendingListView.as_view(), name='landscaper-custom-service-list'),
     # Accept a pending service
     path('landscaper/custom-service-requests/<int:pk>/accept/',landscaper_accept_service,name="landscaper-accept-custom-service"),
-
 
     path('client/custom-services/<int:pk>/toggle/', toggle_client_custom_service_active, name='toggle-client-custom-service'),
 
@@ -83,6 +89,16 @@ urlpatterns = [
         toggle_working_hour,
         name="toggle-working-hour"
     ),
+        path(
+        "client/<int:landscaper_id>/available-dates/",
+        get_landscaper_available_dates
+    ),
+
+    path(
+        "client/<int:landscaper_id>/available-slots/",
+        get_landscaper_available_slots
+    ),
+
 
     path("services/stats/", ServiceStatsAPIView.as_view(), name="service-stats"),
     path("services/performance/", service_performance_monthly, name="service-performance-monthly"),

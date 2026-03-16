@@ -87,21 +87,30 @@ class PropertyListCreateView(generics.ListCreateAPIView):
 
 
 
+# class PropertyDetailView(generics.RetrieveUpdateDestroyAPIView):
+#     serializer_class = PropertySerializer
+#     permission_classes = [IsAuthenticated]
+#     lookup_url_kwarg = "property_id"
+
+#     def get_queryset(self):
+#         # Only allow user to access their own properties
+#         return Property.objects.filter(owner=self.request.user)
+
+#     def get_object(self):
+#         return get_object_or_404(
+#             Property,
+#             id=self.kwargs.get("property_id"),
+#             owner=self.request.user
+#         )
+
 class PropertyDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = PropertySerializer
     permission_classes = [IsAuthenticated]
-    lookup_url_kwarg = "property_id"
+    lookup_field = "id"
+    lookup_url_kwarg = "pk"
 
     def get_queryset(self):
-        # Only allow user to access their own properties
         return Property.objects.filter(owner=self.request.user)
-
-    def get_object(self):
-        return get_object_or_404(
-            Property,
-            id=self.kwargs.get("property_id"),
-            owner=self.request.user
-        )
 
         
 # TODO updated 

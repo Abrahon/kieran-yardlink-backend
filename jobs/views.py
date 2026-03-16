@@ -200,7 +200,6 @@ from jobs.serializers import (
     JobImageSerializer,
     JobRescheduleSerializer,
     JobItemSerializer,
-    AddJobItemsSerializer,
 )
 
 
@@ -234,83 +233,26 @@ class JobDetailView(generics.RetrieveAPIView):
             return Job.objects.none()
         return Job.objects.filter(landscaper=landscaper)
 
-from decimal import Decimal
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.response import Response
-from rest_framework import permissions, status
-
-from jobs.models import Job, JobItem
+# completd jobs list
 
 
-@api_view(["POST"])
-@permission_classes([permissions.IsAuthenticated])
-def sync_job_items_from_client_services(request, job_id):
-    landscaper = getattr(request.user, "landscaper_profile", None)
-    if not landscaper:
-        return Response({"error": "Landscaper profile not found."}, status=status.HTTP_403_FORBIDDEN)
 
-    try:
-        job = Job.objects.get(id=job_id, landscaper=landscaper)
-    except Job.DoesNotExist:
-        return Response({"error": "Job not found."}, status=status.HTTP_404_NOT_FOUND)
-
-    client_services = job.client.services.all()
-    if not client_services.exists():
-        return Response({"error": "No client services found for this job."}, status=status.HTTP_400_BAD_REQUEST)
-
-    created_items = []
-
-    for idx, service in enumerate(client_services):
-        item, created = JobItem.objects.get_or_create(
-            job=job,
-            name=service.name,
-            defaults={
-                "item_type": JobItem.ItemType.CUSTOM,
-                "description": service.description or "",
-                "price": service.price or Decimal("0.00"),
-                "sort_order": idx,
-            }
-        )
-        if created:
-            created_items.append(item)
-
-    job.recalculate_total_price()
-    job.update_status_from_items()
-
-    return Response({
-        "message": "Job items synced from client services.",
-        "job_id": job.id,
-        "created_items_count": len(created_items),
-        "items": [
-            {
-                "id": item.id,
-                "name": item.name,
-                "description": item.description,
-                "price": str(item.price),
-                "is_completed": item.is_completed,
-            }
-            for item in job.items.all()
-        ]
-    }, status=status.HTTP_200_OK)
-
-
-# --- Add Multiple Items to a Job ---
-class AddJobItemsView(generics.CreateAPIView):
-    serializer_class = AddJobItemsSerializer
+class CompletedJobsListView(generics.ListAPIView):
+    serializer_class = JobSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data, context={"request": request})
-        serializer.is_valid(raise_exception=True)
-        result = serializer.save()
+    def get_queryset(self):
+        landscaper = getattr(self.request.user, "landscaper_profile", None)
+        if not landscaper:
+            return Job.objects.none()
 
-        return Response({
-            "message": "Job items added successfully.",
-            "job_id": result["job"].id,
-            "status": result["job"].status,
-            "total_price": str(result["job"].total_price),
-            "items": JobItemSerializer(result["items"], many=True).data
-        }, status=status.HTTP_201_CREATED)
+        return Job.objects.filter(
+            landscaper=landscaper,
+            status=Job.Status.COMPLETED,
+            is_active=True
+        ).order_by("-completed_at", "-updated_at")
+
+
 
 
 # --- Toggle One Job Item Complete / Incomplete ---

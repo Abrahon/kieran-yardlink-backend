@@ -3,6 +3,7 @@ from rest_framework.exceptions import PermissionDenied
 from .serializers import BusinessLandscaperProfileSerializer
 from subscriptions.models import Subscription
 from rest_framework.exceptions import NotFound
+from datetime import date, timedelta
 from django.db.models import Q
 from bookings.models import ServiceBooking
 from rest_framework import generics, permissions
@@ -82,7 +83,7 @@ from bookings.models import BookingRequest
 from property.models import Property
 from profiles.serializers import ClientProfileSerializer
 from rest_framework.decorators import api_view, permission_classes
-
+from .serializers import PublicServiceSerializer, PublicAddonSerializer
 from django.db import transaction
 
 from profiles.serializers import ClientProfileSerializer
@@ -180,8 +181,6 @@ class ServiceListCreateView(generics.ListCreateAPIView):
 
 
 
-
-
 class ServiceDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = ServiceSerializer
     permission_classes = [IsLandscaper]
@@ -230,7 +229,33 @@ class ServiceDetailView(generics.RetrieveUpdateDestroyAPIView):
         )
 
 
-       
+
+
+class PublicLandscaperServiceListView(generics.ListAPIView):
+    serializer_class = PublicServiceSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        business_id = self.kwargs.get("business_id")
+
+        return Service.objects.filter(
+            business_id=business_id,
+            is_active=True
+        ).select_related("business").order_by("name")
+
+
+class ServiceAddonListView(generics.ListAPIView):
+    serializer_class = PublicAddonSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        service_id = self.kwargs.get("service_id")
+        return Addon.objects.filter(
+            applicable_services__id=service_id,
+            is_active=True
+        ).select_related("business").distinct().order_by("name")
+
+
 # # custom service request client
 # class ClientCustomServiceListCreateView(generics.ListCreateAPIView):
 #     """
@@ -945,7 +970,6 @@ class LandscaperFind(generics.ListAPIView):
 
 
 # set working hours for landscapers
-
 class WorkingHoursListCreateView(generics.ListCreateAPIView):
     serializer_class = WorkingHoursSerializer
     permission_classes = [permissions.IsAuthenticated, IsLandscaper]
@@ -1172,6 +1196,98 @@ class ServiceStatsAPIView(APIView):
             status=status.HTTP_200_OK
         )
 
+# for client list vailabe date
+
+
+from jobs.models import Job
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_landscaper_available_dates(request, landscaper_id):
+
+    try:
+        landscaper = BusinessProfile.objects.get(id=landscaper_id)
+    except BusinessProfile.DoesNotExist:
+        return Response({"error": "Landscaper not found"}, status=404)
+
+    # get working days
+    working_days = WorkingHours.objects.filter(
+        landscaper=landscaper,
+        is_active=True
+    ).values_list("day", flat=True)
+
+    if not working_days:
+        return Response({"available_dates": []})
+
+    available_dates = []
+
+    today = date.today()
+
+    # next 30 days availability
+    for i in range(30):
+        check_date = today + timedelta(days=i)
+
+        weekday = check_date.strftime("%A").upper()
+
+        if weekday in working_days:
+            available_dates.append(check_date)
+
+    return Response({
+        "landscaper_id": landscaper.id,
+        "available_dates": available_dates
+    })
+
+# time slot
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_landscaper_available_slots(request, landscaper_id):
+
+    date_str = request.GET.get("date")
+
+    if not date_str:
+        return Response({"error": "date is required"}, status=400)
+
+    try:
+        selected_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+    except:
+        return Response({"error": "Invalid date format"}, status=400)
+
+    try:
+        landscaper = BusinessProfile.objects.get(id=landscaper_id)
+    except BusinessProfile.DoesNotExist:
+        return Response({"error": "Landscaper not found"}, status=404)
+
+    weekday = selected_date.strftime("%A").upper()
+
+    working_hours = WorkingHours.objects.filter(
+        landscaper=landscaper,
+        day=weekday,
+        is_active=True
+    )
+
+    slots = []
+
+    for wh in working_hours:
+        slots.append({
+            "start_time": wh.start_time,
+            "end_time": wh.end_time
+        })
+
+    # remove booked slots
+    booked = Job.objects.filter(
+        landscaper=landscaper,
+        scheduled_date=selected_date,
+        status__in=["upcoming", "in_progress"]
+    ).values_list("scheduled_time", flat=True)
+
+    available_slots = [
+        slot for slot in slots if slot["start_time"] not in booked
+    ]
+
+    return Response({
+        "date": selected_date,
+        "available_slots": available_slots
+    })
 
 
 # views.py

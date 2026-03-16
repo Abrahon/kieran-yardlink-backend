@@ -28,22 +28,23 @@ from django.urls import path
 from jobs.views import (
     UpcomingJobsListView,
     JobDetailView,
-    AddJobItemsView,
+    # AddJobItemsView,
     toggle_job_item_completion,
     JobImageCreateView,
     JobRescheduleCreateView,
     add_job_note,
-    sync_job_items_from_client_services
+    CompletedJobsListView
+    # sync_job_items_from_client_services
 )
+
+
 
 urlpatterns = [
     path("landscaper/jobs/upcoming/", UpcomingJobsListView.as_view(), name="upcoming-jobs"),
     path("landscaper/jobs/<int:id>/", JobDetailView.as_view(), name="job-detail"),
-    path("landscaper/jobs/items/add/", AddJobItemsView.as_view(), name="job-items-add"),
     path("landscaper/jobs/items/<int:item_id>/toggle/", toggle_job_item_completion, name="job-item-toggle"),
     path("landscaper/jobs/<int:job_id>/note/", add_job_note, name="job-add-note"),
     path("landscaper/jobs/images/add/", JobImageCreateView.as_view(), name="job-add-image"),
     path("landscaper/jobs/reschedule/add/", JobRescheduleCreateView.as_view(), name="job-reschedule"),
-    path("landscaper/jobs/<int:job_id>/sync-items/", sync_job_items_from_client_services, name="sync-job-items"),
-
+    path("landscaper/jobs/completed/", CompletedJobsListView.as_view(), name="completed-jobs"),
 ]

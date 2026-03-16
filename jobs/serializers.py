@@ -16,75 +16,28 @@ class JobItemSerializer(serializers.ModelSerializer):
 
 
 
-
-class AddJobItemsSerializer(serializers.Serializer):
-    job_id = serializers.IntegerField()
-    items = serializers.ListField(child=serializers.DictField(), allow_empty=False)
-
-    def validate(self, attrs):
-        request = self.context["request"]
-        landscaper = getattr(request.user, "landscaper_profile", None)
-        if not landscaper:
-            raise serializers.ValidationError("Landscaper profile not found.")
-
-        try:
-            job = Job.objects.get(id=attrs["job_id"], landscaper=landscaper)
-        except Job.DoesNotExist:
-            raise serializers.ValidationError("Job not found.")
-
-        attrs["job"] = job
-        return attrs
-
-    def create(self, validated_data):
-        job = validated_data["job"]
-        items_data = validated_data["items"]
-        created_items = []
-
-        for idx, item in enumerate(items_data):
-            item_type = item.get("item_type")
-            service_id = item.get("service")
-            addon_id = item.get("addon")
-            name = item.get("name")
-            description = item.get("description", "")
-            price = item.get("price", "0.00")
-
-            service = Service.objects.filter(id=service_id).first() if service_id else None
-            addon = Addon.objects.filter(id=addon_id).first() if addon_id else None
-
-            if item_type == JobItem.ItemType.STANDARD_SERVICE and service:
-                name = service.name
-                description = service.description
-                price = service.base_price or 0
-
-            if item_type == JobItem.ItemType.ADDON and addon:
-                name = addon.name
-                description = addon.description
-                price = addon.price or 0
-
-            job_item = JobItem.objects.create(
-                job=job,
-                item_type=item_type,
-                service=service,
-                addon=addon,
-                name=name,
-                description=description,
-                price=price,
-                sort_order=idx
-            )
-            created_items.append(job_item)
-
-        job.recalculate_total_price()
-        job.update_status_from_items()
-
-        return {"job": job, "items": created_items}
-
-
 class JobImageSerializer(serializers.ModelSerializer):
+    image = serializers.ImageField(required=False, allow_null=True)
+
     class Meta:
         model = JobImage
         fields = ["id", "job", "image", "image_type", "caption", "uploaded_by"]
         read_only_fields = ["uploaded_by"]
 
+    # def get_image(self, obj):
+    #     if obj.image:
+    #         return obj.image.url
+    #     return None
+
+    def to_representation(self, instance):
+        """Return full Cloudinary URL for icon."""
+        ret = super().to_representation(instance)
+        if instance.image:
+            # instance.icon.url is the Cloudinary URL
+            ret['image'] = instance.image.url
+        else:
+            ret['image'] = None
+        return ret
 
 class JobRescheduleSerializer(serializers.ModelSerializer):
     class Meta:
@@ -102,7 +55,10 @@ from profiles.serializers import ClientProfileSerializer,LandscaperProfileSerial
 from landscapers.serializers import BusinessLandscaperProfileSerializer
 
 
+
 class JobSerializer(serializers.ModelSerializer):
+    total_price = serializers.SerializerMethodField()
+    booking_price = serializers.SerializerMethodField()
     items = serializers.SerializerMethodField()
     images = serializers.SerializerMethodField()
     reschedules = serializers.SerializerMethodField()
@@ -120,6 +76,7 @@ class JobSerializer(serializers.ModelSerializer):
             "job_property",
             "scheduled_date",
             "scheduled_time",
+            "booking_price",
             "total_price",
             "note",
             "status",
@@ -130,12 +87,23 @@ class JobSerializer(serializers.ModelSerializer):
             "reschedules",
         ]
 
-    # def get_debug_booking_price(self, obj):
-    #     return str(obj.booking.price) if obj.booking and obj.booking.price is not None else None
+    def get_booking_price(self, obj):
+        if obj.booking and obj.booking.price is not None:
+            return str(obj.booking.price)
+        return "0.00"
+
+    def get_total_price(self, obj):
+        # If no completed items yet, show original booking total
+        if obj.total_price is None or obj.total_price == 0:
+            if obj.booking and obj.booking.price is not None:
+                return str(obj.booking.price)
+            return "0.00"
+
+        # Once work starts / items are completed, show actual completed total
+        return str(obj.total_price)
 
     def get_landscaper_info(self, obj):
         business = obj.landscaper
-
         if not business:
             return None
 
@@ -160,3 +128,82 @@ class JobSerializer(serializers.ModelSerializer):
 
     def get_reschedules(self, obj):
         return JobRescheduleSerializer(obj.reschedules.all(), many=True).data
+
+
+
+# class JobSerializer(serializers.ModelSerializer):
+#     items = serializers.SerializerMethodField()
+#     images = serializers.SerializerMethodField()
+#     reschedules = serializers.SerializerMethodField()
+#     client = ClientProfileSerializer(read_only=True)
+#     landscaper_info = serializers.SerializerMethodField()
+#     job_property = serializers.StringRelatedField()
+
+#     class Meta:
+#         model = Job
+#         fields = [
+#             "id",
+#             "booking",
+#             "client",
+#             "landscaper_info",
+#             "job_property",
+#             "scheduled_date",
+#             "scheduled_time",
+#             "total_price",
+#             "note",
+#             "status",
+#             "is_active",
+#             "completed_at",
+#             "items",
+#             "images",
+#             "reschedules",
+#         ]
+
+#     # def get_debug_booking_price(self, obj):
+#     #     return str(obj.booking.price) if obj.booking and obj.booking.price is not None else None
+
+#     # def get_landscaper_info(self, obj):
+#     #     business = obj.landscaper
+
+#     #     if not business:
+#     #         return None
+
+#     def get_booking_price(self, obj):
+#         if obj.booking and obj.booking.price is not None:
+#             return str(obj.booking.price)
+#         return "0.00"
+
+#     def get_landscaper_info(self, obj):
+#         business = obj.landscaper
+
+#         if not business:
+#             return None
+
+#     def get_landscaper_info(self, obj):
+#         business = obj.landscaper
+
+#         if not business:
+#             return None
+
+#         user = business.user
+#         personal = getattr(user, "landscaperprofilies", None)
+
+#         return {
+#             "id": business.id,
+#             "name": personal.name if personal else None,
+#             "phone": personal.phone if personal else None,
+#             "image": personal.image.url if personal and personal.image else None,
+#             "business_name": business.business_name,
+#             "business_email": business.business_email,
+#             "business_phone": business.business_phone,
+#         }
+
+#     def get_items(self, obj):
+#         return JobItemSerializer(obj.items.all(), many=True).data
+
+#     def get_images(self, obj):
+#         return JobImageSerializer(obj.images.all(), many=True).data
+
+#     def get_reschedules(self, obj):
+#         return JobRescheduleSerializer(obj.reschedules.all(), many=True).data
+
