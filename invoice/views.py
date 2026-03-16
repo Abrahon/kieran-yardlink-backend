@@ -67,7 +67,7 @@ def create_job_invoice(request, job_id):
 
     return Response(InvoiceSerializer(invoice).data, status=status.HTTP_201_CREATED)
 
-    
+
 # @api_view(["POST"])
 # @permission_classes([permissions.IsAuthenticated])
 # def send_job_invoice(request, invoice_id):
@@ -185,24 +185,70 @@ def send_job_invoice(request, invoice_id):
         "stripe_checkout_url": invoice.stripe_checkout_url,
     }, status=status.HTTP_200_OK)
 
-@api_view(["PATCH"])
-@permission_classes([permissions.IsAuthenticated])
+# @api_view(["PATCH"])
+# @permission_classes([permissions.IsAuthenticated])
+# def mark_invoice_paid(request, invoice_id):
+#     try:
+#         invoice = Invoice.objects.get(id=invoice_id)
+#     except Invoice.DoesNotExist:
+#         return Response({"error": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND)
+
+#     invoice.status = Invoice.Status.PAID
+#     invoice.paid_at = timezone.now()
+#     invoice.save(update_fields=["status", "paid_at", "updated_at"])
+
+#     invoice.job.payment_status = Job.PaymentStatus.PAID
+#     invoice.job.save(update_fields=["payment_status", "updated_at"])
+
+#     return Response({
+#         "message": "Invoice marked as paid.",
+#         "invoice_id": invoice.id,
+#         "job_id": invoice.job.id,
+#         "payment_status": invoice.job.payment_status,
+#     }, status=status.HTTP_200_OK)
+
+
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def mark_invoice_paid(request, invoice_id):
+    landscaper = getattr(request.user, "landscaper_profile", None)
+
+    if not landscaper:
+        return Response(
+            {"error": "Landscaper profile not found"},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
     try:
-        invoice = Invoice.objects.get(id=invoice_id)
+        invoice = Invoice.objects.select_related("job").get(
+            id=invoice_id,
+            job__landscaper=landscaper
+        )
     except Invoice.DoesNotExist:
-        return Response({"error": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(
+            {"error": "Invoice not found"},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    if invoice.status == Invoice.Status.PAID:
+        return Response({
+            "message": "Invoice already paid",
+            "invoice_id": invoice.id
+        })
 
     invoice.status = Invoice.Status.PAID
     invoice.paid_at = timezone.now()
     invoice.save(update_fields=["status", "paid_at", "updated_at"])
 
-    invoice.job.payment_status = Job.PaymentStatus.PAID
-    invoice.job.save(update_fields=["payment_status", "updated_at"])
+    if invoice.job:
+        invoice.job.payment_status = Job.PaymentStatus.PAID
+        invoice.job.save(update_fields=["payment_status", "updated_at"])
 
     return Response({
-        "message": "Invoice marked as paid.",
+        "message": "Invoice marked as paid",
         "invoice_id": invoice.id,
-        "job_id": invoice.job.id,
-        "payment_status": invoice.job.payment_status,
+        "status": invoice.status,
+        "paid_at": invoice.paid_at
     }, status=status.HTTP_200_OK)

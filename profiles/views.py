@@ -710,3 +710,68 @@ class ClientReminderToggleAPIView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
+
+
+# external client views
+from rest_framework import generics, permissions, status
+from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied
+
+from profiles.models import ExternalClient
+from profiles.serializers import ExternalClientSerializer
+
+
+class ExternalClientListCreateView(generics.ListCreateAPIView):
+    serializer_class = ExternalClientSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        landscaper = getattr(self.request.user, "landscaper_profile", None)
+        if not landscaper:
+            return ExternalClient.objects.none()
+
+        queryset = ExternalClient.objects.filter(landscaper=landscaper)
+
+        search = self.request.query_params.get("search")
+        if search:
+            queryset = queryset.filter(name__icontains=search)
+
+        is_active = self.request.query_params.get("is_active")
+        if is_active is not None:
+            if is_active.lower() == "true":
+                queryset = queryset.filter(is_active=True)
+            elif is_active.lower() == "false":
+                queryset = queryset.filter(is_active=False)
+
+        return queryset.order_by("-created_at")
+
+    def perform_create(self, serializer):
+        landscaper = getattr(self.request.user, "landscaper_profile", None)
+        if not landscaper:
+            raise PermissionDenied("Landscaper profile not found.")
+
+        serializer.save(landscaper=landscaper)
+
+
+class ExternalClientDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = ExternalClientSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        landscaper = getattr(self.request.user, "landscaper_profile", None)
+        if not landscaper:
+            return ExternalClient.objects.none()
+
+        return ExternalClient.objects.filter(landscaper=landscaper)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+
+        # Soft delete instead of hard delete
+        instance.is_active = False
+        instance.save(update_fields=["is_active", "updated_at"])
+
+        return Response(
+            {"message": "External client deactivated successfully."},
+            status=status.HTTP_200_OK
+        )

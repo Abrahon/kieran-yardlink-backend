@@ -20,7 +20,9 @@ from .views import (
     ReminderToggleAPIView,
     LandscaperReminderToggleAPIView,
     ClientReminderToggleAPIView,
-    LandscaperPersonalProfileView
+    LandscaperPersonalProfileView,
+    ExternalClientListCreateView,
+    ExternalClientDetailView,
 )
 
 urlpatterns = [
@@ -53,5 +55,16 @@ urlpatterns = [
 
     path("landscaper/reminders/", LandscaperReminderToggleAPIView.as_view(), name="landscaper-reminders"),
     path("client/reminders/", ClientReminderToggleAPIView.as_view(), name="client-reminders"),
+
+    path(
+        "landscaper/external-clients/",
+        ExternalClientListCreateView.as_view(),
+        name="external-client-list-create"
+    ),
+    path(
+        "landscaper/external-clients/<int:pk>/",
+        ExternalClientDetailView.as_view(),
+        name="external-client-detail"
+    ),
 
 ]

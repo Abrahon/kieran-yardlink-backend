@@ -85,6 +85,13 @@ from django.shortcuts import get_object_or_404
 from django.db import transaction
 from django.db.models import Q
 from django.contrib.auth.models import User
+from django.db.models import Sum, Value, DecimalField
+from django.db.models.functions import Coalesce
+from django.utils.timezone import now
+
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAdminUser
@@ -296,6 +303,7 @@ def stripe_webhook(request):
 
     return HttpResponse(status=200)
 
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def landscaper_payment_history(request):
@@ -331,31 +339,60 @@ def landscaper_payment_history(request):
     current_month = today.month
     current_year = today.year
 
-    monthly_invoices = invoices.filter(created_at__year=current_year, created_at__month=current_month)
+    monthly_invoices = invoices.filter(
+        created_at__year=current_year,
+        created_at__month=current_month
+    )
     yearly_invoices = invoices.filter(created_at__year=current_year)
 
+    money_field = DecimalField(max_digits=12, decimal_places=2)
+
     monthly_paid = monthly_invoices.filter(status="paid").aggregate(
-        total=Coalesce(Sum("total"), 0)
+        total=Coalesce(
+            Sum("total"),
+            Value(0),
+            output_field=money_field
+        )
     )["total"]
 
     monthly_pending = monthly_invoices.filter(status__in=["pending", "sent"]).aggregate(
-        total=Coalesce(Sum("total"), 0)
+        total=Coalesce(
+            Sum("total"),
+            Value(0),
+            output_field=money_field
+        )
     )["total"]
 
     yearly_paid = yearly_invoices.filter(status="paid").aggregate(
-        total=Coalesce(Sum("total"), 0)
+        total=Coalesce(
+            Sum("total"),
+            Value(0),
+            output_field=money_field
+        )
     )["total"]
 
     yearly_pending = yearly_invoices.filter(status__in=["pending", "sent"]).aggregate(
-        total=Coalesce(Sum("total"), 0)
+        total=Coalesce(
+            Sum("total"),
+            Value(0),
+            output_field=money_field
+        )
     )["total"]
 
     total_paid = invoices.filter(status="paid").aggregate(
-        total=Coalesce(Sum("total"), 0)
+        total=Coalesce(
+            Sum("total"),
+            Value(0),
+            output_field=money_field
+        )
     )["total"]
 
     total_pending = invoices.filter(status__in=["pending", "sent"]).aggregate(
-        total=Coalesce(Sum("total"), 0)
+        total=Coalesce(
+            Sum("total"),
+            Value(0),
+            output_field=money_field
+        )
     )["total"]
 
     return Response({
@@ -369,7 +406,6 @@ def landscaper_payment_history(request):
             "total_pending": round(float(total_pending or 0), 2),
         }
     }, status=200)
-
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])

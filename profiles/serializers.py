@@ -790,3 +790,52 @@ class ClientReminderSerializer(serializers.ModelSerializer):
     class Meta:
         model = ClientProfile
         fields = ["service_reminder", "calendar_sync"]
+
+
+
+# extern client serializers
+from rest_framework import serializers
+from profiles.models import ExternalClient
+
+
+class ExternalClientSerializer(serializers.ModelSerializer):
+    landscaper_id = serializers.IntegerField(source="landscaper.id", read_only=True)
+    landscaper_business_name = serializers.CharField(
+        source="landscaper.business_name",
+        read_only=True
+    )
+
+    class Meta:
+        model = ExternalClient
+        fields = [
+            "id",
+            "landscaper_id",
+            "landscaper_business_name",
+            "name",
+            "email",
+            "phone",
+            "company_name",
+            "address",
+            "notes",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "landscaper_id",
+            "landscaper_business_name",
+            "created_at",
+            "updated_at",
+        ]
+
+    def validate(self, attrs):
+        email = attrs.get("email")
+        phone = attrs.get("phone")
+
+        if not email and not phone:
+            raise serializers.ValidationError(
+                "At least one contact field is required: email or phone."
+            )
+
+        return attrs

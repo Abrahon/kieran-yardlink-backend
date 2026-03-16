@@ -68,7 +68,6 @@ class LandscaperProfilies(models.Model):
 #     )
 
 
-
 # client
 class ClientProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
@@ -78,6 +77,44 @@ class ClientProfile(models.Model):
     calendar_sync = models.BooleanField(default=False)
 
     service_reminder = models.BooleanField(default=False)
+
+    def __str__(self):
+        return self.name
+
+
+from django.db import models
+from django.conf import settings
+from landscapers.models import BusinessProfile
+
+
+class ExternalClient(models.Model):
+    landscaper = models.ForeignKey(
+        BusinessProfile,
+        on_delete=models.CASCADE,
+        related_name="external_clients"
+    )
+
+    name = models.CharField(max_length=255)
+    email = models.EmailField(blank=True, null=True)
+    phone = models.CharField(max_length=30, blank=True, null=True)
+    company_name = models.CharField(max_length=255, blank=True, null=True)
+
+    address = models.TextField(blank=True, null=True)
+    notes = models.TextField(blank=True, null=True)
+
+    is_active = models.BooleanField(default=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["landscaper", "email", "phone"],
+                name="unique_external_client_per_landscaper_email_phone"
+            )
+        ]
 
     def __str__(self):
         return self.name
