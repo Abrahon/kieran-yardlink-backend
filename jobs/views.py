@@ -17,7 +17,27 @@ from jobs.serializers import (
 )
 
 
-# --- Upcoming Jobs for Logged-in Landscaper ---
+# # --- Upcoming Jobs for Logged-in Landscaper ---
+# class UpcomingJobsListView(generics.ListAPIView):
+#     serializer_class = JobSerializer
+#     permission_classes = [permissions.IsAuthenticated]
+
+#     def get_queryset(self):
+#         landscaper_profile = getattr(self.request.user, "landscaper_profile", None)
+#         if not landscaper_profile:
+#             return Job.objects.none()
+
+#         return Job.objects.filter(
+#             landscaper=landscaper_profile,
+#             status=Job.Status.UPCOMING,
+#             is_active=True
+#         ).order_by("scheduled_date", "scheduled_time")
+
+from rest_framework import generics, permissions
+from jobs.models import Job
+from jobs.serializers import JobSerializer
+
+
 class UpcomingJobsListView(generics.ListAPIView):
     serializer_class = JobSerializer
     permission_classes = [permissions.IsAuthenticated]

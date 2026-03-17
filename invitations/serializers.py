@@ -24,21 +24,4 @@ class InvitationListSerializer(serializers.ModelSerializer):
         )
 
 
-# from rest_framework import serializers
-# from .models import WorkerProfile
-
-
-# class WorkerProfileSerializer(serializers.ModelSerializer):
-#     email = serializers.EmailField(source="user.email", read_only=True)
-#     name = serializers.CharField(source="user.get_full_name", read_only=True)
-
-#     class Meta:
-#         model = WorkerProfile
-#         fields = [
-#             "id",
-#             "email",
-#             "name",
-#             "is_blocked",
-#             "created_at",
-#         ]
 

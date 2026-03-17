@@ -379,7 +379,7 @@ class Job(TimeStampedModel):
     @property
     def client_name(self):
         if self.client:
-            return self.client.user.get_full_name() or self.client.user.email
+            return self.client.user.get_fullname() or self.client.user.email
         if self.external_client:
             return self.external_client.name
         return None

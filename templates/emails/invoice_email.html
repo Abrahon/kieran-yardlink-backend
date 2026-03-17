@@ -7,12 +7,15 @@
 <body>
     <h2>Invoice {{ invoice.invoice_number }}</h2>
 
-    <p>Hello {{ client.name|default:"Client" }},</p>
+    <p>Hello {{ recipient_name }},</p>
 
     <p>Your completed job invoice is ready.</p>
 
     <p><strong>Job ID:</strong> {{ job.id }}</p>
     <p><strong>Property:</strong> {{ job.job_property }}</p>
+
+    <p><strong>Subtotal:</strong> {{ invoice.subtotal }}</p>
+    <p><strong>Platform Fee ({{ invoice.service_fee_percent }}%):</strong> {{ invoice.service_fee_amount }}</p>
     <p><strong>Total:</strong> {{ invoice.total }}</p>
 
     <h3>Completed Items</h3>
@@ -23,11 +26,11 @@
     </ul>
 
     {% if pay_url %}
-    <p>
-        <a href="{{ pay_url }}" style="background:#28a745;color:#fff;padding:10px 16px;text-decoration:none;border-radius:6px;display:inline-block;">
-        Pay now
-        </a>
-    </p>
+        <p>
+            <a href="{{ pay_url }}" style="background:#28a745;color:#fff;padding:10px 16px;text-decoration:none;border-radius:6px;display:inline-block;">
+                Pay now
+            </a>
+        </p>
     {% endif %}
 
     {% if frontend_invoice_url %}

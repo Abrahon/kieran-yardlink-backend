@@ -11,6 +11,8 @@ from django.core.validators import MinValueValidator
 from jobs.models import Job
 
 
+
+
 class Invoice(models.Model):
     class Status(models.TextChoices):
         DRAFT = "draft", "Draft"
@@ -31,26 +33,22 @@ class Invoice(models.Model):
     issued_at = models.DateTimeField(auto_now_add=True)
     due_at = models.DateTimeField(null=True, blank=True)
 
-    subtotal = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        default=Decimal("0.00"),
-        validators=[MinValueValidator(0)]
-    )
-    total = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        default=Decimal("0.00"),
-        validators=[MinValueValidator(0)]
-    )
+    subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+
+    # ADD THESE
+    service_fee_percent = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("2.00"))
+    service_fee_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    net_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+
+    total = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
 
     notes = models.TextField(blank=True, null=True)
 
-    # Stripe fields
+    sent_to_email = models.EmailField(blank=True, null=True)
+
     stripe_checkout_url = models.URLField(max_length=1000, blank=True, null=True)
     stripe_session_id = models.CharField(max_length=255, blank=True, null=True)
 
-    sent_to_email = models.EmailField(blank=True, null=True)
     paid_at = models.DateTimeField(null=True, blank=True)
 
     created_by = models.ForeignKey(

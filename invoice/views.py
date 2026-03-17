@@ -68,38 +68,6 @@ def create_job_invoice(request, job_id):
     return Response(InvoiceSerializer(invoice).data, status=status.HTTP_201_CREATED)
 
 
-# @api_view(["POST"])
-# @permission_classes([permissions.IsAuthenticated])
-# def send_job_invoice(request, invoice_id):
-#     landscaper = getattr(request.user, "landscaper_profile", None)
-#     if not landscaper:
-#         return Response({"error": "Landscaper profile not found."}, status=status.HTTP_403_FORBIDDEN)
-
-#     try:
-#         invoice = Invoice.objects.get(
-#             id=invoice_id,
-#             job__landscaper=landscaper
-#         )
-#     except Invoice.DoesNotExist:
-#         return Response({"error": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND)
-
-#     frontend_invoice_url = request.data.get("frontend_invoice_url")
-
-#     try:
-#         send_invoice_email(invoice, frontend_invoice_url=frontend_invoice_url)
-#     except Exception as e:
-#         return Response({"error": f"Email send failed: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
-
-#     invoice.status = Invoice.Status.SENT
-#     invoice.save(update_fields=["status", "updated_at"])
-
-#     return Response({
-#         "message": "Invoice sent successfully.",
-#         "invoice_id": invoice.id,
-#         "invoice_number": invoice.invoice_number,
-#         "sent_to": invoice.sent_to_email,
-#     }, status=status.HTTP_200_OK)
-
 from payments.stripe_service import create_invoice_checkout_session
 
 @api_view(["POST"])
@@ -184,28 +152,6 @@ def send_job_invoice(request, invoice_id):
         "sent_to": invoice.sent_to_email,
         "stripe_checkout_url": invoice.stripe_checkout_url,
     }, status=status.HTTP_200_OK)
-
-# @api_view(["PATCH"])
-# @permission_classes([permissions.IsAuthenticated])
-# def mark_invoice_paid(request, invoice_id):
-#     try:
-#         invoice = Invoice.objects.get(id=invoice_id)
-#     except Invoice.DoesNotExist:
-#         return Response({"error": "Invoice not found."}, status=status.HTTP_404_NOT_FOUND)
-
-#     invoice.status = Invoice.Status.PAID
-#     invoice.paid_at = timezone.now()
-#     invoice.save(update_fields=["status", "paid_at", "updated_at"])
-
-#     invoice.job.payment_status = Job.PaymentStatus.PAID
-#     invoice.job.save(update_fields=["payment_status", "updated_at"])
-
-#     return Response({
-#         "message": "Invoice marked as paid.",
-#         "invoice_id": invoice.id,
-#         "job_id": invoice.job.id,
-#         "payment_status": invoice.job.payment_status,
-#     }, status=status.HTTP_200_OK)
 
 
 

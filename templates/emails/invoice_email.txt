@@ -1,10 +1,13 @@
-Hello {{ client.name|default:"Client" }},
+Hello {{ recipient_name }},
 
 Your completed job invoice is ready.
 
 Invoice Number: {{ invoice.invoice_number }}
 Job ID: {{ job.id }}
 Property: {{ job.job_property }}
+
+Subtotal: {{ invoice.subtotal }}
+Platform Fee ({{ invoice.service_fee_percent }}%): {{ invoice.service_fee_amount }}
 Total: {{ invoice.total }}
 
 Completed Items:
