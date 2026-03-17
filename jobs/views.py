@@ -192,3 +192,20 @@ def add_job_note(request, job_id):
         "message": "Note updated successfully.",
         "note": job.note
     }, status=status.HTTP_200_OK)
+
+
+# manual job created
+from rest_framework import generics, permissions, status
+from rest_framework.response import Response
+from jobs.serializers import ManualOneTimeJobCreateSerializer, JobSerializer
+
+
+class ManualOneTimeJobCreateView(generics.CreateAPIView):
+    serializer_class = ManualOneTimeJobCreateSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        job = serializer.save()
+        return Response(JobSerializer(job).data, status=status.HTTP_201_CREATED)

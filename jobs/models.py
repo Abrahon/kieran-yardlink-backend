@@ -9,6 +9,8 @@ from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.core.exceptions import ValidationError
 from django.utils import timezone
+from property.models import Property
+from profiles.models import ExternalClient   # <-- adjust app path if needed
 
 from bookings.models import BookingRequest
 from landscapers.models import Service, Addon, BusinessProfile
@@ -257,19 +259,6 @@ class TimeStampedModel(models.Model):
 
 #     def __str__(self):
 #         return f"Job #{self.id} - {self.client.user.email} - {self.status}"
-
-from decimal import Decimal
-from django.db import models
-from django.conf import settings
-from django.core.validators import MinValueValidator
-from django.core.exceptions import ValidationError
-from django.utils import timezone
-
-from bookings.models import BookingRequest
-from landscapers.models import Service, Addon, BusinessProfile
-from profiles.models import ClientProfile
-from property.models import Property
-from profiles.models import ExternalClient   # <-- adjust app path if needed
 
 
 class TimeStampedModel(models.Model):

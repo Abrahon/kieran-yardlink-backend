@@ -33,8 +33,8 @@ from jobs.views import (
     JobImageCreateView,
     JobRescheduleCreateView,
     add_job_note,
-    CompletedJobsListView
-    # sync_job_items_from_client_services
+    CompletedJobsListView,
+    ManualOneTimeJobCreateView
 )
 
 
@@ -47,4 +47,6 @@ urlpatterns = [
     path("landscaper/jobs/images/add/", JobImageCreateView.as_view(), name="job-add-image"),
     path("landscaper/jobs/reschedule/add/", JobRescheduleCreateView.as_view(), name="job-reschedule"),
     path("landscaper/jobs/completed/", CompletedJobsListView.as_view(), name="completed-jobs"),
+    # manual job created
+    path("landscaper/manual-jobs/create/", ManualOneTimeJobCreateView.as_view(), name="manual-job-create"),
 ]

@@ -4,6 +4,13 @@ from rest_framework import generics, permissions, serializers
 from rest_framework.response import Response
 from jobs.models import Job, JobItem
 from landscapers.models import Service, Addon
+from profiles.models import ExternalClient
+from profiles.models import ExternalClient
+
+from jobs.models import Job, JobItem, JobImage, JobReschedule
+from rest_framework import serializers
+from profiles.serializers import ClientProfileSerializer,LandscaperProfileSerializer
+from landscapers.serializers import BusinessLandscaperProfileSerializer
 
 class JobItemSerializer(serializers.ModelSerializer):
     class Meta:
@@ -49,11 +56,90 @@ class JobRescheduleSerializer(serializers.ModelSerializer):
         read_only_fields = ["requested_by", "created_at", "old_date", "old_time"]
 
 
-from jobs.models import Job, JobItem, JobImage, JobReschedule
-from rest_framework import serializers
-from profiles.serializers import ClientProfileSerializer,LandscaperProfileSerializer
-from landscapers.serializers import BusinessLandscaperProfileSerializer
 
+
+
+# class JobSerializer(serializers.ModelSerializer):
+#     total_price = serializers.SerializerMethodField()
+#     booking_price = serializers.SerializerMethodField()
+#     items = serializers.SerializerMethodField()
+#     images = serializers.SerializerMethodField()
+#     reschedules = serializers.SerializerMethodField()
+#     client = ClientProfileSerializer(read_only=True)
+#     landscaper_info = serializers.SerializerMethodField()
+#     job_property = serializers.StringRelatedField()
+#     external_client = ExternalClientSerializer(read_only=True)
+
+#     class Meta:
+#         model = Job
+#         fields = [
+#             "id",
+#             "booking",
+#             "client",
+#             "external_client",
+#             "landscaper_info",
+#             "job_property",
+#             "scheduled_date",
+#             "scheduled_time",
+#             "booking_price",
+#             "total_price",
+#             "note",
+#             "status",
+#             "is_active",
+#             "completed_at",
+#             "items",
+#             "images",
+#             "reschedules",
+#         ]
+
+#     def get_booking_price(self, obj):
+#         if obj.booking and obj.booking.price is not None:
+#             return str(obj.booking.price)
+#         return "0.00"
+
+#     def get_total_price(self, obj):
+#         # If no completed items yet, show original booking total
+#         if obj.total_price is None or obj.total_price == 0:
+#             if obj.booking and obj.booking.price is not None:
+#                 return str(obj.booking.price)
+#             return "0.00"
+
+#         # Once work starts / items are completed, show actual completed total
+#         return str(obj.total_price)
+
+#     def get_landscaper_info(self, obj):
+#         business = obj.landscaper
+#         if not business:
+#             return None
+
+#         user = business.user
+#         personal = getattr(user, "landscaperprofilies", None)
+
+#         return {
+#             "id": business.id,
+#             "name": personal.name if personal else None,
+#             "phone": personal.phone if personal else None,
+#             "image": personal.image.url if personal and personal.image else None,
+#             "business_name": business.business_name,
+#             "business_email": business.business_email,
+#             "business_phone": business.business_phone,
+#         }
+
+#     def get_items(self, obj):
+#         return JobItemSerializer(obj.items.all(), many=True).data
+
+#     def get_images(self, obj):
+#         return JobImageSerializer(obj.images.all(), many=True).data
+
+#     def get_reschedules(self, obj):
+#         return JobRescheduleSerializer(obj.reschedules.all(), many=True).data
+
+from rest_framework import serializers
+from profiles.serializers import ExternalClientSerializer, ClientProfileSerializer
+from .models import Job
+# import your other serializers too
+# from .serializers or same file:
+# JobItemSerializer, JobImageSerializer, JobRescheduleSerializer
 
 
 class JobSerializer(serializers.ModelSerializer):
@@ -65,6 +151,7 @@ class JobSerializer(serializers.ModelSerializer):
     client = ClientProfileSerializer(read_only=True)
     landscaper_info = serializers.SerializerMethodField()
     job_property = serializers.StringRelatedField()
+    external_client = ExternalClientSerializer(read_only=True)
 
     class Meta:
         model = Job
@@ -72,6 +159,7 @@ class JobSerializer(serializers.ModelSerializer):
             "id",
             "booking",
             "client",
+            "external_client",
             "landscaper_info",
             "job_property",
             "scheduled_date",
@@ -93,13 +181,10 @@ class JobSerializer(serializers.ModelSerializer):
         return "0.00"
 
     def get_total_price(self, obj):
-        # If no completed items yet, show original booking total
         if obj.total_price is None or obj.total_price == 0:
             if obj.booking and obj.booking.price is not None:
                 return str(obj.booking.price)
             return "0.00"
-
-        # Once work starts / items are completed, show actual completed total
         return str(obj.total_price)
 
     def get_landscaper_info(self, obj):
@@ -128,7 +213,6 @@ class JobSerializer(serializers.ModelSerializer):
 
     def get_reschedules(self, obj):
         return JobRescheduleSerializer(obj.reschedules.all(), many=True).data
-
 
 
 # class JobSerializer(serializers.ModelSerializer):
@@ -207,6 +291,7 @@ class JobSerializer(serializers.ModelSerializer):
 #     def get_reschedules(self, obj):
 #         return JobRescheduleSerializer(obj.reschedules.all(), many=True).data
 
+
 # completd job serializers
 from rest_framework import serializers
 from jobs.models import Job, JobImage, JobReschedule
@@ -284,3 +369,107 @@ class CompletedJobSerializer(serializers.ModelSerializer):
 
     def get_images(self, obj):
         return JobImageSerializer(obj.images.all(), many=True).data
+
+
+
+
+from decimal import Decimal, InvalidOperation
+from rest_framework import serializers
+from profiles.models import ExternalClient
+from jobs.models import Job, JobItem
+
+
+class ManualOneTimeJobCreateSerializer(serializers.Serializer):
+    external_client_id = serializers.IntegerField()
+    scheduled_date = serializers.DateField()
+    scheduled_time = serializers.TimeField()
+    note = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    items = serializers.ListField(child=serializers.DictField(), allow_empty=False)
+
+    def validate(self, attrs):
+        request = self.context["request"]
+        landscaper = getattr(request.user, "landscaper_profile", None)
+        if not landscaper:
+            raise serializers.ValidationError("Landscaper profile not found.")
+
+        try:
+            external_client = ExternalClient.objects.get(
+                id=attrs["external_client_id"],
+                landscaper=landscaper,
+                is_active=True,
+            )
+        except ExternalClient.DoesNotExist:
+            raise serializers.ValidationError("External client not found.")
+
+        items = attrs.get("items", [])
+        if not items:
+            raise serializers.ValidationError("At least one item is required.")
+
+        for index, item in enumerate(items):
+            name = item.get("name")
+            price = item.get("price")
+
+            if not name:
+                raise serializers.ValidationError({
+                    "items": {
+                        index: "Each item must have a name."
+                    }
+                })
+
+            if price in [None, ""]:
+                raise serializers.ValidationError({
+                    "items": {
+                        index: "Each item must have a price."
+                    }
+                })
+
+            try:
+                price_decimal = Decimal(str(price).strip())
+            except (InvalidOperation, ValueError, TypeError):
+                raise serializers.ValidationError({
+                    "items": {
+                        index: "Invalid price format."
+                    }
+                })
+
+            if price_decimal < 0:
+                raise serializers.ValidationError({
+                    "items": {
+                        index: "Price cannot be negative."
+                    }
+                })
+
+        attrs["external_client"] = external_client
+        attrs["landscaper"] = landscaper
+        return attrs
+
+    def create(self, validated_data):
+        external_client = validated_data["external_client"]
+        landscaper = validated_data["landscaper"]
+        items_data = validated_data["items"]
+
+        job = Job.objects.create(
+            external_client=external_client,
+            client=None,
+            booking=None,
+            landscaper=landscaper,
+            scheduled_date=validated_data["scheduled_date"],
+            scheduled_time=validated_data["scheduled_time"],
+            note=validated_data.get("note"),
+            status=Job.Status.UPCOMING,
+            payment_status=Job.PaymentStatus.PENDING,
+            is_active=True,
+            total_price=Decimal("0.00"),
+        )
+
+        for idx, item in enumerate(items_data):
+            JobItem.objects.create(
+                job=job,
+                item_type=JobItem.ItemType.CUSTOM,
+                name=item.get("name"),
+                description=item.get("description", ""),
+                price=Decimal(str(item.get("price")).strip()),
+                sort_order=idx,
+            )
+
+        return job
