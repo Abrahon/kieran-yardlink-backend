@@ -173,16 +173,26 @@ def create_invoice_checkout_session(request):
 
 
 # Success / Cancel Endpoints
+
+
 @api_view(["GET"])
 def payment_success(request):
-    schedule_id = request.GET.get("schedule_id")
-    return Response({"message": "Payment successful", "schedule_id": schedule_id})
+    invoice_id = request.GET.get("invoice_id")
+    session_id = request.GET.get("session_id")
+    return Response({
+        "message": "Payment successful",
+        "invoice_id": invoice_id,
+        "session_id": session_id,
+    })
 
 
 @api_view(["GET"])
 def payment_cancel(request):
-    schedule_id = request.GET.get("schedule_id")
-    return Response({"message": "Payment cancelled", "schedule_id": schedule_id})
+    invoice_id = request.GET.get("invoice_id")
+    return Response({
+        "message": "Payment cancelled",
+        "invoice_id": invoice_id,
+    })
 
 
 
@@ -257,6 +267,56 @@ class ConfirmCashPaymentAPIView(APIView):
         })
 
 
+# @csrf_exempt
+# def stripe_webhook(request):
+#     payload = request.body
+#     sig_header = request.META.get("HTTP_STRIPE_SIGNATURE")
+#     endpoint_secret = settings.STRIPE_WEBHOOK_SECRET
+
+#     if not sig_header:
+#         return HttpResponse(status=400)
+
+#     try:
+#         event = stripe.Webhook.construct_event(
+#             payload=payload,
+#             sig_header=sig_header,
+#             secret=endpoint_secret
+#         )
+#     except ValueError:
+#         return HttpResponse(status=400)
+#     except stripe.error.SignatureVerificationError:
+#         return HttpResponse(status=400)
+
+#     event_type = event["type"]
+#     data_object = event["data"]["object"]
+
+#     # Main success event
+#     if event_type in ["checkout.session.completed", "checkout.session.async_payment_succeeded"]:
+#         invoice_id = data_object.get("metadata", {}).get("invoice_id")
+#         stripe_session_id = data_object.get("id")
+
+#         if invoice_id:
+#             try:
+#                 invoice = Invoice.objects.select_related("job").get(id=invoice_id)
+
+#                 invoice.status = Invoice.Status.PAID
+#                 invoice.paid_at = timezone.now()
+#                 invoice.stripe_session_id = stripe_session_id
+#                 invoice.save(update_fields=["status", "paid_at", "stripe_session_id", "updated_at"])
+
+#                 if invoice.job:
+#                     invoice.job.payment_status = Job.PaymentStatus.PAID
+#                     invoice.job.save(update_fields=["payment_status", "updated_at"])
+
+#             except Invoice.DoesNotExist:
+#                 pass
+
+#     return HttpResponse(status=200)
+
+
+
+# optional QuickBooks imports
+
 @csrf_exempt
 def stripe_webhook(request):
     payload = request.body
@@ -280,28 +340,66 @@ def stripe_webhook(request):
     event_type = event["type"]
     data_object = event["data"]["object"]
 
-    # Main success event
     if event_type in ["checkout.session.completed", "checkout.session.async_payment_succeeded"]:
         invoice_id = data_object.get("metadata", {}).get("invoice_id")
         stripe_session_id = data_object.get("id")
 
         if invoice_id:
             try:
-                invoice = Invoice.objects.select_related("job").get(id=invoice_id)
+                invoice = Invoice.objects.select_related(
+                    "job",
+                    "job__landscaper",
+                    "job__client",
+                    "job__client__user",
+                    "job__external_client",
+                ).get(id=invoice_id)
 
-                invoice.status = Invoice.Status.PAID
-                invoice.paid_at = timezone.now()
-                invoice.stripe_session_id = stripe_session_id
-                invoice.save(update_fields=["status", "paid_at", "stripe_session_id", "updated_at"])
+                # avoid duplicate updates
+                if invoice.status != Invoice.Status.PAID:
+                    invoice.status = Invoice.Status.PAID
+                    invoice.paid_at = timezone.now()
+                    invoice.stripe_session_id = stripe_session_id
+                    invoice.save(update_fields=["status", "paid_at", "stripe_session_id", "updated_at"])
 
-                if invoice.job:
-                    invoice.job.payment_status = Job.PaymentStatus.PAID
-                    invoice.job.save(update_fields=["payment_status", "updated_at"])
+                    if invoice.job:
+                        invoice.job.payment_status = Job.PaymentStatus.PAID
+                        invoice.job.save(update_fields=["payment_status", "updated_at"])
+
+                # OPTIONAL: auto sync paid invoice to QuickBooks
+                try:
+                    connection = QuickBooksConnection.objects.get(
+                        landscaper=invoice.job.landscaper,
+                        is_active=True
+                    )
+
+                    # store these in DB/config later instead of hardcoding
+                    service_item_id = getattr(settings, "QUICKBOOKS_DEFAULT_SERVICE_ITEM_ID", None)
+                    deposit_to_account_id = getattr(settings, "QUICKBOOKS_DEFAULT_DEPOSIT_ACCOUNT_ID", None)
+
+                    if service_item_id:
+                        customer = upsert_customer(connection, invoice)
+                        qbo_invoice = qbo_create_invoice(connection, invoice, customer["Id"], service_item_id)
+
+                        if deposit_to_account_id:
+                            qbo_create_payment(
+                                connection,
+                                invoice,
+                                customer["Id"],
+                                qbo_invoice["Id"],
+                                deposit_to_account_id,
+                            )
+
+                except QuickBooksConnection.DoesNotExist:
+                    pass
+                except Exception as e:
+                    # do not fail Stripe webhook because of QuickBooks sync
+                    print("QuickBooks auto-sync failed:", str(e))
 
             except Invoice.DoesNotExist:
                 pass
 
     return HttpResponse(status=200)
+
 
 
 @api_view(["GET"])

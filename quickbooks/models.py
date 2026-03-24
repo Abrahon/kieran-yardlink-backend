@@ -19,6 +19,13 @@ class QuickBooksConnection(models.Model):
     access_token_expires_at = models.DateTimeField(null=True, blank=True)
     refresh_token_expires_at = models.DateTimeField(null=True, blank=True)
 
+    default_service_item_id = models.CharField(max_length=100, null=True, blank=True)
+    default_service_item_name = models.CharField(max_length=255, null=True, blank=True)
+
+    default_deposit_account_id = models.CharField(max_length=100, null=True, blank=True)
+    default_deposit_account_name = models.CharField(max_length=255, null=True, blank=True)
+
+
     connected_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     is_active = models.BooleanField(default=True)
@@ -65,3 +72,23 @@ class QuickBooksSyncLog(models.Model):
 
     def __str__(self):
         return f"{self.object_type} - {self.status}"
+
+
+
+
+
+class QuickBooksOAuthState(models.Model):
+    landscaper = models.ForeignKey(
+        BusinessProfile,
+        on_delete=models.CASCADE,
+        related_name="quickbooks_oauth_states"
+    )
+    state = models.CharField(max_length=255, unique=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_used = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.landscaper.business_name} - {self.state}"

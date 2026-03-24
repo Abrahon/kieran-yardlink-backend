@@ -58,7 +58,10 @@ class Invoice(models.Model):
         blank=True,
         related_name="created_invoices"
     )
-
+    quickbooks_customer_id = models.CharField(max_length=100, null=True, blank=True)
+    quickbooks_invoice_id = models.CharField(max_length=100, null=True, blank=True)
+    quickbooks_payment_id = models.CharField(max_length=100, null=True, blank=True)
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

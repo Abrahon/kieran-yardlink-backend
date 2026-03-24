@@ -90,6 +90,8 @@ def create_invoice_checkout_session(invoice):
             "invoice_id": str(invoice.id),
             "job_id": str(invoice.job.id),
             "landscaper_id": str(invoice.job.landscaper.id),
+            "client_id": str(invoice.job.client.id) if getattr(invoice.job, "client", None) else "",
+            "external_client_id": str(invoice.job.external_client.id) if getattr(invoice.job, "external_client", None) else "",
         },
     )
 
