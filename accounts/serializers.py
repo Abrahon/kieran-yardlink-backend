@@ -98,6 +98,11 @@ class SignupSerializer(serializers.Serializer):
             "invalid_choice": "Invalid role. Choose a valid role."
         }
     )
+    
+    allow_notification = serializers.BooleanField(
+        required=False,
+        default=False
+    )
 
     def validate_email(self, value):
         if User.objects.filter(email=value).exists():
@@ -110,6 +115,7 @@ class SignupSerializer(serializers.Serializer):
                 {"confirm_password": "Passwords do not match."}
             )
         return attrs
+
 
 
 # ---------------------------
@@ -156,8 +162,9 @@ class SendOTPSerializer(serializers.Serializer):
         return user
 
 
-# Resend otp
 
+
+# Resend otp
 class ResendOTPSerializer(serializers.Serializer):
     email = serializers.EmailField()
 

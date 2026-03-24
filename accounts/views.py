@@ -70,6 +70,7 @@ class SignupView(generics.GenericAPIView):
             "latitude": str(data["latitude"]) if data.get("latitude") else None,
             "longitude": str(data["longitude"]) if data.get("longitude") else None,
             "role": data["role"],
+            "allow_notification": data.get("allow_notification", False)
         }
 
         request.session.modified = True
@@ -85,6 +86,7 @@ class SignupView(generics.GenericAPIView):
             {"detail": f"Verification OTP sent to {data['role']} email."},
             status=200
         )
+
 
 def get_tokens_for_user(user):
     refresh = RefreshToken.for_user(user)

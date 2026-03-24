@@ -58,6 +58,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     longitude = models.DecimalField(max_digits=20, decimal_places=18, blank=True, null=True)
     admin_notes = models.TextField(blank=True, null=True)
     is_flagged = models.BooleanField(default=False)
+    allow_notification = models.BooleanField(default=False)  
   
 
     # NOTE: no default role. Must be provided.
