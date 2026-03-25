@@ -150,7 +150,6 @@ class DeleteMultipleConversationsAPIView(APIView):
         )
 
 #coversation
-
 class StartConversationAPIView(APIView):
     permission_classes = [IsAuthenticated]
 

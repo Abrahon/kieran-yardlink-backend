@@ -1,15 +1,4 @@
-# from django.urls import path
-# from quickbooks.views import (
-#     quickbooks_connect,
-#     quickbooks_callback,
-#     quickbooks_sync_invoice,
-# )
 
-# urlpatterns = [
-#     path("quickbooks/connect/", quickbooks_connect, name="quickbooks-connect"),
-#     path("quickbooks/callback/", quickbooks_callback, name="quickbooks-callback"),
-#     path("quickbooks/invoices/<int:invoice_id>/sync/", quickbooks_sync_invoice, name="quickbooks-sync-invoice"),
-# ]
 from django.urls import path
 from quickbooks.views import (
     quickbooks_connect,

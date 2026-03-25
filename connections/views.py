@@ -2060,156 +2060,482 @@ class CancelConnectionRequestAPIView(APIView):
         )
 
 
+# class AcceptedConnectionsAPIView(APIView):
+#     permission_classes = [IsAuthenticated]
+
+#     def get(self, request):
+#         user = request.user
+#         current_time = timezone.now()
+
+#         connections = ConnectionRequest.objects.filter(
+#             Q(sender=user) | Q(receiver=user),
+#             is_accepted=True
+#         ).select_related(
+#             "sender", "receiver", "schedule"
+#         ).order_by("-created_at")
+
+#         response_data = []
+
+#         for conn in connections:
+#             other_user = conn.receiver if conn.sender == user else conn.sender
+
+#             diff = current_time - conn.created_at
+#             if diff.days > 0:
+#                 connected_since = f"{diff.days} days ago"
+#             elif diff.seconds >= 3600:
+#                 connected_since = f"{diff.seconds // 3600} hours ago"
+#             elif diff.seconds >= 60:
+#                 connected_since = f"{diff.seconds // 60} minutes ago"
+#             else:
+#                 connected_since = "Just now"
+
+#             business_profile = getattr(other_user, "landscaper_profile", None)
+#             client_profile = getattr(other_user, "client_profile", None)
+
+#             if business_profile:
+#                 role = "landscaper"
+#                 profile_data = LandscaperProfileSerializer(
+#                     business_profile,
+#                     context={"request": request}
+#                 ).data
+#             elif client_profile:
+#                 role = "client"
+#                 profile_data = ClientProfileSerializer(
+#                     client_profile,
+#                     context={"request": request}
+#                 ).data
+#             else:
+#                 continue
+
+#             upcoming_job = None
+#             if conn.schedule:
+#                 upcoming_job = {
+#                     "job_id": conn.schedule.id,
+#                     "service_name": getattr(conn.schedule.service, "name", None),
+#                     "date": conn.schedule.scheduled_date,
+#                     "time": conn.schedule.scheduled_time,
+#                     "price": float(getattr(conn.schedule.service, "price", 0) or 0),
+#                     "payment_status": conn.schedule.payment_status,
+#                 }
+
+#             response_data.append({
+#                 "connection_id": conn.id,
+#                 "connected_user": {
+#                     "id": other_user.id,
+#                     "name": getattr(other_user, "name", ""),
+#                     "email": other_user.email,
+#                     "role": role,
+#                 },
+#                 "profile": profile_data,
+#                 "connected_at": conn.created_at,
+#                 "connected_since": connected_since,
+#                 "upcoming_job": upcoming_job,
+#             })
+
+#         total_connections = len(response_data)
+
+#         first_day_this_month = current_time.replace(day=1)
+#         first_day_last_month = (first_day_this_month - timedelta(days=1)).replace(day=1)
+#         last_day_last_month = first_day_this_month - timedelta(days=1)
+
+#         active_users_this_month = ConnectionRequest.objects.filter(
+#             is_accepted=True,
+#             created_at__gte=first_day_this_month
+#         ).values_list("receiver", "sender")
+
+#         active_users_last_month = ConnectionRequest.objects.filter(
+#             is_accepted=True,
+#             created_at__gte=first_day_last_month,
+#             created_at__lte=last_day_last_month
+#         ).values_list("receiver", "sender")
+
+#         active_this = set(u for pair in active_users_this_month for u in pair)
+#         active_last = set(u for pair in active_users_last_month for u in pair)
+
+#         total_users = User.objects.filter(is_active=True).count()
+
+#         active_percentage = (len(active_this) / total_users * 100) if total_users > 0 else 0
+#         previous_month_percentage = (len(active_last) / total_users * 100) if total_users > 0 else 0
+
+#         change_value = active_percentage - previous_month_percentage
+#         if change_value > 0:
+#             change_vs_last_month = f"+{change_value:.1f}"
+#         elif change_value < 0:
+#             change_vs_last_month = f"{change_value:.1f}"
+#         else:
+#             change_vs_last_month = "0.0"
+
+#         connection_limits = None
+#         landscaper_business_self = getattr(user, "landscaper_profile", None)
+#         landscaper_basic_self = getattr(user, "landscaperprofilies", None)
+
+#         if landscaper_business_self:
+#             subscription = Subscription.objects.filter(
+#                 user=user,
+#                 is_active=True,
+#                 status=SubscriptionStatus.ACTIVE
+#             ).select_related("plan").first()
+
+#             if subscription and subscription.plan:
+#                 plan_name = subscription.plan.name.upper()
+#             elif landscaper_basic_self and landscaper_basic_self.plan:
+#                 plan_name = landscaper_basic_self.plan.name.upper()
+#             else:
+#                 plan_name = "BASIC"
+
+#             accepted_count = ConnectionRequest.objects.filter(
+#                 is_accepted=True
+#             ).filter(
+#                 Q(sender=user) | Q(receiver=user)
+#             ).count()
+
+#             if plan_name == "BASIC":
+#                 connection_limits = {
+#                     "plan": "BASIC",
+#                     "accepted_connections": accepted_count,
+#                     "max_connections": 10,
+#                     "remaining_slots": max(0, 10 - accepted_count),
+#                 }
+#             else:
+#                 connection_limits = {
+#                     "plan": plan_name,
+#                     "accepted_connections": accepted_count,
+#                     "max_connections": None,
+#                     "remaining_slots": None,
+#                 }
+
+#         return Response(
+#             {
+#                 "count": total_connections,
+#                 "connections": response_data,
+#                 "active_percentage": round(active_percentage, 1),
+#                 "previous_month_percentage": round(previous_month_percentage, 1),
+#                 "change_vs_last_month": change_vs_last_month,
+#                 "connection_limits": connection_limits,
+#             },
+#             status=status.HTTP_200_OK
+#         )
+
+# class AcceptedConnectionsAPIView(APIView):
+#     permission_classes = [IsAuthenticated]
+
+#     def get_profile_data(self, user, request):
+#         """
+#         Return profile data based on user type.
+#         """
+#         business_profile = getattr(user, "landscaper_profile", None)
+#         basic_profile = getattr(user, "landscaperprofilies", None)
+#         client_profile = getattr(user, "client_profile", None)
+
+#         if business_profile:
+#             data = BusinessLandscaperProfileSerializer(
+#                 business_profile,
+#                 context={"request": request}
+#             ).data
+#             data["user_id"] = user.id
+#             data["email"] = user.email
+#             data["type"] = "landscaper_business"
+#             return data
+
+#         if basic_profile:
+#             return {
+#                 "user_id": user.id,
+#                 "name": basic_profile.name,
+#                 "phone": basic_profile.phone,
+#                 "image": basic_profile.image.url if basic_profile.image else None,
+#                 "type": "landscaper_basic",
+#             }
+
+#         if client_profile:
+#             data = ClientProfileSerializer(
+#                 client_profile,
+#                 context={"request": request}
+#             ).data
+#             data["user_id"] = user.id
+#             data["email"] = user.email
+#             data["type"] = "client"
+#             return data
+
+#         return {
+#             "user_id": user.id,
+#             "name": getattr(user, "name", ""),
+#             "email": user.email,
+#             "type": "unknown",
+#         }
+
+#     def get_connected_since(self, created_at):
+#         diff = timezone.now() - created_at
+
+#         if diff.days > 0:
+#             return f"{diff.days} day{'s' if diff.days != 1 else ''} ago"
+#         elif diff.seconds >= 3600:
+#             hours = diff.seconds // 3600
+#             return f"{hours} hour{'s' if hours != 1 else ''} ago"
+#         elif diff.seconds >= 60:
+#             minutes = diff.seconds // 60
+#             return f"{minutes} minute{'s' if minutes != 1 else ''} ago"
+#         return "just now"
+
+#     def get_upcoming_job(self, conn):
+#         if not conn.schedule:
+#             return None
+
+#         schedule = conn.schedule
+
+#         return {
+#             "job_id": schedule.id,
+#             "service_name": getattr(schedule.service, "name", None) if schedule.service else None,
+#             "date": schedule.scheduled_date,
+#             "time": schedule.scheduled_time,
+#             "price": float(getattr(schedule.service, "price", 0) or 0) if schedule.service else 0,
+#             "payment_status": getattr(schedule, "payment_status", None),
+#             "is_completed": schedule.is_completed,
+#         }
+
+#     def get(self, request):
+#         user = request.user
+
+#         connections = ConnectionRequest.objects.filter(
+#             Q(sender=user) | Q(receiver=user),
+#             is_accepted=True
+#         ).select_related(
+#             "sender",
+#             "receiver",
+#             "schedule",
+#             "schedule__service"
+#         ).order_by("-created_at")
+
+#         response_data = []
+
+#         for conn in connections:
+#             connected_user = conn.receiver if conn.sender == user else conn.sender
+
+#             response_data.append({
+#                 "connection_request_id": conn.id,
+#                 "connected_user": {
+#                     "id": connected_user.id,
+#                     "name": getattr(connected_user, "name", ""),
+#                     "email": connected_user.email,
+#                     "role": getattr(connected_user, "role", None),
+#                 },
+#                 "profile": self.get_profile_data(connected_user, request),
+#                 "connected_at": conn.created_at,
+#                 "connected_since": self.get_connected_since(conn.created_at),
+#                 "upcoming_job": self.get_upcoming_job(conn),
+#             })
+
+#         return Response(
+#             {
+#                 "total_count": connections.count(),
+#                 "connections": response_data,
+#             },
+#             status=status.HTTP_200_OK
+#         )
+
+
+
 class AcceptedConnectionsAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
+    def get_profile_data(self, user, request):
+        business_profile = getattr(user, "landscaper_profile", None)
+        basic_profile = getattr(user, "landscaperprofilies", None)
+        client_profile = getattr(user, "client_profile", None)
+
+        if business_profile:
+            data = BusinessLandscaperProfileSerializer(
+                business_profile,
+                context={"request": request}
+            ).data
+            data["user_id"] = user.id
+            data["email"] = user.email
+            data["type"] = "landscaper_business"
+            return data
+
+        if basic_profile:
+            return {
+                "user_id": user.id,
+                "name": getattr(basic_profile, "name", ""),
+                "phone": getattr(basic_profile, "phone", ""),
+                "image": basic_profile.image.url if getattr(basic_profile, "image", None) else None,
+                "type": "landscaper_basic",
+            }
+
+        if client_profile:
+            data = ClientProfileSerializer(
+                client_profile,
+                context={"request": request}
+            ).data
+            data["user_id"] = user.id
+            data["email"] = user.email
+            data["type"] = "client"
+            return data
+
+        return {
+            "user_id": user.id,
+            "name": getattr(user, "name", ""),
+            "email": user.email,
+            "type": "unknown",
+        }
+
+    def get_connected_since(self, created_at):
+        diff = timezone.now() - created_at
+
+        if diff.days > 0:
+            return f"{diff.days} day{'s' if diff.days != 1 else ''} ago"
+        if diff.seconds >= 3600:
+            hours = diff.seconds // 3600
+            return f"{hours} hour{'s' if hours != 1 else ''} ago"
+        if diff.seconds >= 60:
+            minutes = diff.seconds // 60
+            return f"{minutes} minute{'s' if minutes != 1 else ''} ago"
+        return "just now"
+
+    def get_upcoming_job(self, conn):
+        if not conn.schedule:
+            return None
+
+        schedule = conn.schedule
+        service = getattr(schedule, "service", None)
+
+        return {
+            "job_id": schedule.id,
+            "service_name": getattr(service, "name", None),
+            "date": schedule.scheduled_date,
+            "time": schedule.scheduled_time,
+            "price": float(getattr(service, "price", 0) or 0),
+            "payment_status": getattr(schedule, "payment_status", None),
+            "is_completed": getattr(schedule, "is_completed", False),
+        }
+
+    def get_connection_limits(self, user, accepted_count):
+        landscaper_business = getattr(user, "landscaper_profile", None)
+        landscaper_basic = getattr(user, "landscaperprofilies", None)
+
+        if not landscaper_business and not landscaper_basic:
+            return None
+
+        subscription = Subscription.objects.filter(
+            user=user,
+            is_active=True,
+            status=SubscriptionStatus.ACTIVE
+        ).select_related("plan").order_by("-end_date").first()
+
+        if subscription and subscription.plan:
+            plan_name = subscription.plan.name.upper()
+        elif landscaper_basic and getattr(landscaper_basic, "plan", None):
+            plan_name = landscaper_basic.plan.name.upper()
+        else:
+            plan_name = "BASIC"
+
+        if plan_name == "BASIC":
+            max_connections = 10
+            return {
+                "plan": plan_name,
+                "accepted_connections": accepted_count,
+                "max_connections": max_connections,
+                "remaining_slots": max(0, max_connections - accepted_count),
+            }
+
+        return {
+            "plan": plan_name,
+            "accepted_connections": accepted_count,
+            "max_connections": None,
+            "remaining_slots": None,
+        }
+
     def get(self, request):
         user = request.user
-        current_time = timezone.now()
+        now = timezone.now()
 
-        connections = ConnectionRequest.objects.filter(
+        connections_qs = ConnectionRequest.objects.filter(
             Q(sender=user) | Q(receiver=user),
             is_accepted=True
         ).select_related(
-            "sender", "receiver", "schedule"
+            "sender",
+            "receiver",
+            "schedule",
+            "schedule__service"
         ).order_by("-created_at")
 
-        response_data = []
+        connections_data = []
 
-        for conn in connections:
+        for conn in connections_qs:
             other_user = conn.receiver if conn.sender == user else conn.sender
 
-            diff = current_time - conn.created_at
-            if diff.days > 0:
-                connected_since = f"{diff.days} days ago"
-            elif diff.seconds >= 3600:
-                connected_since = f"{diff.seconds // 3600} hours ago"
-            elif diff.seconds >= 60:
-                connected_since = f"{diff.seconds // 60} minutes ago"
-            else:
-                connected_since = "Just now"
-
-            business_profile = getattr(other_user, "landscaper_profile", None)
-            client_profile = getattr(other_user, "client_profile", None)
-
-            if business_profile:
-                role = "landscaper"
-                profile_data = LandscaperProfileSerializer(
-                    business_profile,
-                    context={"request": request}
-                ).data
-            elif client_profile:
-                role = "client"
-                profile_data = ClientProfileSerializer(
-                    client_profile,
-                    context={"request": request}
-                ).data
-            else:
-                continue
-
-            upcoming_job = None
-            if conn.schedule:
-                upcoming_job = {
-                    "job_id": conn.schedule.id,
-                    "service_name": getattr(conn.schedule.service, "name", None),
-                    "date": conn.schedule.scheduled_date,
-                    "time": conn.schedule.scheduled_time,
-                    "price": float(getattr(conn.schedule.service, "price", 0) or 0),
-                    "payment_status": conn.schedule.payment_status,
-                }
-
-            response_data.append({
-                "connection_id": conn.id,
+            connections_data.append({
+                "connection_request_id": conn.id,
                 "connected_user": {
                     "id": other_user.id,
                     "name": getattr(other_user, "name", ""),
                     "email": other_user.email,
-                    "role": role,
+                    "role": getattr(other_user, "role", ""),
                 },
-                "profile": profile_data,
+                "profile": self.get_profile_data(other_user, request),
                 "connected_at": conn.created_at,
-                "connected_since": connected_since,
-                "upcoming_job": upcoming_job,
+                "connected_since": self.get_connected_since(conn.created_at),
+                "upcoming_job": self.get_upcoming_job(conn),
             })
 
-        total_connections = len(response_data)
+        count = connections_qs.count()
 
-        first_day_this_month = current_time.replace(day=1)
-        first_day_last_month = (first_day_this_month - timedelta(days=1)).replace(day=1)
-        last_day_last_month = first_day_this_month - timedelta(days=1)
+        first_day_this_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        last_month_last_day = first_day_this_month - timedelta(days=1)
+        first_day_last_month = last_month_last_day.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-        active_users_this_month = ConnectionRequest.objects.filter(
+        active_users_this_month_qs = ConnectionRequest.objects.filter(
             is_accepted=True,
             created_at__gte=first_day_this_month
-        ).values_list("receiver", "sender")
+        ).values_list("sender_id", "receiver_id")
 
-        active_users_last_month = ConnectionRequest.objects.filter(
+        active_users_last_month_qs = ConnectionRequest.objects.filter(
             is_accepted=True,
             created_at__gte=first_day_last_month,
-            created_at__lte=last_day_last_month
-        ).values_list("receiver", "sender")
+            created_at__lt=first_day_this_month
+        ).values_list("sender_id", "receiver_id")
 
-        active_this = set(u for pair in active_users_this_month for u in pair)
-        active_last = set(u for pair in active_users_last_month for u in pair)
+        active_this_month_users = {
+            user_id
+            for pair in active_users_this_month_qs
+            for user_id in pair
+            if user_id is not None
+        }
 
-        total_users = User.objects.filter(is_active=True).count()
+        active_last_month_users = {
+            user_id
+            for pair in active_users_last_month_qs
+            for user_id in pair
+            if user_id is not None
+        }
 
-        active_percentage = (len(active_this) / total_users * 100) if total_users > 0 else 0
-        previous_month_percentage = (len(active_last) / total_users * 100) if total_users > 0 else 0
+        total_active_system_users = User.objects.filter(is_active=True).count()
 
-        change_value = active_percentage - previous_month_percentage
-        if change_value > 0:
-            change_vs_last_month = f"+{change_value:.1f}"
-        elif change_value < 0:
-            change_vs_last_month = f"{change_value:.1f}"
+        active_percentage = (
+            round((len(active_this_month_users) / total_active_system_users) * 100, 1)
+            if total_active_system_users > 0 else 0.0
+        )
+
+        previous_month_percentage = (
+            round((len(active_last_month_users) / total_active_system_users) * 100, 1)
+            if total_active_system_users > 0 else 0.0
+        )
+
+        diff = round(active_percentage - previous_month_percentage, 1)
+        if diff > 0:
+            change_vs_last_month = f"+{diff}"
+        elif diff < 0:
+            change_vs_last_month = f"{diff}"
         else:
             change_vs_last_month = "0.0"
 
-        connection_limits = None
-        landscaper_business_self = getattr(user, "landscaper_profile", None)
-        landscaper_basic_self = getattr(user, "landscaperprofilies", None)
-
-        if landscaper_business_self:
-            subscription = Subscription.objects.filter(
-                user=user,
-                is_active=True,
-                status=SubscriptionStatus.ACTIVE
-            ).select_related("plan").first()
-
-            if subscription and subscription.plan:
-                plan_name = subscription.plan.name.upper()
-            elif landscaper_basic_self and landscaper_basic_self.plan:
-                plan_name = landscaper_basic_self.plan.name.upper()
-            else:
-                plan_name = "BASIC"
-
-            accepted_count = ConnectionRequest.objects.filter(
-                is_accepted=True
-            ).filter(
-                Q(sender=user) | Q(receiver=user)
-            ).count()
-
-            if plan_name == "BASIC":
-                connection_limits = {
-                    "plan": "BASIC",
-                    "accepted_connections": accepted_count,
-                    "max_connections": 10,
-                    "remaining_slots": max(0, 10 - accepted_count),
-                }
-            else:
-                connection_limits = {
-                    "plan": plan_name,
-                    "accepted_connections": accepted_count,
-                    "max_connections": None,
-                    "remaining_slots": None,
-                }
+        connection_limits = self.get_connection_limits(user, count)
 
         return Response(
             {
-                "count": total_connections,
-                "connections": response_data,
-                "active_percentage": round(active_percentage, 1),
-                "previous_month_percentage": round(previous_month_percentage, 1),
+                "count": count,
+                "connections": connections_data,
+                "active_percentage": active_percentage,
+                "previous_month_percentage": previous_month_percentage,
                 "change_vs_last_month": change_vs_last_month,
                 "connection_limits": connection_limits,
             },

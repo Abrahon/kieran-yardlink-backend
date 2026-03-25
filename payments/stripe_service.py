@@ -51,7 +51,8 @@
 
 #     return session
 
-import stripe
+
+import stripe  
 from django.conf import settings
 
 
@@ -65,7 +66,11 @@ def create_invoice_checkout_session(invoice):
     if not invoice.total or invoice.total <= 0:
         raise ValueError("Invoice total must be greater than zero.")
 
-    unit_amount = int(invoice.total * 100)
+    # unit_amount = int(invoice.total * 100)
+    unit_amount = int(
+    (Decimal(invoice.total).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)) * 100
+
+    )
 
     session = stripe.checkout.Session.create(
         payment_method_types=["card"],
@@ -84,8 +89,11 @@ def create_invoice_checkout_session(invoice):
                 "quantity": 1,
             }
         ],
-        success_url=f"{settings.FRONTEND_URL}/payment-success?invoice_id={invoice.id}&session_id={{CHECKOUT_SESSION_ID}}",
-        cancel_url=f"{settings.FRONTEND_URL}/payment-cancel?invoice_id={invoice.id}",
+        # success_url=f"{settings.FRONTEND_URL}/payment-success?invoice_id={invoice.id}&session_id={{CHECKOUT_SESSION_ID}}",
+        # cancel_url=f"{settings.FRONTEND_URL}/payment-cancel?invoice_id={invoice.id}",
+        
+        success_url=f"https://zznkjkkp-8000.inc1.devtunnels.ms/api/success/?invoice_id={invoice.id}&session_id={{CHECKOUT_SESSION_ID}}",
+        cancel_url=f"https://zznkjkkp-8000.inc1.devtunnels.ms/api/payment-cancel?invoice_id={invoice.id}",
         metadata={
             "invoice_id": str(invoice.id),
             "job_id": str(invoice.job.id),
