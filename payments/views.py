@@ -104,6 +104,7 @@ from invoice.models import Invoice
 from jobs.models import Job
 
 
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def create_invoice_checkout_session(request):
@@ -126,37 +127,9 @@ def create_invoice_checkout_session(request):
     if invoice.status == Invoice.Status.PAID:
         return Response({"message": "Invoice already paid"}, status=status.HTTP_200_OK)
 
-    amount = int(invoice.total * 100)
-
     try:
-        session = stripe.checkout.Session.create(
-            payment_method_types=["card"],
-            mode="payment",
-            customer_email=invoice.job.client.user.email,
-            line_items=[{
-                "price_data": {
-                    "currency": "usd",
-                    "unit_amount": amount,
-                    "product_data": {
-                        "name": f"Invoice {invoice.invoice_number}",
-                        "description": f"Completed Job #{invoice.job.id} - {invoice.job.landscaper.business_name}"
-                    },
-                },
-                "quantity": 1,
-            }],
-            success_url=f"https://zznkjkkp-8000.inc1.devtunnels.ms/api/success/?invoice_id={invoice.id}",
-            cancel_url=f"https://zznkjkkp-8000.inc1.devtunnels.ms/api/payment-cancel?invoice_id={invoice.id}",
-
-#             success_url=f"https://zznkjkkp-8000.inc1.devtunnels.ms/api/success/?schedule_id={schedule.id}",
-#             cancel_url=f"https://zznkjkkp-8000.inc1.devtunnels.ms/api/cancel/?schedule_id={schedule.id}",
-            metadata={
-                "invoice_id": str(invoice.id),
-                "job_id": str(invoice.job.id),
-                "client_id": str(invoice.job.client.id),
-                "landscaper_id": str(invoice.job.landscaper.id),
-            }
-        )
-    except stripe.error.StripeError as e:
+        session = create_invoice_checkout_session(invoice)
+    except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     invoice.status = Invoice.Status.PENDING
@@ -169,7 +142,7 @@ def create_invoice_checkout_session(request):
         "invoice_number": invoice.invoice_number,
         "checkout_url": session.url,
     }, status=status.HTTP_200_OK)
-
+    
 
 
 # Success / Cancel Endpoints
@@ -318,10 +291,10 @@ class ConfirmCashPaymentAPIView(APIView):
 # optional QuickBooks imports
 
 @csrf_exempt
-def stripe_webhook(request):
+def payment_webhook(request):
     payload = request.body
     sig_header = request.META.get("HTTP_STRIPE_SIGNATURE")
-    endpoint_secret = settings.STRIPE_WEBHOOK_SECRET
+    endpoint_secret = settings.STRIPE_PAYMENT_WEBHOOK_SECRET
 
     if not sig_header:
         return HttpResponse(status=400)
@@ -805,7 +778,7 @@ def admin_income_overview(request):
 
 @api_view(["GET"])
 @permission_classes([IsAdminUser])
-def admin_transaction_summary(request):
+def admin_transaction_stats(request):
     """
     Admin financial summary:
     - Total transactions (jobs + subscriptions)
@@ -863,82 +836,641 @@ def admin_transaction_summary(request):
 
 
 
+# @api_view(["GET"])
+# @permission_classes([IsAdminUser])
+# def stripe_all_payments(request):
+#     """
+#     Admin: All Stripe payments with user/job IDs.
+
+#     Features:
+#     - Pagination
+#     - CSV download (?download=csv)
+#     - Payment status included
+#     """
+
+#     data = []
+
+#     # =========================
+#     # Client Job Payments
+#     # =========================
+#     paid_jobs = (
+#         ServiceSchedule.objects
+#         .select_related("client__user", "service")
+#     )
+
+#     for job in paid_jobs:
+
+#         service_price = float(job.service.price)
+#         platform_fee = round(service_price * 0.02, 2)
+
+#         data.append({
+#             "record_id": job.id,
+#             "user_id": job.client.user.id,
+#             "role": "client",
+#             "type": "job_payment",
+#             "name": job.client.user.name,
+#             "email": job.client.user.email,
+#             "amount_paid": round(service_price + platform_fee, 2),
+#             "platform_fee": platform_fee,
+#             "status": job.payment_status,
+#             "transaction_id": job.stripe_payment_id,
+#             "date": job.scheduled_date
+#         })
+
+#     # =========================
+#     # Landscaper Subscription Payments
+#     # =========================
+#     subscriptions = (
+#         Subscription.objects
+#         .filter(stripe_subscription_id__isnull=False)
+#         .select_related("user", "plan")
+#     )
+
+#     for sub in subscriptions:
+
+#         data.append({
+#             "record_id": sub.id,
+#             "user_id": sub.user.id,
+#             "role": "landscaper",
+#             "type": "subscription",
+#             "name": sub.user.name,
+#             "email": sub.user.email,
+#             "amount_paid": float(sub.plan.price),
+#             "platform_fee": 0.0,
+#             "status": sub.status,
+#             "transaction_id": sub.stripe_subscription_id,
+#             "date": sub.created_at
+#         })
+
+#     # =========================
+#     # CSV DOWNLOAD
+#     # =========================
+#     if request.GET.get("download") == "csv":
+
+#         response = HttpResponse(content_type="text/csv")
+#         response["Content-Disposition"] = 'attachment; filename="stripe_payments_report.csv"'
+
+#         writer = csv.writer(response)
+
+#         writer.writerow([
+#             "Record ID",
+#             "User ID",
+#             "Role",
+#             "Type",
+#             "Name",
+#             "Email",
+#             "Amount Paid",
+#             "Platform Fee",
+#             "Status",
+#             "Transaction ID",
+#             "Date"
+#         ])
+
+#         for item in data:
+#             writer.writerow([
+#                 item["record_id"],
+#                 item["user_id"],
+#                 item["role"],
+#                 item["type"],
+#                 item["name"],
+#                 item["email"],
+#                 item["amount_paid"],
+#                 item["platform_fee"],
+#                 item["status"],
+#                 item["transaction_id"],
+#                 item["date"]
+#             ])
+
+#         return response
+
+#     # =========================
+#     # PAGINATION
+#     # =========================
+#     paginator = PageNumberPagination()
+#     paginator.page_size = 10
+
+#     result_page = paginator.paginate_queryset(data, request)
+
+#     return paginator.get_paginated_response(result_page)
+import csv
+from datetime import datetime, time
+
+from django.http import HttpResponse
+from django.utils import timezone
+
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAdminUser
+from rest_framework.response import Response
+from rest_framework.pagination import PageNumberPagination
+from rest_framework import status
+
+from bookings.models import ServiceBooking
+from subscriptions.models import Subscription
+
+
+def parse_date_range(start_str=None, end_str=None):
+    start_dt = None
+    end_dt = None
+
+    try:
+        if start_str:
+            start_dt = timezone.make_aware(
+                datetime.combine(
+                    datetime.strptime(start_str, "%Y-%m-%d").date(),
+                    time.min
+                )
+            )
+
+        if end_str:
+            end_dt = timezone.make_aware(
+                datetime.combine(
+                    datetime.strptime(end_str, "%Y-%m-%d").date(),
+                    time.max
+                )
+            )
+    except ValueError:
+        raise ValueError("Invalid date format. Use YYYY-MM-DD.")
+
+    if start_dt and end_dt and start_dt > end_dt:
+        raise ValueError("start_date cannot be greater than end_date.")
+
+    return start_dt, end_dt
+
+
+# @api_view(["GET"])
+# @permission_classes([IsAdminUser])
+# def stripe_all_payments(request):
+#     """
+#     Admin: All Stripe payments with user/job IDs.
+
+#     Filters:
+#     - role=client|landscaper
+#     - type=service|subscription
+#     - start_date=YYYY-MM-DD
+#     - end_date=YYYY-MM-DD
+
+#     Optional separate filters:
+#     - service_start_date=YYYY-MM-DD
+#     - service_end_date=YYYY-MM-DD
+#     - subscription_start_date=YYYY-MM-DD
+#     - subscription_end_date=YYYY-MM-DD
+
+#     CSV:
+#     - ?download=csv
+#     """
+
+#     role_filter = request.GET.get("role", "").strip().lower()
+#     type_filter = request.GET.get("type", "").strip().lower()
+#     download = request.GET.get("download", "").strip().lower()
+
+#     generic_start = request.GET.get("start_date")
+#     generic_end = request.GET.get("end_date")
+
+#     service_start = request.GET.get("service_start_date") or generic_start
+#     service_end = request.GET.get("service_end_date") or generic_end
+
+#     subscription_start = request.GET.get("subscription_start_date") or generic_start
+#     subscription_end = request.GET.get("subscription_end_date") or generic_end
+
+#     valid_roles = ["client", "landscaper"]
+#     valid_types = ["service", "subscription"]
+
+#     if role_filter and role_filter not in valid_roles:
+#         return Response(
+#             {
+#                 "status": "error",
+#                 "message": "Invalid role. Allowed values: client, landscaper."
+#             },
+#             status=status.HTTP_400_BAD_REQUEST,
+#         )
+
+#     if type_filter and type_filter not in valid_types:
+#         return Response(
+#             {
+#                 "status": "error",
+#                 "message": "Invalid type. Allowed values: service, subscription."
+#             },
+#             status=status.HTTP_400_BAD_REQUEST,
+#         )
+
+#     try:
+#         service_start_dt, service_end_dt = parse_date_range(service_start, service_end)
+#         subscription_start_dt, subscription_end_dt = parse_date_range(subscription_start, subscription_end)
+#     except ValueError as e:
+#         return Response(
+#             {
+#                 "status": "error",
+#                 "message": str(e)
+#             },
+#             status=status.HTTP_400_BAD_REQUEST,
+#         )
+
+#     data = []
+
+#     # =========================
+#     # Client Service Payments
+#     # =========================
+#     if (not role_filter or role_filter == "client") and (not type_filter or type_filter == "service"):
+#         service_bookings = (
+#             ServiceBooking.objects
+#             .select_related("client", "landscaper", "service")
+#             .exclude(stripe_payment_id__isnull=True)
+#             .exclude(stripe_payment_id="")
+#         )
+
+#         # date filter on service booking
+#         # primary: scheduled_date
+#         if service_start_dt:
+#             service_bookings = service_bookings.filter(scheduled_date__gte=service_start_dt.date())
+#         if service_end_dt:
+#             service_bookings = service_bookings.filter(scheduled_date__lte=service_end_dt.date())
+
+#         for booking in service_bookings:
+#             agreed_price = float(booking.agreed_price or 0)
+#             platform_fee = round(agreed_price * 0.02, 2)
+
+#             data.append({
+#                 "record_id": booking.id,
+#                 "user_id": booking.client.id if booking.client else None,
+#                 "role": "client",
+#                 "type": "service",
+#                 "name": getattr(booking.client, "name", None),
+#                 "email": getattr(booking.client, "email", None),
+#                 "landscaper_id": booking.landscaper.id if booking.landscaper else None,
+#                 "landscaper_name": getattr(booking.landscaper, "business_name", None),
+#                 "service_id": booking.service.id if booking.service else None,
+#                 "service_name": getattr(booking.service, "name", None),
+#                 "amount_paid": round(agreed_price + platform_fee, 2),
+#                 "base_amount": agreed_price,
+#                 "platform_fee": platform_fee,
+#                 "status": booking.payment_status,
+#                 "transaction_id": booking.stripe_payment_id,
+#                 "date": booking.scheduled_date,
+#                 "created_at": booking.created_at,
+#             })
+
+#     # =========================
+#     # Landscaper Subscription Payments
+#     # =========================
+#     if (not role_filter or role_filter == "landscaper") and (not type_filter or type_filter == "subscription"):
+#         subscriptions = (
+#             Subscription.objects
+#             .select_related("user", "plan")
+#             .exclude(stripe_subscription_id__isnull=True)
+#             .exclude(stripe_subscription_id="")
+#         )
+
+#         # date filter on subscription created_at
+#         if subscription_start_dt:
+#             subscriptions = subscriptions.filter(created_at__gte=subscription_start_dt)
+#         if subscription_end_dt:
+#             subscriptions = subscriptions.filter(created_at__lte=subscription_end_dt)
+
+#         for sub in subscriptions:
+#             amount_paid = float(sub.plan.price or 0) if sub.plan else 0.0
+
+#             data.append({
+#                 "record_id": sub.id,
+#                 "user_id": sub.user.id if sub.user else None,
+#                 "role": "landscaper",
+#                 "type": "subscription",
+#                 "name": getattr(sub.user, "name", None),
+#                 "email": getattr(sub.user, "email", None),
+#                 "plan_id": sub.plan.id if sub.plan else None,
+#                 "plan_name": getattr(sub.plan, "name", None),
+#                 "amount_paid": amount_paid,
+#                 "base_amount": amount_paid,
+#                 "platform_fee": 0.0,
+#                 "status": sub.status,
+#                 "transaction_id": sub.stripe_subscription_id,
+#                 "date": sub.created_at,
+#                 "created_at": sub.created_at,
+#             })
+
+#     # =========================
+#     # SORT LATEST FIRST
+#     # =========================
+#     data.sort(
+#         key=lambda x: x["created_at"] if x["created_at"] else timezone.now(),
+#         reverse=True
+#     )
+
+#     # =========================
+#     # CSV DOWNLOAD
+#     # =========================
+#     if download == "csv":
+#         response = HttpResponse(content_type="text/csv")
+#         response["Content-Disposition"] = 'attachment; filename="stripe_payments_report.csv"'
+
+#         writer = csv.writer(response)
+#         writer.writerow([
+#             "Record ID",
+#             "User ID",
+#             "Role",
+#             "Type",
+#             "Name",
+#             "Email",
+#             "Amount Paid",
+#             "Base Amount",
+#             "Platform Fee",
+#             "Status",
+#             "Transaction ID",
+#             "Date",
+#             "Created At",
+#             "Service ID",
+#             "Service Name",
+#             "Plan ID",
+#             "Plan Name",
+#             "Landscaper ID",
+#             "Landscaper Name",
+#         ])
+
+#         for item in data:
+#             writer.writerow([
+#                 item.get("record_id"),
+#                 item.get("user_id"),
+#                 item.get("role"),
+#                 item.get("type"),
+#                 item.get("name"),
+#                 item.get("email"),
+#                 item.get("amount_paid"),
+#                 item.get("base_amount"),
+#                 item.get("platform_fee"),
+#                 item.get("status"),
+#                 item.get("transaction_id"),
+#                 item.get("date"),
+#                 item.get("created_at"),
+#                 item.get("service_id"),
+#                 item.get("service_name"),
+#                 item.get("plan_id"),
+#                 item.get("plan_name"),
+#                 item.get("landscaper_id"),
+#                 item.get("landscaper_name"),
+#             ])
+
+#         return response
+
+#     # =========================
+#     # PAGINATION
+#     # =========================
+#     paginator = PageNumberPagination()
+#     paginator.page_size = 10
+#     result_page = paginator.paginate_queryset(data, request)
+
+#     return paginator.get_paginated_response({
+#         "filters": {
+#             "role": role_filter or None,
+#             "type": type_filter or None,
+#             "service_start_date": service_start,
+#             "service_end_date": service_end,
+#             "subscription_start_date": subscription_start,
+#             "subscription_end_date": subscription_end,
+#         },
+#         "results": result_page,
+#     })
+import csv
+from datetime import datetime, time
+
+from django.http import HttpResponse
+from django.utils import timezone
+
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAdminUser
+from rest_framework.response import Response
+from rest_framework.pagination import PageNumberPagination
+from rest_framework import status
+
+from invoice.models import Invoice
+from subscriptions.models import Subscription
+
+
+def parse_date_range(start_str=None, end_str=None):
+    start_dt = None
+    end_dt = None
+
+    try:
+        if start_str:
+            start_dt = timezone.make_aware(
+                datetime.combine(
+                    datetime.strptime(start_str, "%Y-%m-%d").date(),
+                    time.min
+                )
+            )
+
+        if end_str:
+            end_dt = timezone.make_aware(
+                datetime.combine(
+                    datetime.strptime(end_str, "%Y-%m-%d").date(),
+                    time.max
+                )
+            )
+    except ValueError:
+        raise ValueError("Invalid date format. Use YYYY-MM-DD.")
+
+    if start_dt and end_dt and start_dt > end_dt:
+        raise ValueError("start_date cannot be greater than end_date.")
+
+    return start_dt, end_dt
+
+
 @api_view(["GET"])
 @permission_classes([IsAdminUser])
 def stripe_all_payments(request):
-    """
-    Admin: All Stripe payments with user/job IDs.
+    role_filter = request.GET.get("role", "").strip().lower()
+    type_filter = request.GET.get("type", "").strip().lower()
+    search = request.GET.get("search", "").strip().lower()
+    download = request.GET.get("download", "").strip().lower()
 
-    Features:
-    - Pagination
-    - CSV download (?download=csv)
-    - Payment status included
-    """
+    generic_start = request.GET.get("start_date")
+    generic_end = request.GET.get("end_date")
+
+    invoice_start = request.GET.get("invoice_start_date") or generic_start
+    invoice_end = request.GET.get("invoice_end_date") or generic_end
+
+    subscription_start = request.GET.get("subscription_start_date") or generic_start
+    subscription_end = request.GET.get("subscription_end_date") or generic_end
+
+    valid_roles = ["client", "landscaper"]
+    valid_types = ["service", "subscription"]
+
+    if role_filter and role_filter not in valid_roles:
+        return Response(
+            {
+                "status": "error",
+                "message": "Invalid role. Allowed values: client, landscaper."
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if type_filter and type_filter not in valid_types:
+        return Response(
+            {
+                "status": "error",
+                "message": "Invalid type. Allowed values: service, subscription."
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        invoice_start_dt, invoice_end_dt = parse_date_range(invoice_start, invoice_end)
+        subscription_start_dt, subscription_end_dt = parse_date_range(subscription_start, subscription_end)
+    except ValueError as e:
+        return Response(
+            {
+                "status": "error",
+                "message": str(e)
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     data = []
 
     # =========================
-    # Client Job Payments
+    # Client Service Payments (Invoice-based)
     # =========================
-    paid_jobs = (
-        ServiceSchedule.objects
-        .select_related("client__user", "service")
-    )
+    if (not role_filter or role_filter == "client") and (not type_filter or type_filter == "service"):
+        invoices = (
+            Invoice.objects
+            .select_related(
+                "job",
+                "job__client__user",
+                "job__external_client",
+                "job__landscaper",
+            )
+            .exclude(stripe_session_id__isnull=True)
+            .exclude(stripe_session_id="")
+        )
 
-    for job in paid_jobs:
+        if invoice_start_dt:
+            invoices = invoices.filter(created_at__gte=invoice_start_dt)
+        if invoice_end_dt:
+            invoices = invoices.filter(created_at__lte=invoice_end_dt)
 
-        service_price = float(job.service.price)
-        platform_fee = round(service_price * 0.02, 2)
+        for invoice in invoices:
+            job = invoice.job
 
-        data.append({
-            "record_id": job.id,
-            "user_id": job.client.user.id,
-            "role": "client",
-            "type": "job_payment",
-            "name": job.client.user.name,
-            "email": job.client.user.email,
-            "amount_paid": round(service_price + platform_fee, 2),
-            "platform_fee": platform_fee,
-            "status": job.payment_status,
-            "transaction_id": job.stripe_payment_id,
-            "date": job.scheduled_date
-        })
+            if job.client:
+                user_id = job.client.user.id
+                name = job.client_name
+                email = job.client_email
+            elif job.external_client:
+                user_id = None
+                name = job.external_client.name
+                email = job.external_client.email
+            else:
+                user_id = None
+                name = None
+                email = None
+
+            data.append({
+                "record_id": invoice.id,
+                "user_id": user_id,
+                "role": "client",
+                "type": "service",
+                "name": name,
+                "email": email,
+                "amount_paid": float(invoice.total or 0),
+                "base_amount": float(invoice.subtotal or 0),
+                "platform_fee": float(invoice.service_fee_amount or 0),
+                "status": invoice.status,
+                "transaction_id": invoice.stripe_session_id,
+                "date": invoice.paid_at or invoice.created_at,
+                "created_at": invoice.created_at,
+                "job_id": job.id if job else None,
+                "job_status": job.status if job else None,
+                "invoice_number": invoice.invoice_number,
+                "landscaper_id": job.landscaper.id if job and job.landscaper else None,
+                "landscaper_name": job.landscaper.business_name if job and job.landscaper else None,
+                "plan_id": None,
+                "plan_name": None,
+            })
 
     # =========================
     # Landscaper Subscription Payments
     # =========================
-    subscriptions = (
-        Subscription.objects
-        .filter(stripe_subscription_id__isnull=False)
-        .select_related("user", "plan")
+    if (not role_filter or role_filter == "landscaper") and (not type_filter or type_filter == "subscription"):
+        subscriptions = (
+            Subscription.objects
+            .select_related("user", "plan")
+            .exclude(stripe_subscription_id__isnull=True)
+            .exclude(stripe_subscription_id="")
+        )
+
+        if subscription_start_dt:
+            subscriptions = subscriptions.filter(created_at__gte=subscription_start_dt)
+        if subscription_end_dt:
+            subscriptions = subscriptions.filter(created_at__lte=subscription_end_dt)
+
+        for sub in subscriptions:
+            plan_price = float(sub.plan.price or 0) if sub.plan else 0.0
+
+            if hasattr(sub, "discount_override") and sub.discount_override:
+                amount_paid = plan_price - (plan_price * float(sub.discount_override) / 100)
+            else:
+                amount_paid = plan_price
+
+            data.append({
+                "record_id": sub.id,
+                "user_id": sub.user.id if sub.user else None,
+                "role": "landscaper",
+                "type": "subscription",
+                "name": getattr(sub.user, "name", None),
+                "email": getattr(sub.user, "email", None),
+                "amount_paid": round(amount_paid, 2),
+                "base_amount": plan_price,
+                "platform_fee": 0.0,
+                "status": sub.status,
+                "transaction_id": sub.stripe_subscription_id,
+                "date": sub.created_at,
+                "created_at": sub.created_at,
+                "job_id": None,
+                "job_status": None,
+                "invoice_number": None,
+                "landscaper_id": sub.user.id if sub.user else None,
+                "landscaper_name": getattr(sub.user, "name", None),
+                "plan_id": sub.plan.id if sub.plan else None,
+                "plan_name": getattr(sub.plan, "name", None),
+            })
+
+    # =========================
+    # Search filter
+    # =========================
+    if search:
+        filtered_data = []
+
+        for item in data:
+            searchable_text = " ".join([
+                str(item.get("name") or ""),
+                str(item.get("email") or ""),
+                str(item.get("invoice_number") or ""),
+                str(item.get("transaction_id") or ""),
+                str(item.get("plan_name") or ""),
+                str(item.get("landscaper_name") or ""),
+                str(item.get("status") or ""),
+                str(item.get("type") or ""),
+            ]).lower()
+
+            if search in searchable_text:
+                filtered_data.append(item)
+
+        data = filtered_data
+
+    # =========================
+    # Sort latest first
+    # =========================
+    data.sort(
+        key=lambda x: x["created_at"] if x["created_at"] else timezone.now(),
+        reverse=True
     )
 
-    for sub in subscriptions:
-
-        data.append({
-            "record_id": sub.id,
-            "user_id": sub.user.id,
-            "role": "landscaper",
-            "type": "subscription",
-            "name": sub.user.name,
-            "email": sub.user.email,
-            "amount_paid": float(sub.plan.price),
-            "platform_fee": 0.0,
-            "status": sub.status,
-            "transaction_id": sub.stripe_subscription_id,
-            "date": sub.created_at
-        })
-
     # =========================
-    # CSV DOWNLOAD
+    # CSV
     # =========================
-    if request.GET.get("download") == "csv":
-
+    if download == "csv":
         response = HttpResponse(content_type="text/csv")
-        response["Content-Disposition"] = 'attachment; filename="stripe_payments_report.csv"'
+        response["Content-Disposition"] = 'attachment; filename="payments_report.csv"'
 
         writer = csv.writer(response)
-
         writer.writerow([
             "Record ID",
             "User ID",
@@ -947,43 +1479,214 @@ def stripe_all_payments(request):
             "Name",
             "Email",
             "Amount Paid",
+            "Base Amount",
             "Platform Fee",
             "Status",
             "Transaction ID",
-            "Date"
+            "Date",
+            "Created At",
+            "Job ID",
+            "Job Status",
+            "Invoice Number",
+            "Plan ID",
+            "Plan Name",
+            "Landscaper ID",
+            "Landscaper Name",
         ])
 
         for item in data:
             writer.writerow([
-                item["record_id"],
-                item["user_id"],
-                item["role"],
-                item["type"],
-                item["name"],
-                item["email"],
-                item["amount_paid"],
-                item["platform_fee"],
-                item["status"],
-                item["transaction_id"],
-                item["date"]
+                item.get("record_id"),
+                item.get("user_id"),
+                item.get("role"),
+                item.get("type"),
+                item.get("name"),
+                item.get("email"),
+                item.get("amount_paid"),
+                item.get("base_amount"),
+                item.get("platform_fee"),
+                item.get("status"),
+                item.get("transaction_id"),
+                item.get("date"),
+                item.get("created_at"),
+                item.get("job_id"),
+                item.get("job_status"),
+                item.get("invoice_number"),
+                item.get("plan_id"),
+                item.get("plan_name"),
+                item.get("landscaper_id"),
+                item.get("landscaper_name"),
             ])
 
         return response
 
-    # =========================
-    # PAGINATION
-    # =========================
     paginator = PageNumberPagination()
     paginator.page_size = 10
-
     result_page = paginator.paginate_queryset(data, request)
 
-    return paginator.get_paginated_response(result_page)
+    return paginator.get_paginated_response({
+        "filters": {
+            "role": role_filter or None,
+            "type": type_filter or None,
+            "search": search or None,
+            "invoice_start_date": invoice_start,
+            "invoice_end_date": invoice_end,
+            "subscription_start_date": subscription_start,
+            "subscription_end_date": subscription_end,
+        },
+        "results": result_page,
+    })
+
+# summary
+
+
+
+def get_month_range(dt):
+    start = dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    if start.month == 12:
+        next_month = start.replace(year=start.year + 1, month=1)
+    else:
+        next_month = start.replace(month=start.month + 1)
+
+    return start, next_month
+
+
+def percent_change(current, previous):
+    if previous == 0:
+        return 100 if current > 0 else 0
+    return ((current - previous) / previous) * 100
+
+
+@api_view(["GET"])
+@permission_classes([IsAdminUser])
+def admin_dashboard_summary(request):
+    now = timezone.now()
+
+    current_start, current_end = get_month_range(now)
+    prev_anchor = current_start - timedelta(days=1)
+    prev_start, prev_end = get_month_range(prev_anchor)
+
+    # =========================
+    # ALL TIME DATA
+    # =========================
+    all_invoices = Invoice.objects.exclude(
+        stripe_session_id__isnull=True
+    ).exclude(stripe_session_id="")
+
+    total_revenue = all_invoices.aggregate(
+        total=Sum("total")
+    )["total"] or Decimal("0.00")
+
+    total_fees = all_invoices.aggregate(
+        total=Sum("service_fee_amount")
+    )["total"] or Decimal("0.00")
+
+    total_invoice_count = all_invoices.count()
+
+    all_subscriptions = Subscription.objects.exclude(
+        stripe_subscription_id__isnull=True
+    ).exclude(stripe_subscription_id="")
+
+    sub_revenue = Decimal("0.00")
+    for sub in all_subscriptions:
+        sub_revenue += Decimal(str(sub.plan.price or 0))
+
+    total_transactions = total_invoice_count + all_subscriptions.count()
+    total_revenue += sub_revenue
+
+    # =========================
+    # LAST MONTH
+    # =========================
+    last_invoices = all_invoices.filter(
+        created_at__gte=prev_start,
+        created_at__lt=prev_end
+    )
+
+    last_revenue = last_invoices.aggregate(
+        total=Sum("total")
+    )["total"] or Decimal("0.00")
+
+    last_fees = last_invoices.aggregate(
+        total=Sum("service_fee_amount")
+    )["total"] or Decimal("0.00")
+
+    last_invoice_count = last_invoices.count()
+
+    last_subs = all_subscriptions.filter(
+        created_at__gte=prev_start,
+        created_at__lt=prev_end
+    )
+
+    last_sub_revenue = Decimal("0.00")
+    for sub in last_subs:
+        last_sub_revenue += Decimal(str(sub.plan.price or 0))
+
+    last_total_transactions = last_invoice_count + last_subs.count()
+    last_revenue += last_sub_revenue
+
+    # =========================
+    # PREVIOUS MONTH (for comparison)
+    # =========================
+    prev2_anchor = prev_start - timedelta(days=1)
+    prev2_start, prev2_end = get_month_range(prev2_anchor)
+
+    prev2_invoices = all_invoices.filter(
+        created_at__gte=prev2_start,
+        created_at__lt=prev2_end
+    )
+
+    prev2_revenue = prev2_invoices.aggregate(
+        total=Sum("total")
+    )["total"] or Decimal("0.00")
+
+    prev2_fees = prev2_invoices.aggregate(
+        total=Sum("service_fee_amount")
+    )["total"] or Decimal("0.00")
+
+    prev2_invoice_count = prev2_invoices.count()
+
+    prev2_subs = all_subscriptions.filter(
+        created_at__gte=prev2_start,
+        created_at__lt=prev2_end
+    )
+
+    prev2_sub_revenue = Decimal("0.00")
+    for sub in prev2_subs:
+        prev2_sub_revenue += Decimal(str(sub.plan.price or 0))
+
+    prev2_total_transactions = prev2_invoice_count + prev2_subs.count()
+    prev2_revenue += prev2_sub_revenue
+
+    # =========================
+    # PERCENT CALCULATION
+    # =========================
+    revenue_change = percent_change(last_revenue, prev2_revenue)
+    fee_change = percent_change(last_fees, prev2_fees)
+    transaction_change = percent_change(last_total_transactions, prev2_total_transactions)
+
+    return Response({
+        "status": "success",
+        "data": {
+            "total_transaction_revenue": {
+                "value": float(total_revenue),
+                "last_month": float(last_revenue),
+                "change_percent": round(revenue_change, 2)
+            },
+            "total_platform_fees": {
+                "value": float(total_fees),
+                "last_month": float(last_fees),
+                "change_percent": round(fee_change, 2)
+            },
+            "total_transactions": {
+                "value": total_transactions,
+                "last_month": last_total_transactions,
+                "change_percent": round(transaction_change, 2)
+            }
+        }
+    })
 
 # delete views
-
-
-
 @api_view(["DELETE"])
 @permission_classes([IsAdminUser])
 @transaction.atomic

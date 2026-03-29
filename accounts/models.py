@@ -63,7 +63,7 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     # NOTE: no default role. Must be provided.
     role = models.CharField(max_length=20, choices=RoleChoices.choices)
-        # Plan info ✅
+    # Plan info 
     landscaper_plan = models.CharField(max_length=100, blank=True, null=True)  # e.g., "Pro"
     plan_type = models.CharField(max_length=20, blank=True, null=True)  
 
@@ -97,7 +97,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         super().clean()
         if self.role not in RoleChoices.values:
             raise ValueError("Invalid role for user")
-     # ✅ Add this method:
+     #  Add this method:
     def get_full_name(self):
         """
         Return the full name of the user for compatibility with Django conventions.

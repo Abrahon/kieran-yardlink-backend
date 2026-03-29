@@ -775,3 +775,30 @@ class ExternalClientDetailView(generics.RetrieveUpdateDestroyAPIView):
             {"message": "External client deactivated successfully."},
             status=status.HTTP_200_OK
         )
+
+class ExternalClientReactivateView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        landscaper = getattr(request.user, "landscaper_profile", None)
+        if not landscaper:
+            return Response(
+                {"error": "Landscaper profile not found."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        try:
+            client = ExternalClient.objects.get(id=pk, landscaper=landscaper)
+        except ExternalClient.DoesNotExist:
+            return Response(
+                {"error": "External client not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        client.is_active = True
+        client.save(update_fields=["is_active", "updated_at"])
+
+        return Response(
+            {"message": "External client reactivated successfully."},
+            status=status.HTTP_200_OK
+        )

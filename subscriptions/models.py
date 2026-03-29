@@ -44,60 +44,171 @@ class Plan(models.Model):
         return f"{self.name} ({self.duration})"
 
 
-# subscription model
+# # subscription model
+# class Subscription(models.Model):
+#     user = models.ForeignKey(User, on_delete=models.CASCADE)
+#     plan = models.ForeignKey(Plan, on_delete=models.CASCADE)
+
+#     stripe_customer_id = models.CharField(
+#         max_length=255,
+#         blank=True,
+#         null=True
+#     )
+
+#     stripe_subscription_id = models.CharField(
+#         max_length=255,
+#         blank=True,
+#         null=True
+#     )
+
+#     status = models.CharField(
+#         max_length=20,
+#         choices=SubscriptionStatus.choices,
+#         default=SubscriptionStatus.ACTIVE
+#     )
+#     # NEW FIELD: Track free trial
+#     is_trial = models.BooleanField(default=False)  
+
+#     start_date = models.DateTimeField()
+#     end_date = models.DateTimeField()
+
+#     # 🔹 New field to track auto-renew toggle
+#     auto_renew = models.BooleanField(default=True)
+    
+#     cancelled_at = models.DateTimeField(null=True, blank=True)
+
+#     is_active = models.BooleanField(default=True)
+#     created_at = models.DateTimeField(auto_now_add=True)
+#     updated_at = models.DateTimeField(auto_now=True)
+
+
+#     def __str__(self):
+#         return f"{self.user.email} - {self.plan.name} ({self.status})"
+
+#     # 🔹 Only paid subscriptions can auto-renew
+#     def check_auto_renew(self):
+#         now = timezone.now()
+#         if self.is_trial:
+#             # Trial subscriptions never auto-renew
+#             return False
+
+#         if self.auto_renew and self.status in [SubscriptionStatus.ACTIVE, SubscriptionStatus.EXPIRED] and self.end_date <= now:
+#             # Extend subscription by plan duration
+#             duration_days = self.plan.duration_days
+#             self.start_date = now
+#             self.end_date = now + timedelta(days=duration_days)
+#             self.status = SubscriptionStatus.ACTIVE
+#             self.save(update_fields=["start_date", "end_date", "status"])
+#             return True
+#         return False
+
 class Subscription(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    plan = models.ForeignKey(Plan, on_delete=models.CASCADE)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="subscriptions")
+    plan = models.ForeignKey(Plan, on_delete=models.CASCADE, related_name="subscriptions")
 
-    stripe_customer_id = models.CharField(
-        max_length=255,
-        blank=True,
-        null=True
-    )
-
-    stripe_subscription_id = models.CharField(
-        max_length=255,
-        blank=True,
-        null=True
-    )
+    stripe_customer_id = models.CharField(max_length=255, blank=True, null=True)
+    stripe_subscription_id = models.CharField(max_length=255, blank=True, null=True)
 
     status = models.CharField(
         max_length=20,
         choices=SubscriptionStatus.choices,
         default=SubscriptionStatus.ACTIVE
     )
-    # NEW FIELD: Track free trial
-    is_trial = models.BooleanField(default=False)  
+
+    is_trial = models.BooleanField(default=False)
 
     start_date = models.DateTimeField()
     end_date = models.DateTimeField()
 
-    # 🔹 New field to track auto-renew toggle
     auto_renew = models.BooleanField(default=True)
-    
     cancelled_at = models.DateTimeField(null=True, blank=True)
 
     is_active = models.BooleanField(default=True)
+
+    # per-subscription admin discount
+    discount_override = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0
+    )
+
+    # extra trial days added by admin
+    trial_extended_days = models.PositiveIntegerField(default=0)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    BASE_TRIAL_DAYS = 14
+
+    def clean(self):
+        if self.discount_override < 0 or self.discount_override > 100:
+            raise ValidationError({"discount_override": "Discount must be between 0 and 100."})
+
+    @property
+    def effective_discount(self):
+        """
+        Subscription-specific discount takes priority.
+        If override is 0, fallback to plan discount.
+        """
+        if self.discount_override and self.discount_override > 0:
+            return Decimal(self.discount_override)
+        return Decimal(self.plan.discount or 0)
+
+    @property
+    def effective_price(self):
+        price = Decimal(self.plan.price)
+        discount = self.effective_discount
+        return price - (price * discount / Decimal("100"))
+
+    @property
+    def total_trial_days(self):
+        return self.BASE_TRIAL_DAYS + self.trial_extended_days
+
+    @property
+    def trial_end_date(self):
+        return self.start_date + timedelta(days=self.total_trial_days)
+
+    def refresh_dates_by_plan(self, from_now=False):
+        """
+        Recalculate dates when admin changes plan.
+        """
+        base_time = timezone.now() if from_now else self.start_date
+        self.start_date = base_time
+
+        if self.is_trial:
+            self.end_date = base_time + timedelta(days=self.total_trial_days)
+        else:
+            self.end_date = base_time + timedelta(days=self.plan.duration_days)
+
+    def extend_trial(self, extra_days):
+        if extra_days < 0:
+            raise ValidationError("extra_days cannot be negative.")
+
+        self.trial_extended_days += extra_days
+
+        if self.is_trial:
+            self.end_date = self.start_date + timedelta(days=self.total_trial_days)
+
+        self.save(update_fields=["trial_extended_days", "end_date", "updated_at"])
+
+    def check_auto_renew(self):
+        now = timezone.now()
+
+        if self.is_trial:
+            return False
+
+        if (
+            self.auto_renew
+            and self.status in [SubscriptionStatus.ACTIVE, SubscriptionStatus.EXPIRED]
+            and self.end_date <= now
+        ):
+            self.start_date = now
+            self.end_date = now + timedelta(days=self.plan.duration_days)
+            self.status = SubscriptionStatus.ACTIVE
+            self.save(update_fields=["start_date", "end_date", "status", "updated_at"])
+            return True
+
+        return False
 
     def __str__(self):
         return f"{self.user.email} - {self.plan.name} ({self.status})"
-
-    # 🔹 Only paid subscriptions can auto-renew
-    def check_auto_renew(self):
-        now = timezone.now()
-        if self.is_trial:
-            # Trial subscriptions never auto-renew
-            return False
-
-        if self.auto_renew and self.status in [SubscriptionStatus.ACTIVE, SubscriptionStatus.EXPIRED] and self.end_date <= now:
-            # Extend subscription by plan duration
-            duration_days = self.plan.duration_days
-            self.start_date = now
-            self.end_date = now + timedelta(days=duration_days)
-            self.status = SubscriptionStatus.ACTIVE
-            self.save(update_fields=["start_date", "end_date", "status"])
-            return True
-        return False

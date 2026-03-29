@@ -23,6 +23,7 @@ from .views import (
     LandscaperPersonalProfileView,
     ExternalClientListCreateView,
     ExternalClientDetailView,
+    ExternalClientReactivateView
 )
 
 urlpatterns = [
@@ -66,5 +67,6 @@ urlpatterns = [
         ExternalClientDetailView.as_view(),
         name="external-client-detail"
     ),
+    path("landscaper/external-clients/<int:pk>/reactivate/", ExternalClientReactivateView.as_view(), name="external-client-reactivate"),
 
 ]

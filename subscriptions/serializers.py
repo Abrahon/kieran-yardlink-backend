@@ -192,8 +192,6 @@ class SubscriptionUpgradeSerializer(serializers.ModelSerializer):
 # admin subscriptions 
 
 # subscriptions/serializers.py
-
-
 class AdminSubscriptionSerializer(serializers.ModelSerializer):
     user_email = serializers.EmailField(source="user.email", read_only=True)
     user_name = serializers.CharField(source="user.name", read_only=True)
@@ -242,3 +240,126 @@ class AdminSubscriptionSerializer(serializers.ModelSerializer):
 
     def get_is_expired(self, obj):
         return obj.end_date < timezone.now()
+
+
+class AdminLandscaperSubscriptionEditSerializer(serializers.ModelSerializer):
+    plan_id = serializers.IntegerField(write_only=True, required=False)
+    extend_trial_days = serializers.IntegerField(write_only=True, required=False, min_value=0)
+
+    plan_name = serializers.CharField(source="plan.name", read_only=True)
+    user_name = serializers.CharField(source="user.name", read_only=True)
+    user_email = serializers.EmailField(source="user.email", read_only=True)
+    remaining_days = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Subscription
+        fields = [
+            "id",
+            "user",
+            "user_name",
+            "user_email",
+            "plan",
+            "plan_name",
+            "plan_id",
+            "status",
+            "is_active",
+            "is_trial",
+            "auto_renew",
+            "discount_override",
+            "trial_extended_days",
+            "extend_trial_days",
+            "start_date",
+            "end_date",
+            "remaining_days",
+        ]
+        read_only_fields = [
+            "id",
+            "user",
+            "user_name",
+            "user_email",
+            "plan",
+            "plan_name",
+            "trial_extended_days",
+            "start_date",
+            "end_date",
+            "remaining_days",
+        ]
+
+    def get_remaining_days(self, obj):
+        remaining = (obj.end_date - timezone.now()).days
+        return max(remaining, 0)
+
+    def validate_discount_override(self, value):
+        if value < 0 or value > 100:
+            raise serializers.ValidationError("Discount must be between 0 and 100.")
+        return value
+
+    def validate_plan_id(self, value):
+        plan = Plan.objects.filter(
+            id=value,
+            is_active=True,
+            name__in=["Basic", "Pro"]
+        ).first()
+
+        if not plan:
+            raise serializers.ValidationError("Selected plan is invalid.")
+        return value
+
+    def update(self, instance, validated_data):
+        plan_id = validated_data.pop("plan_id", None)
+        extend_trial_days = validated_data.pop("extend_trial_days", 0)
+
+        if plan_id:
+            plan = Plan.objects.get(id=plan_id, is_active=True)
+            instance.plan = plan
+            instance.start_date = timezone.now()
+
+            if instance.is_trial:
+                total_trial_days = 14 + instance.trial_extended_days + extend_trial_days
+                instance.end_date = instance.start_date + timedelta(days=total_trial_days)
+            else:
+                instance.end_date = instance.start_date + timedelta(days=plan.duration_days)
+
+        if "discount_override" in validated_data:
+            instance.discount_override = validated_data["discount_override"]
+
+        if "is_trial" in validated_data:
+            instance.is_trial = validated_data["is_trial"]
+
+        if "auto_renew" in validated_data:
+            instance.auto_renew = validated_data["auto_renew"]
+
+        if "status" in validated_data:
+            instance.status = validated_data["status"]
+
+        if "is_active" in validated_data:
+            instance.is_active = validated_data["is_active"]
+
+        if extend_trial_days:
+            instance.trial_extended_days += extend_trial_days
+            if instance.is_trial:
+                total_trial_days = 14 + instance.trial_extended_days
+                instance.end_date = instance.start_date + timedelta(days=total_trial_days)
+
+        if not instance.is_trial:
+            instance.end_date = instance.start_date + timedelta(days=instance.plan.duration_days)
+
+        instance.save()
+        return instance
+
+from rest_framework import serializers
+from .models import Plan, Subscription
+from django.utils import timezone
+from datetime import timedelta
+
+
+class AdminPlanOptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Plan
+        fields = [
+            "id",
+            "name",
+            "price",
+            "discount",
+            "duration",
+        ]

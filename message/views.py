@@ -1,22 +1,18 @@
 
-from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from django.db.models import Q
 from rest_framework.views import APIView
 from .models import ChatThread, Message
-from django.db.models import Q
-from rest_framework import status
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
 from accounts.models import User
-
+from django.db.models.functions import Lower, Trim
+from rest_framework import status
+from .models import ChatThread
 
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.db.models import Q
-from .models import ChatThread, Message
+
 
 class ConversationListAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -193,16 +189,21 @@ class AdminTagConversationAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, thread_id):
-        tag = request.data.get("tag")
+        if not request.user.is_staff:
+            return Response({"error": "Admin only"}, status=403)
+
+        tag = (request.data.get("tag") or "").strip()
+
+        if not tag:
+            return Response(
+                {"error": "Tag is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         try:
             thread = ChatThread.objects.get(id=thread_id)
         except ChatThread.DoesNotExist:
             return Response({"error": "Thread not found"}, status=404)
-
-        # ✅ Only admin can tag
-        if not request.user.is_staff:
-            return Response({"error": "Admin only"}, status=403)
 
         thread.tag = tag
         thread.save(update_fields=["tag"])
@@ -212,3 +213,143 @@ class AdminTagConversationAPIView(APIView):
             "thread_id": thread.id,
             "tag": thread.tag
         })
+        
+
+# admin
+
+
+class AdminConversationListAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not request.user.is_staff:
+            return Response(
+                {"error": "Admin only"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        search = request.GET.get("search", "").strip()
+        tag = request.GET.get("tag", "").strip()
+
+        threads = ChatThread.objects.select_related(
+            "client", "landscaper"
+        ).prefetch_related("messages").order_by("-updated_at")
+
+        if search:
+            threads = threads.filter(
+                Q(client__name__icontains=search) |
+                Q(client__email__icontains=search) |
+                Q(landscaper__name__icontains=search) |
+                Q(landscaper__email__icontains=search)
+            )
+
+        if tag:
+            normalized_tag = tag.strip().lower()
+
+            threads = threads.annotate(
+                normalized_db_tag=Lower(Trim("tag"))
+            ).filter(
+                normalized_db_tag=normalized_tag
+            )
+
+        data = []
+
+        for thread in threads:
+            last_message = thread.messages.order_by("-created_at").first()
+
+            data.append({
+                "thread_id": thread.id,
+                "client": {
+                    "id": thread.client.id,
+                    "name": getattr(thread.client, "name", "") or thread.client.email,
+                    "email": thread.client.email,
+                    "role": getattr(thread.client, "role", ""),
+                },
+                "landscaper": {
+                    "id": thread.landscaper.id,
+                    "name": getattr(thread.landscaper, "name", "") or thread.landscaper.email,
+                    "email": thread.landscaper.email,
+                    "role": getattr(thread.landscaper, "role", ""),
+                },
+                "tag": thread.tag,
+                "created_at": thread.created_at,
+                "updated_at": thread.updated_at,
+                "last_message": {
+                    "id": last_message.id,
+                    "sender_id": last_message.sender.id,
+                    "sender_name": last_message.sender.get_full_name() or last_message.sender.email,
+                    "text": last_message.text,
+                    "file_url": last_message.file.url if last_message.file else None,
+                    "created_at": last_message.created_at,
+                } if last_message else None,
+                "messages_count": thread.messages.count(),
+            })
+
+        return Response(
+            {
+                "count": len(data),
+                "results": data,
+            },
+            status=status.HTTP_200_OK
+        )
+
+
+class AdminConversationDetailAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, thread_id):
+        if not request.user.is_staff:
+            return Response(
+                {"error": "Admin only"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        try:
+            thread = ChatThread.objects.select_related(
+                "client",
+                "landscaper"
+            ).get(id=thread_id)
+        except ChatThread.DoesNotExist:
+            return Response(
+                {"error": "Thread not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        messages = thread.messages.select_related("sender").order_by("created_at")
+
+        message_data = []
+        for msg in messages:
+            message_data.append({
+                "id": msg.id,
+                "sender_id": msg.sender.id,
+                "sender_name": msg.sender.get_full_name() or msg.sender.email,
+                "text": msg.text,
+                "file_url": msg.file.url if msg.file else None,
+                "message_type": msg.message_type,
+                "seen_at": msg.seen_at.isoformat() if msg.seen_at else None,
+                "delivered_at": msg.delivered_at.isoformat() if msg.delivered_at else None,
+                "is_deleted_for_all": msg.is_deleted_for_all,
+                "created_at": msg.created_at.isoformat(),
+            })
+
+        return Response(
+            {
+                "thread_id": thread.id,
+                "tag": thread.tag,
+                "client": {
+                    "id": thread.client.id,
+                    "name": getattr(thread.client, "name", "") or thread.client.email,
+                    "email": thread.client.email,
+                    "role": getattr(thread.client, "role", ""),
+                },
+                "landscaper": {
+                    "id": thread.landscaper.id,
+                    "name": getattr(thread.landscaper, "name", "") or thread.landscaper.email,
+                    "email": thread.landscaper.email,
+                    "role": getattr(thread.landscaper, "role", ""),
+                },
+                "messages_count": len(message_data),
+                "messages": message_data,
+            },
+            status=status.HTTP_200_OK
+        )

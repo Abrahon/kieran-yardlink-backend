@@ -307,7 +307,8 @@ MEDIA_URL = "/media/"
 # ------------------------------------------------------------------------------
 STRIPE_SECRET_KEY = config("STRIPE_SECRET_KEY", default="")
 STRIPE_PUBLIC_KEY = config("STRIPE_PUBLIC_KEY", default="")
-STRIPE_WEBHOOK_SECRET = config("STRIPE_WEBHOOK_SECRET", default="")
+STRIPE_SUBSCRIPTION_WEBHOOK_SECRET = config("STRIPE_SUBSCRIPTION_WEBHOOK_SECRET", default="")
+STRIPE_PAYMENT_WEBHOOK_SECRET = config("STRIPE_PAYMENT_WEBHOOK_SECRET", default="")
 STRIPE_CURRENCY = "usd"
 
 # quickbooks

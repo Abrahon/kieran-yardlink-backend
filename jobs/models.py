@@ -129,12 +129,12 @@ from property.models import Property
 
 
 
-class TimeStampedModel(models.Model):
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+# class TimeStampedModel(models.Model):
+#     created_at = models.DateTimeField(auto_now_add=True)
+#     updated_at = models.DateTimeField(auto_now=True)
 
-    class Meta:
-        abstract = True
+#     class Meta:
+#         abstract = True
 
 
 # class Job(TimeStampedModel):
@@ -379,7 +379,7 @@ class Job(TimeStampedModel):
     @property
     def client_name(self):
         if self.client:
-            return self.client.user.get_fullname() or self.client.user.email
+            return self.client.user.get_full_name() or self.client.user.email
         if self.external_client:
             return self.external_client.name
         return None

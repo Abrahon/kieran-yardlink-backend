@@ -2,11 +2,11 @@ from django.urls import path
 from .views import (
     create_invoice_checkout_session,
     CashPaymentScheduleAPIView,
-    stripe_webhook,
+    payment_webhook,
     payment_success,
     payment_cancel,
     landscaper_payment_history,
-    admin_transaction_summary,
+    # admin_transaction_summary,
     admin_daily_income_overview,
     stripe_all_payments,
     ProLandscaperMonthlyRevenueView,
@@ -15,7 +15,8 @@ from .views import (
     delete_user_financial_data,
     ConfirmCashPaymentAPIView,
     admin_income_overview,
-    AdminStripeVsCashDashboardAPIView
+    AdminStripeVsCashDashboardAPIView,
+    admin_transaction_stats
 
     
 )
@@ -47,17 +48,18 @@ urlpatterns = [
     ),
 
     # Stripe
-    path("payment/webhook/", stripe_webhook),
+    path("payment/create-checkout-session/", create_invoice_checkout_session, name="create-invoice-checkout-session"),
+    path("payment/webhook/", payment_webhook),
     path("success/", payment_success),
     path("cancel/", payment_cancel),
     # Landscaper
     path("payments/history/", landscaper_payment_history),
     # Admin
-    path(
-        "admin/transactions/summary/",
-        admin_transaction_summary,
-        name="admin-transaction-summary"
-    ),
+    # path(
+    #     "admin/transactions/summary/",
+    #     admin_transaction_summary,
+    #     name="admin-transaction-summary"
+    # ),
     path(
         "admin/stripe/daily-overview/",
         admin_daily_income_overview,
@@ -91,5 +93,6 @@ urlpatterns = [
     ),
     path("recent-payments/", RecentPaymentsAPIView.as_view(), name="recent-payments"),
     path('client/payment/history/', client_payment_history, name='client-payment-history'),
+    path("admin/transactions/stats/", admin_transaction_stats, name="admin-transaction-summary"),
 
 ]

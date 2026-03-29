@@ -54,7 +54,7 @@
 
 import stripe  
 from django.conf import settings
-
+from decimal import Decimal, ROUND_HALF_UP
 
 def create_invoice_checkout_session(invoice):
     stripe.api_key = settings.STRIPE_SECRET_KEY

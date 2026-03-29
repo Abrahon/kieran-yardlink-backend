@@ -6,8 +6,8 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
-
-
+from payments.stripe_service import create_invoice_checkout_session
+from django.template.loader import get_template
 from invoice.models import Invoice
 from invoice.serializers import InvoiceSerializer
 from invoice.services import create_invoice_from_completed_job
@@ -68,7 +68,9 @@ def create_job_invoice(request, job_id):
     return Response(InvoiceSerializer(invoice).data, status=status.HTTP_201_CREATED)
 
 
-from payments.stripe_service import create_invoice_checkout_session
+
+
+
 
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
@@ -105,7 +107,7 @@ def regenerate_invoice_checkout(request, invoice_id):
     }, status=status.HTTP_200_OK)
     
 
-from django.template.loader import get_template
+
 
 
 

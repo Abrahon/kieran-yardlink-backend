@@ -1639,6 +1639,17 @@ from profiles.models import ClientProfile, LandscaperProfilies
 from profiles.serializers import ClientProfileSerializer
 from services.models import ServiceSchedule, ClientService, ScheduleCompletionImage
 from subscriptions.models import Subscription, SubscriptionStatus
+from django.db import transaction
+from django.db.models import Q
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
+
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from connections.models import ConnectionRequest
 
 User = get_user_model()
 
@@ -1787,18 +1798,6 @@ class SentConnectionRequestAPIView(APIView):
                 context={"request": request}
             ).data
         )
-from django.db import transaction
-from django.db.models import Q
-from django.shortcuts import get_object_or_404
-from django.utils import timezone
-
-from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework.views import APIView
-
-from connections.models import ConnectionRequest
-from profiles.models import ClientProfile, LandscaperProfilies
 
 
 class RespondConnectionRequestAPIView(APIView):

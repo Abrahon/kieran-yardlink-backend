@@ -67,13 +67,50 @@ class JobDetailView(generics.RetrieveAPIView):
             return Job.objects.none()
         return Job.objects.filter(landscaper=landscaper)
 
+# progessing job
+from rest_framework import generics, permissions
+from jobs.models import Job
+from jobs.serializers import JobSerializer
+
+
+# --- In Progress Job List ---
+class InProgressJobsListView(generics.ListAPIView):
+    serializer_class = JobSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        landscaper = getattr(self.request.user, "landscaper_profile", None)
+        if not landscaper:
+            return Job.objects.none()
+
+        return Job.objects.filter(
+            landscaper=landscaper,
+            status=Job.Status.IN_PROGRESS,
+            is_active=True
+        ).order_by("scheduled_date", "scheduled_time")
+
+
+# --- In Progress Job Detail ---
+class InProgressJobDetailView(generics.RetrieveAPIView):
+    serializer_class = JobSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = "id"
+    lookup_url_kwarg = "id"
+
+    def get_queryset(self):
+        landscaper = getattr(self.request.user, "landscaper_profile", None)
+        if not landscaper:
+            return Job.objects.none()
+
+        return Job.objects.filter(
+            landscaper=landscaper,
+            status=Job.Status.IN_PROGRESS,
+            is_active=True
+        )
+
+
+
 # completd jobs list
-
-
-
-
-
-
 class CompletedJobsListView(generics.ListAPIView):
     serializer_class = CompletedJobSerializer
     permission_classes = [permissions.IsAuthenticated]
