@@ -20,6 +20,7 @@ from .views import (
     AdminUserLoginActivityView,
     AdminSubscriptionBillingHistoryView,
     AdminSubscriptionInvoiceDetailView,
+    AdminUserSuspendView
 
 )
 
@@ -60,5 +61,6 @@ urlpatterns = [
         AdminSubscriptionInvoiceDetailView.as_view(),
         name="admin-subscription-invoice-detail",
     ),
+    path("admin/users/<int:user_id>/suspend/", AdminUserSuspendView.as_view(), name="admin-user-suspend"),
 
 ]

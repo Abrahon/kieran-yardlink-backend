@@ -44,6 +44,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import permissions
 from django.shortcuts import get_object_or_404
+from rest_framework.pagination import PageNumberPagination
 
 from .models import Subscription, Plan
 from .serializers import (
@@ -56,7 +57,14 @@ from django.conf import settings
 from .models import Plan, Subscription
 from django.contrib.auth import get_user_model
 stripe.api_key = settings.STRIPE_SECRET_KEY
-
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status, permissions
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
+import stripe
+from subscriptions.models import Subscription, SubscriptionStatus
+from profiles.models import LandscaperProfilies
 User = get_user_model()
 
 
@@ -124,49 +132,11 @@ def safe_subscription_dates(stripe_sub, plan=None):
     return start, end
 
 
+
+
 # ================================================
 # Create Checkout Session
 # ================================================
-# @api_view(["POST"])
-# @permission_classes([permissions.IsAuthenticated])
-# def create_checkout_session(request):
-#     plan_id = request.data.get("plan_id")
-#     if not plan_id:
-#         return Response({"detail": "plan_id is required"}, status=400)
-
-#     plan = get_object_or_404(Plan, id=plan_id)
-
-#     if not plan.stripe_price_id:
-#         return Response({"detail": "Plan not linked with Stripe"}, status=400)
-
-#     # CREATE OR REUSE STRIPE CUSTOMER
-#     if not request.user.stripe_customer_id:
-#         customer = stripe.Customer.create(
-#             email=request.user.email,
-#             name=request.user.name or request.user.email,
-#         )
-#         request.user.stripe_customer_id = customer.id
-#         request.user.save(update_fields=["stripe_customer_id"])
-
-#     success_url = "https://zznkjkkp-8000.inc1.devtunnels.ms/api/success/?session_id={CHECKOUT_SESSION_ID}"
-#     cancel_url = "https://zznkjkkp-8000.inc1.devtunnels.ms/api/cancel/"
-
-#     session = stripe.checkout.Session.create(
-#         mode="subscription",
-#         customer=request.user.stripe_customer_id,
-#         line_items=[{"price": plan.stripe_price_id, "quantity": 1}],
-#         subscription_data={
-#             "trial_period_days": 14,
-#             "metadata": {
-#                 "user_id": str(request.user.id),
-#                 "plan_id": str(plan.id),
-#             }
-#         },
-#         success_url=success_url,
-#         cancel_url=cancel_url,
-#     )
-
-#     return Response({"checkout_url": session.url})
 
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
@@ -207,153 +177,11 @@ def create_checkout_session(request):
 
     return Response({"checkout_url": session.url})
 
+
+
 # ================================================
 # Stripe Webhook
 # ================================================
-# @csrf_exempt
-# def stripe_webhook(request):
-#     payload = request.body
-#     sig_header = request.META.get("HTTP_STRIPE_SIGNATURE")
-
-#     try:
-#         event = stripe.Webhook.construct_event(
-#             payload,
-#             sig_header,
-#             settings.STRIPE_SUBSCRIPTION_WEBHOOK_SECRET
-#         )
-#     except stripe.error.SignatureVerificationError:
-#         return HttpResponse("Invalid signature", status=400)
-#     except Exception:
-#         return HttpResponse("Webhook error", status=400)
-
-#     event_type = event["type"]
-
-#     # ================================================
-#     # 1️⃣ CHECKOUT SESSION COMPLETED
-#     # ================================================
-#     if event_type == "checkout.session.completed":
-#         session = event["data"]["object"]
-#         subscription_id = session.get("subscription")
-
-#         if not subscription_id:
-#             return HttpResponse(status=200)
-
-#         stripe_sub = stripe.Subscription.retrieve(subscription_id)
-#         metadata = stripe_sub.get("metadata", {})
-#         user_id = metadata.get("user_id")
-#         plan_id = metadata.get("plan_id")
-
-#         if not user_id or not plan_id:
-#             return HttpResponse(status=200)
-
-#         try:
-#             user = User.objects.get(id=user_id)
-#             plan = Plan.objects.get(id=plan_id)
-#         except (User.DoesNotExist, Plan.DoesNotExist):
-#             return HttpResponse(status=200)
-
-#         start, end = safe_subscription_dates(stripe_sub, plan)
-
-#         Subscription.objects.update_or_create(
-#             stripe_subscription_id=subscription_id,
-#             defaults={
-#                 "user": user,
-#                 "plan": plan,
-#                 "stripe_customer_id": stripe_sub.customer,
-#                 "status": stripe_sub.status,
-#                 "is_active": stripe_sub.status in ["trialing", "active"],
-#                 "is_trial": stripe_sub.status == "trialing",
-#                 "start_date": start,
-#                 "end_date": end,
-#             }
-#         )
-
-#         # Upgrade user role
-#         if user.role != "landscaper":
-#             user.role = "landscaper"
-#             user.save(update_fields=["role"])
-
-#     # ================================================
-#     # 2️⃣ INVOICE PAYMENT SUCCEEDED
-#     # ================================================
-#     elif event_type == "invoice.payment_succeeded":
-#         invoice = event["data"]["object"]
-#         subscription_id = invoice.get("subscription")
-#         if not subscription_id:
-#             return HttpResponse(status=200)
-
-#         stripe_sub = stripe.Subscription.retrieve(subscription_id)
-
-#         subscription = Subscription.objects.filter(stripe_subscription_id=subscription_id).first()
-#         plan = subscription.plan if subscription else None
-
-#         start, end = safe_subscription_dates(stripe_sub, plan)
-
-#         Subscription.objects.filter(stripe_subscription_id=subscription_id).update(
-#             status=stripe_sub.status,
-#             is_active=stripe_sub.status == "active",
-#             is_trial=False,
-#             start_date=start,
-#             end_date=end,
-#             updated_at=timezone.now(),
-#         )
-
-#     # ================================================
-#     # 3️⃣ PAYMENT FAILED
-#     # ================================================
-#     elif event_type == "invoice.payment_failed":
-#         invoice = event["data"]["object"]
-#         subscription_id = invoice.get("subscription")
-#         if subscription_id:
-
-#             Subscription.objects.filter(stripe_subscription_id=subscription_id).update(
-#                 status="past_due",
-#                 is_active=False,
-#                 is_trial=False,
-#                 updated_at=timezone.now(),
-#             )
-
-#     # ================================================
-#     # 4️⃣ SUBSCRIPTION UPDATED
-#     # ================================================
-#     elif event_type == "customer.subscription.updated":
-#         stripe_sub = event["data"]["object"]
-#         subscription_id = stripe_sub["id"]
-
-#         subscription = Subscription.objects.filter(stripe_subscription_id=subscription_id).first()
-#         plan = subscription.plan if subscription else None
-
-#         start, end = safe_subscription_dates(stripe_sub, plan)
-
-#         Subscription.objects.filter(stripe_subscription_id=subscription_id).update(
-#             status=stripe_sub["status"],
-#             is_active=stripe_sub["status"] in ["trialing", "active"],
-#             is_trial=stripe_sub["status"] == "trialing",
-#             start_date=start,
-#             end_date=end,
-#             updated_at=timezone.now(),
-#         )
-#     # ================================================
-#     # 5️⃣ SUBSCRIPTION CANCELED
-#     # ================================================
-
-
-#     elif event_type == "customer.subscription.deleted":
-#         stripe_sub = event["data"]["object"]
-
-#         Subscription.objects.filter(
-#             stripe_subscription_id=stripe_sub["id"]
-#         ).update(
-#             status=SubscriptionStatus.CANCELLED,
-#             is_active=False,
-#             is_trial=False,
-#             cancelled_at=timezone.now(),   # ✅ important
-#             updated_at=timezone.now()
-#         )
-
-#     return HttpResponse(status=200)
-
-
 
 @csrf_exempt
 def stripe_webhook(request):
@@ -527,288 +355,8 @@ def stripe_webhook(request):
 
     return HttpResponse(status=200)
 
-# @csrf_exempt
-# def stripe_webhook(request):
-#     payload = request.body
-#     sig_header = request.META.get("HTTP_STRIPE_SIGNATURE")
-#     endpoint_secret = settings.STRIPE_SUBSCRIPTION_WEBHOOK_SECRET
 
-#     print("=== stripe_webhook VIEW REACHED ===")
-#     print("Method:", request.method)
-#     print("Has signature header:", bool(sig_header))
-#     print("Using endpoint secret prefix:", endpoint_secret[:12] if endpoint_secret else None)
-
-#     if not sig_header:
-#         return HttpResponse("Missing Stripe-Signature header", status=400)
-
-#     try:
-#         event = stripe.Webhook.construct_event(
-#             payload=payload,
-#             sig_header=sig_header,
-#             secret=endpoint_secret,
-#         )
-#     except ValueError as e:
-#         print("Invalid payload:", str(e))
-#         return HttpResponse("Invalid payload", status=400)
-#     except stripe.error.SignatureVerificationError as e:
-#         print("Invalid signature:", str(e))
-#         return HttpResponse("Invalid signature", status=400)
-#     except Exception as e:
-#         print("Webhook construct_event error:", str(e))
-#         return HttpResponse("Webhook error", status=400)
-
-#     event_type = event["type"]
-#     obj = event["data"]["object"]
-
-#     print("Event type:", event_type)
-
-#     try:
-#         if event_type == "checkout.session.completed":
-#             session = obj
-
-#             if session.get("mode") != "subscription":
-#                 print("Ignoring non-subscription checkout session")
-#                 return HttpResponse(status=200)
-
-#             subscription_id = session.get("subscription")
-#             print("subscription_id:", subscription_id)
-
-#             if not subscription_id:
-#                 return HttpResponse(status=200)
-
-#             stripe_sub = stripe.Subscription.retrieve(subscription_id)
-
-#             metadata = stripe_sub.get("metadata", {}) or session.get("metadata", {})
-#             user_id = metadata.get("user_id")
-#             plan_id = metadata.get("plan_id")
-
-#             print("metadata:", metadata)
-
-#             if not user_id or not plan_id:
-#                 print("Missing user_id or plan_id in metadata")
-#                 return HttpResponse(status=200)
-
-#             try:
-#                 user = User.objects.get(id=user_id)
-#                 plan = Plan.objects.get(id=plan_id)
-#             except (User.DoesNotExist, Plan.DoesNotExist):
-#                 print("User or Plan not found")
-#                 return HttpResponse(status=200)
-
-#             start, end = safe_subscription_dates(stripe_sub, plan)
-
-#             Subscription.objects.update_or_create(
-#                 stripe_subscription_id=subscription_id,
-#                 defaults={
-#                     "user": user,
-#                     "plan": plan,
-#                     "stripe_customer_id": stripe_sub.get("customer"),
-#                     "status": stripe_sub.get("status"),
-#                     "is_active": stripe_sub.get("status") in ["trialing", "active"],
-#                     "is_trial": stripe_sub.get("status") == "trialing",
-#                     "start_date": start,
-#                     "end_date": end,
-#                     "updated_at": timezone.now(),
-#                 }
-#             )
-
-#             if user.role != "landscaper":
-#                 user.role = "landscaper"
-#                 user.save(update_fields=["role"])
-
-#             print("Subscription saved successfully")
-
-#         elif event_type == "invoice.payment_succeeded":
-#             stripe_invoice = obj
-#             subscription_id = stripe_invoice.get("subscription")
-#             print("invoice.payment_succeeded subscription_id:", subscription_id)
-
-#             if not subscription_id:
-#                 return HttpResponse(status=200)
-
-#             stripe_sub = stripe.Subscription.retrieve(subscription_id)
-#             subscription = Subscription.objects.filter(
-#                 stripe_subscription_id=subscription_id
-#             ).first()
-#             plan = subscription.plan if subscription else None
-
-#             start, end = safe_subscription_dates(stripe_sub, plan)
-
-#             Subscription.objects.filter(
-#                 stripe_subscription_id=subscription_id
-#             ).update(
-#                 status=stripe_sub.get("status"),
-#                 is_active=stripe_sub.get("status") == "active",
-#                 is_trial=False,
-#                 start_date=start,
-#                 end_date=end,
-#                 updated_at=timezone.now(),
-#             )
-
-#         elif event_type == "invoice.payment_failed":
-#             stripe_invoice = obj
-#             subscription_id = stripe_invoice.get("subscription")
-#             print("invoice.payment_failed subscription_id:", subscription_id)
-
-#             if subscription_id:
-#                 Subscription.objects.filter(
-#                     stripe_subscription_id=subscription_id
-#                 ).update(
-#                     status="past_due",
-#                     is_active=False,
-#                     is_trial=False,
-#                     updated_at=timezone.now(),
-#                 )
-
-#         elif event_type == "customer.subscription.updated":
-#             stripe_sub = obj
-#             subscription_id = stripe_sub.get("id")
-#             print("customer.subscription.updated:", subscription_id)
-
-#             subscription = Subscription.objects.filter(
-#                 stripe_subscription_id=subscription_id
-#             ).first()
-#             plan = subscription.plan if subscription else None
-
-#             start, end = safe_subscription_dates(stripe_sub, plan)
-
-#             Subscription.objects.filter(
-#                 stripe_subscription_id=subscription_id
-#             ).update(
-#                 status=stripe_sub.get("status"),
-#                 is_active=stripe_sub.get("status") in ["trialing", "active"],
-#                 is_trial=stripe_sub.get("status") == "trialing",
-#                 start_date=start,
-#                 end_date=end,
-#                 updated_at=timezone.now(),
-#             )
-
-#         elif event_type == "customer.subscription.deleted":
-#             stripe_sub = obj
-#             subscription_id = stripe_sub.get("id")
-#             print("customer.subscription.deleted:", subscription_id)
-
-#             Subscription.objects.filter(
-#                 stripe_subscription_id=subscription_id
-#             ).update(
-#                 status=SubscriptionStatus.CANCELLED,
-#                 is_active=False,
-#                 is_trial=False,
-#                 cancelled_at=timezone.now(),
-#                 updated_at=timezone.now(),
-#             )
-
-#         else:
-#             print("Ignoring unhandled event:", event_type)
-
-#     except Exception as e:
-#         print("Webhook processing error:", str(e))
-#         return HttpResponse("Processing error", status=400)
-
-#     return HttpResponse(status=200)
-
-#  @csrf_exempt
-# def stripe_webhook(request):
-#     payload = request.body
-#     sig_header = request.META.get("HTTP_STRIPE_SIGNATURE")
-
-#     try:
-#         event = stripe.Webhook.construct_event(
-#             payload,
-#             sig_header,
-#             settings.STRIPE_SUBSCRIPTION_WEBHOOK_SECRET
-#         )
-#     except ValueError as e:
-#         print("Invalid payload:", str(e))
-#         return HttpResponse("Invalid payload", status=400)
-#     except stripe.error.SignatureVerificationError as e:
-#         print("Invalid signature:", str(e))
-#         return HttpResponse("Invalid signature", status=400)
-
-#     event_type = event["type"]
-#     obj = event["data"]["object"]
-
-#     print("EVENT TYPE:", event_type)
-
-#     try:
-#         stripe.api_key = settings.STRIPE_SECRET_KEY
-
-#         if event_type == "checkout.session.completed":
-#             session = obj
-
-#             if session.get("mode") != "subscription":
-#                 print("Ignoring non-subscription checkout")
-#                 return HttpResponse(status=200)
-
-#             subscription_id = session.get("subscription")
-#             print("subscription_id:", subscription_id)
-
-#             if not subscription_id:
-#                 return HttpResponse(status=200)
-
-#             stripe_sub = stripe.Subscription.retrieve(subscription_id)
-#             metadata = stripe_sub.get("metadata", {}) or session.get("metadata", {})
-#             print("metadata:", metadata)
-
-#             user_id = metadata.get("user_id")
-#             plan_id = metadata.get("plan_id")
-
-#             if not user_id or not plan_id:
-#                 print("Missing metadata")
-#                 return HttpResponse(status=200)
-
-#             try:
-#                 user = User.objects.get(id=user_id)
-#                 plan = Plan.objects.get(id=plan_id)
-#             except (User.DoesNotExist, Plan.DoesNotExist):
-#                 print("User or Plan not found")
-#                 return HttpResponse(status=200)
-
-#             start, end = safe_subscription_dates(stripe_sub, plan)
-
-#             Subscription.objects.update_or_create(
-#                 stripe_subscription_id=subscription_id,
-#                 defaults={
-#                     "user": user,
-#                     "plan": plan,
-#                     "stripe_customer_id": stripe_sub.get("customer"),
-#                     "status": stripe_sub.get("status"),
-#                     "is_active": stripe_sub.get("status") in ["trialing", "active"],
-#                     "is_trial": stripe_sub.get("status") == "trialing",
-#                     "start_date": start,
-#                     "end_date": end,
-#                     "updated_at": timezone.now(),
-#                 }
-#             )
-
-#             if user.role != "landscaper":
-#                 user.role = "landscaper"
-#                 user.save(update_fields=["role"])
-
-#             print("Subscription saved")
-
-#         elif event_type == "invoice.payment_succeeded":
-#             print("invoice.payment_succeeded received")
-
-#         elif event_type == "invoice.payment_failed":
-#             print("invoice.payment_failed received")
-
-#         elif event_type == "customer.subscription.updated":
-#             print("customer.subscription.updated received")
-
-#         elif event_type == "customer.subscription.deleted":
-#             print("customer.subscription.deleted received")
-
-#         else:
-#             print("Ignoring event:", event_type)
-
-#     except Exception as e:
-#         print("Webhook processing error:", repr(e))
-#         return HttpResponse(status=200)
-
-#     return HttpResponse(status=200)  
-
-
+# subscription list
 class SubscriptionListView(generics.ListAPIView):
     serializer_class = SubscriptionSerializer
     permission_classes = [IsLandscaper]
@@ -868,168 +416,9 @@ class AdminPauseSubscriptionAPIView(APIView):
         }, status=status.HTTP_200_OK)
 
 
-# @csrf_exempt
-# def stripe_webhook(request):
-#     payload = request.body
-#     sig_header = request.META.get("HTTP_STRIPE_SIGNATURE")
-
-#     try:
-#         event = stripe.Webhook.construct_event(
-#             payload,
-#             sig_header,
-#             settings.STRIPE_WEBHOOK_SECRET
-#         )
-#     except stripe.error.SignatureVerificationError:
-#         return HttpResponse(status=400)
-#     except Exception:
-#         return HttpResponse(status=400)
-
-#     event_type = event["type"]
-
-#     def safe_dt(ts):
-#         return timezone.make_aware(datetime.fromtimestamp(ts)) if ts else None
-
-#     # 1️⃣ Checkout session completed
-#     if event_type == "checkout.session.completed":
-#         session = event["data"]["object"]
-#         subscription_id = session.get("subscription")
-#         if subscription_id:
-#             stripe_sub = stripe.Subscription.retrieve(subscription_id)
-#             metadata = stripe_sub.get("metadata", {})
-
-#             user_id = metadata.get("user_id")
-#             plan_id = metadata.get("plan_id")
-
-#             if not user_id or not plan_id:
-#                 return HttpResponse(status=200)
-
-#             try:
-#                 user = User.objects.get(id=user_id)
-#                 plan = Plan.objects.get(id=plan_id)
-#             except (User.DoesNotExist, Plan.DoesNotExist):
-#                 return HttpResponse(status=200)
-
-#             Subscription.objects.update_or_create(
-#                 stripe_subscription_id=subscription_id,
-#                 defaults={
-#                     "user": user,
-#                     "plan": plan,
-#                     "stripe_customer_id": stripe_sub.customer,
-#                     "status": stripe_sub.status,
-#                     "is_active": stripe_sub.status in ["trialing", "active"],
-#                     "is_trial": stripe_sub.status == "trialing",
-#                     "start_date": safe_dt(stripe_sub.get("current_period_start")),
-#                     "end_date": safe_dt(stripe_sub.get("current_period_end")),
-#                 }
-#             )
-
-#             if user.role != "landscaper":
-#                 user.role = "landscaper"
-#                 user.save(update_fields=["role"])
-
-#     # 2️⃣ Invoice succeeded
-#     elif event_type == "invoice.payment_succeeded":
-#         invoice = event["data"]["object"]
-#         subscription_id = invoice.get("subscription")
-#         if subscription_id:
-#             stripe_sub = stripe.Subscription.retrieve(subscription_id)
-#             Subscription.objects.filter(
-#                 stripe_subscription_id=subscription_id
-#             ).update(
-#                 status=stripe_sub.status,
-#                 is_active=stripe_sub.status == "active",
-#                 is_trial=False,
-#                 start_date=safe_dt(stripe_sub.get("current_period_start")),
-#                 end_date=safe_dt(stripe_sub.get("current_period_end")),
-#             )
-
-#     # 3️⃣ Payment failed
-#     elif event_type == "invoice.payment_failed":
-#         invoice = event["data"]["object"]
-#         subscription_id = invoice.get("subscription")
-#         if subscription_id:
-#             Subscription.objects.filter(
-#                 stripe_subscription_id=subscription_id
-#             ).update(
-#                 status="past_due",
-#                 is_active=False,
-#                 is_trial=False
-#             )
-
-#     # 4️⃣ Subscription updated
-#     elif event_type == "customer.subscription.updated":
-#         stripe_sub = event["data"]["object"]
-#         subscription_id = stripe_sub["id"]
-
-#         Subscription.objects.filter(
-#             stripe_subscription_id=subscription_id
-#         ).update(
-#             status=stripe_sub["status"],
-#             is_active=stripe_sub["status"] in ["trialing", "active"],
-#             is_trial=stripe_sub["status"] == "trialing",
-#             start_date=safe_dt(stripe_sub.get("current_period_start")),
-#             end_date=safe_dt(stripe_sub.get("current_period_end")),
-#         )
-
-#     # 5️⃣ Subscription canceled
-#     elif event_type == "customer.subscription.deleted":
-#         stripe_sub = event["data"]["object"]
-#         Subscription.objects.filter(
-#             stripe_subscription_id=stripe_sub["id"]
-#         ).update(
-#             status="canceled",
-#             is_active=False,
-#             is_trial=False
-#         )
-
-#     return HttpResponse(status=200)
-
 # # ----------------------------
 # # CREATE STRIPE CHECKOUT SESSION
 # # ----------------------------
-# @api_view(["POST"])
-# @permission_classes([IsAuthenticated])
-# def create_checkout_session(request):
-#     plan_id = request.data.get("plan_id")
-#     if not plan_id:
-#         return Response({"detail": "plan_id is required"}, status=400)
-
-#     plan = get_object_or_404(Plan, id=plan_id)
-#     if not plan.stripe_price_id:
-#         return Response({"detail": "Plan not linked with Stripe"}, status=400)
-
-#     # Create or reuse Stripe customer
-#     if not request.user.stripe_customer_id:
-#         customer = stripe.Customer.create(
-#             email=request.user.email,
-#             name=request.user.name or request.user.email
-#         )
-#         request.user.stripe_customer_id = customer.id
-#         request.user.save(update_fields=["stripe_customer_id"])
-
-#     success_url = "https://example.com/success/?session_id={CHECKOUT_SESSION_ID}"
-#     cancel_url = "https://example.com/cancel/"
-
-#     session = stripe.checkout.Session.create(
-#         mode="subscription",
-#         customer=request.user.stripe_customer_id,
-#         line_items=[{
-#             "price": plan.stripe_price_id,
-#             "quantity": 1
-#         }],
-#         subscription_data={
-#             "trial_period_days": 14,
-#             "metadata": {
-#                 "user_id": str(request.user.id),
-#                 "plan_id": str(plan.id)
-#             }
-#         },
-#         success_url=success_url,
-#         cancel_url=cancel_url
-#     )
-
-#     return Response({"checkout_url": session.url})
-
 
 # Optional success/cancel pages
 def success(request):
@@ -1115,19 +504,9 @@ class AdminPlanDeleteView(generics.DestroyAPIView):
             status=status.HTTP_200_OK
         )
 
+
+
 # subscriptions/views.py
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status, permissions
-from django.shortcuts import get_object_or_404
-from django.utils import timezone
-import stripe
-
-from .models import Subscription, SubscriptionStatus
-from profiles.models import LandscaperProfilies
-
-
-
 class AdminSubscriptionDeleteView(APIView):
     """
     Admin API to cancel/delete any user's subscription safely.
@@ -1184,42 +563,7 @@ class AdminSubscriptionDeleteView(APIView):
         )
 
 
-
-# class ExtendSubscriptionView(APIView):
-#     permission_classes = [IsAuthenticated, IsAdmin]
-
-#     def post(self, request, pk):
-#         days = request.data.get("days")
-
-#         if not days or int(days) <= 0:
-#             return Response(
-#                 {"detail": "Valid number of days required"},
-#                 status=400
-#             )
-
-#         subscription = get_object_or_404(Subscription, pk=pk)
-
-#         # If expired, restart from today
-#         base_date = (
-#             subscription.end_date
-#             if subscription.end_date > timezone.now()
-#             else timezone.now()
-#         )
-
-#         subscription.end_date = base_date + timedelta(days=int(days))
-#         subscription.is_trial = False 
-#         subscription.status = "active"
-#         subscription.is_active = True
-#         subscription.save()
-
-#         return Response({
-#             "message": "Subscription extended successfully",
-#             "subscription_id": subscription.id,
-#             "new_end_date": subscription.end_date,
-#             "remaining_days": (subscription.end_date - timezone.now()).days
-#         })
-
-
+# extend
 class ExtendSubscriptionView(APIView):
     permission_classes = [IsAuthenticated, IsAdmin]
 
@@ -1399,9 +743,6 @@ class MySubscriptionAPIView(APIView):
             "subscriptions": subscriptions_data
         }, status=status.HTTP_200_OK)
         
-# # stripe onfo get
-# from rest_framework.decorators import api_view, permission_classes
-# from rest_framework.response import Response
 
 
 # subscriptions/views.py
@@ -1474,13 +815,9 @@ class ToggleAutoRenewAPIView(APIView):
             "current_end_date": subscription.end_date
         })
 
+
+
 # subscription ratio
-
-from rest_framework.permissions import IsAdminUser
-
-from subscriptions.models import Subscription, SubscriptionStatus
-from django.db.models import Count
-
 class SubscriptionRatioAPIView(APIView):
     """
     Returns the subscription ratio between Pro and Basic plans as percentage.
@@ -1560,112 +897,8 @@ class UpgradePlanAPIView(APIView):
             "subscription": serializer.data
         }, status=status.HTTP_200_OK)
 
-# subscription invoice 
-# import stripe
-# from django.conf import settings
-
-# from rest_framework.views import APIView
-# from rest_framework.permissions import IsAdminUser
-# from rest_framework.response import Response
-# from rest_framework import status
-
-# from subscriptions.models import Subscription
-
-# stripe.api_key = settings.STRIPE_SECRET_KEY
 
 
-# class AdminAllSubscriptionUsersBillingView(APIView):
-#     permission_classes = [IsAdminUser]
-
-#     def get(self, request):
-#         subscriptions = (
-#             Subscription.objects
-#             .select_related("user", "plan")
-#             .order_by("-created_at")
-#         )
-
-#         data = []
-
-#         for sub in subscriptions:
-#             latest_invoice_data = None
-
-#             # Try Stripe invoice first
-#             if sub.stripe_customer_id and sub.stripe_subscription_id:
-#                 try:
-#                     invoices = stripe.Invoice.list(
-#                         customer=sub.stripe_customer_id,
-#                         subscription=sub.stripe_subscription_id,
-#                         limit=1
-#                     )
-
-#                     if invoices.data:
-#                         invoice = invoices.data[0]
-
-#                         description = f"{sub.plan.name} - {sub.plan.duration}"
-#                         lines = invoice.get("lines", {}).get("data", [])
-#                         if lines and lines[0].get("description"):
-#                             description = lines[0]["description"]
-
-#                         latest_invoice_data = {
-#                             "invoice_id": invoice.get("id"),
-#                             "invoice_number": invoice.get("number"),
-#                             "subscription_date": invoice.get("created"),
-#                             "description": description,
-#                             "amount": (invoice.get("amount_paid", 0) or invoice.get("amount_due", 0)) / 100.0,
-#                             "payment_status": invoice.get("status"),
-#                             "currency": invoice.get("currency"),
-#                             "invoice_pdf": invoice.get("invoice_pdf"),
-#                             "hosted_invoice_url": invoice.get("hosted_invoice_url"),
-#                         }
-#                 except Exception:
-#                     latest_invoice_data = None
-
-#             # Fallback to local subscription data
-#             if not latest_invoice_data:
-#                 latest_invoice_data = {
-#                     "invoice_id": None,
-#                     "invoice_number": None,
-#                     "subscription_date": sub.created_at,
-#                     "description": f"{sub.plan.name} - {sub.plan.duration}",
-#                     "amount": float(sub.plan.price),
-#                     "payment_status": sub.status,
-#                     "currency": "usd",
-#                     "invoice_pdf": None,
-#                     "hosted_invoice_url": None,
-#                 }
-
-#             data.append({
-#                 "user_id": sub.user.id,
-#                 "name": sub.user.name,
-#                 "email": sub.user.email,
-#                 "role": sub.user.role,
-#                 "subscription_id": sub.id,
-#                 "stripe_subscription_id": sub.stripe_subscription_id,
-#                 "is_active": sub.is_active,
-#                 "is_trial": sub.is_trial,
-#                 "auto_renew": sub.auto_renew,
-#                 "start_date": sub.start_date,
-#                 "end_date": sub.end_date,
-#                 **latest_invoice_data,
-#             })
-
-#         return Response({
-#             "status": "success",
-#             "count": len(data),
-#             "results": data
-#         }, status=status.HTTP_200_OK)
-
-import stripe
-from django.conf import settings
-
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAdminUser
-from rest_framework.response import Response
-from rest_framework import status
-
-from subscriptions.models import Subscription
-
-stripe.api_key = settings.STRIPE_SECRET_KEY
 
 
 class AdminAllSubscriptionUsersBillingView(APIView):
@@ -1770,14 +1003,18 @@ class AdminAllSubscriptionUsersBillingView(APIView):
                 **latest_invoice_data,
             })
 
-        return Response({
-            "status": "success",
-            "count": len(data),
-            "results": data
-        }, status=status.HTTP_200_OK)
+        # =========================
+        # ✅ ADD PAGINATION HERE
+        # =========================
+        paginator = PageNumberPagination()
+        paginator.page_size = 10  # optional override
+
+        result_page = paginator.paginate_queryset(data, request)
+
+        return paginator.get_paginated_response(result_page)
+
 
 # billing 
-
 class AdminUserBillingSummaryView(APIView):
     permission_classes = [IsAdminUser]
 

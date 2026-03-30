@@ -210,6 +210,7 @@ REST_FRAMEWORK = {
     "ORDERING_PARAM": "ordering",
 }
 
+
 # celery
 # celery.py or settings.py
 from celery.schedules import crontab
@@ -228,6 +229,7 @@ CELERY_BEAT_SCHEDULE = {
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(days=30),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=30),
+    "UPDATE_LAST_LOGIN": True,
 }
 
 # ------------------------------------------------------------------------------

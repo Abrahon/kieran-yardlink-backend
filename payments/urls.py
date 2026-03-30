@@ -16,7 +16,7 @@ from .views import (
     ConfirmCashPaymentAPIView,
     admin_income_overview,
     AdminStripeVsCashDashboardAPIView,
-    admin_transaction_stats
+    admin_dashboard_stats
 
     
 )
@@ -93,6 +93,6 @@ urlpatterns = [
     ),
     path("recent-payments/", RecentPaymentsAPIView.as_view(), name="recent-payments"),
     path('client/payment/history/', client_payment_history, name='client-payment-history'),
-    path("admin/transactions/stats/", admin_transaction_stats, name="admin-transaction-summary"),
+    path("admin/transactions/stats/", admin_dashboard_stats, name="admin-transaction-summary"),
 
 ]

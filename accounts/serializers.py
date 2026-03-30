@@ -364,6 +364,7 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
     total_clients = serializers.IntegerField(read_only=True)
     average_rating = serializers.SerializerMethodField()
     review_count = serializers.SerializerMethodField()
+    last_login = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -402,6 +403,9 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
         if obj.role != "landscaper":
             return 0
         return int(getattr(obj, "review_count", 0) or 0)
+
+    def get_last_login(self, obj):
+        return obj.last_login
 
 
 class AdminUserUpdateSerializer(serializers.Serializer):

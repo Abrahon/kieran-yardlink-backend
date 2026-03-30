@@ -102,6 +102,15 @@ User = get_user_model()
 
 from invoice.models import Invoice
 from jobs.models import Job
+import csv
+from datetime import datetime, time
+
+from django.http import HttpResponse
+from django.utils import timezone
+
+from rest_framework.pagination import PageNumberPagination
+
+
 
 
 
@@ -477,6 +486,8 @@ def landscaper_payment_history(request):
             "total_pending": round(float(total_pending or 0), 2),
         }
     }, status=200)
+
+
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -952,21 +963,6 @@ def admin_transaction_stats(request):
 #     result_page = paginator.paginate_queryset(data, request)
 
 #     return paginator.get_paginated_response(result_page)
-import csv
-from datetime import datetime, time
-
-from django.http import HttpResponse
-from django.utils import timezone
-
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAdminUser
-from rest_framework.response import Response
-from rest_framework.pagination import PageNumberPagination
-from rest_framework import status
-
-from bookings.models import ServiceBooking
-from subscriptions.models import Subscription
-
 
 def parse_date_range(start_str=None, end_str=None):
     start_dt = None
@@ -1228,51 +1224,153 @@ def parse_date_range(start_str=None, end_str=None):
 #         },
 #         "results": result_page,
 #     })
-import csv
-from datetime import datetime, time
-
-from django.http import HttpResponse
+from decimal import Decimal
+from datetime import timedelta
 from django.utils import timezone
-
+from django.db.models import Sum
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
-from rest_framework.pagination import PageNumberPagination
-from rest_framework import status
 
 from invoice.models import Invoice
 from subscriptions.models import Subscription
 
 
-def parse_date_range(start_str=None, end_str=None):
-    start_dt = None
-    end_dt = None
+def get_month_range(dt):
+    start = dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-    try:
-        if start_str:
-            start_dt = timezone.make_aware(
-                datetime.combine(
-                    datetime.strptime(start_str, "%Y-%m-%d").date(),
-                    time.min
-                )
+    if start.month == 12:
+        next_month = start.replace(year=start.year + 1, month=1)
+    else:
+        next_month = start.replace(month=start.month + 1)
+
+    return start, next_month
+
+
+def percent_change(current, previous):
+    if previous == 0:
+        return 100 if current > 0 else 0
+    return ((current - previous) / previous) * 100
+
+
+@api_view(["GET"])
+@permission_classes([IsAdminUser])
+def admin_dashboard_stats(request):
+    now = timezone.now()
+
+    # Current month
+    current_start, current_end = get_month_range(now)
+
+    # Last month
+    last_anchor = current_start - timedelta(days=1)
+    last_start, last_end = get_month_range(last_anchor)
+
+    # Previous month
+    prev_anchor = last_start - timedelta(days=1)
+    prev_start, prev_end = get_month_range(prev_anchor)
+
+    # =========================
+    # SERVICE (INVOICE)
+    # =========================
+    def get_invoice_data(start, end):
+        qs = (
+            Invoice.objects
+            .filter(
+                created_at__gte=start,
+                created_at__lt=end,
             )
+            .exclude(stripe_session_id__isnull=True)
+            .exclude(stripe_session_id="")
+        )
 
-        if end_str:
-            end_dt = timezone.make_aware(
-                datetime.combine(
-                    datetime.strptime(end_str, "%Y-%m-%d").date(),
-                    time.max
-                )
+        total = qs.aggregate(total=Sum("total"))["total"] or Decimal("0.00")
+        fee = qs.aggregate(total=Sum("service_fee_amount"))["total"] or Decimal("0.00")
+        count = qs.count()
+
+        return total, fee, count
+
+    # =========================
+    # SUBSCRIPTIONS
+    # =========================
+    def get_subscription_data(start, end):
+        qs = (
+            Subscription.objects
+            .filter(
+                created_at__gte=start,
+                created_at__lt=end,
             )
-    except ValueError:
-        raise ValueError("Invalid date format. Use YYYY-MM-DD.")
+            .exclude(stripe_subscription_id__isnull=True)
+            .exclude(stripe_subscription_id="")
+            .select_related("plan")
+        )
 
-    if start_dt and end_dt and start_dt > end_dt:
-        raise ValueError("start_date cannot be greater than end_date.")
+        total = Decimal("0.00")
 
-    return start_dt, end_dt
+        for sub in qs:
+            price = Decimal(str(sub.plan.price or 0))
+            if hasattr(sub, "discount_override") and sub.discount_override:
+                price -= price * Decimal(str(sub.discount_override)) / Decimal("100")
+            total += price
 
+        count = qs.count()
 
+        return total, count
+
+    # =========================
+    # CURRENT MONTH
+    # =========================
+    cur_invoice_total, cur_fee, cur_invoice_count = get_invoice_data(current_start, current_end)
+    cur_sub_total, cur_sub_count = get_subscription_data(current_start, current_end)
+
+    cur_total_revenue = cur_invoice_total + cur_sub_total
+    cur_total_transactions = cur_invoice_count + cur_sub_count
+
+    # =========================
+    # LAST MONTH
+    # =========================
+    last_invoice_total, last_fee, last_invoice_count = get_invoice_data(last_start, last_end)
+    last_sub_total, last_sub_count = get_subscription_data(last_start, last_end)
+
+    last_total_revenue = last_invoice_total + last_sub_total
+    last_total_transactions = last_invoice_count + last_sub_count
+
+    # =========================
+    # PREVIOUS MONTH
+    # =========================
+    prev_invoice_total, prev_fee, prev_invoice_count = get_invoice_data(prev_start, prev_end)
+    prev_sub_total, prev_sub_count = get_subscription_data(prev_start, prev_end)
+
+    prev_total_revenue = prev_invoice_total + prev_sub_total
+    prev_total_transactions = prev_invoice_count + prev_sub_count
+
+    # =========================
+    # CALCULATE %
+    # =========================
+    revenue_change = percent_change(last_total_revenue, prev_total_revenue)
+    fee_change = percent_change(last_fee, prev_fee)
+    transaction_change = percent_change(last_total_transactions, prev_total_transactions)
+
+    # =========================
+    # FINAL RESPONSE (UI READY)
+    # =========================
+    return Response({
+        "total_transaction_revenue": {
+            "value": round(float(cur_total_revenue), 2),
+            "change_percent": round(revenue_change, 2),
+            "label": f"{round(revenue_change, 2)}% vs last month"
+        },
+        "total_platform_fees": {
+            "value": round(float(cur_fee), 2),
+            "change_percent": round(fee_change, 2),
+            "label": f"{round(fee_change, 2)}% vs last month"
+        },
+        "total_transactions": {
+            "value": cur_total_transactions,
+            "change_percent": round(transaction_change, 2),
+            "label": f"{round(transaction_change, 2)}% vs last month"
+        }
+    })
+    
 @api_view(["GET"])
 @permission_classes([IsAdminUser])
 def stripe_all_payments(request):

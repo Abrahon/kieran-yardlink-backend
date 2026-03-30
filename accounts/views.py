@@ -214,7 +214,7 @@ from .serializers import LoginSerializer
 from .models import User, OTP, LoginActivity
 from .utils import generate_otp, send_otp_email
 from .security_utils import get_client_ip, parse_device
-
+from django.contrib.auth.models import update_last_login
 # your existing function
 from .views import get_tokens_for_user  # adjust import if it's in same file remove this
 
@@ -267,6 +267,7 @@ class LoginView(generics.GenericAPIView):
         ua = request.META.get("HTTP_USER_AGENT", "")
 
         device_info = parse_device(ua)
+        update_last_login(None, user)
 
         LoginActivity.objects.create(
             user=user,
@@ -276,6 +277,7 @@ class LoginView(generics.GenericAPIView):
             os=device_info.get("os"),
             browser=device_info.get("browser"),
         )
+         
 
         return Response({
             "message": "Login successful",
@@ -287,6 +289,7 @@ class LoginView(generics.GenericAPIView):
                 "role": user.role,
                 "phone": getattr(user, "phone", None),
                 "address": getattr(user, "address", None),
+                "last_login":user.last_login,
                 "latitude": float(user.latitude) if getattr(user, "latitude", None) else None,
                 "longitude": float(user.longitude) if getattr(user, "longitude", None) else None,
             }
@@ -856,6 +859,58 @@ class UserListView(APIView):
         })
 
 
+
+
+class AdminUserSuspendView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def patch(self, request, user_id):
+        user = get_object_or_404(User, id=user_id)
+
+        if request.user.id == user.id:
+            return Response(
+                {"status": "error", "message": "You cannot suspend your own account."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        is_active = request.data.get("is_active")
+        admin_notes = request.data.get("admin_notes")
+
+        if is_active is None:
+            return Response(
+                {"status": "error", "message": "is_active is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not isinstance(is_active, bool):
+            return Response(
+                {"status": "error", "message": "is_active must be true or false."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user.is_active = is_active
+        update_fields = ["is_active"]
+
+        if admin_notes is not None:
+            user.admin_notes = admin_notes
+            update_fields.append("admin_notes")
+
+        user.save(update_fields=update_fields)
+
+        return Response(
+            {
+                "status": "success",
+                "message": "User updated successfully.",
+                "data": {
+                    "id": user.id,
+                    "name": user.name,
+                    "email": user.email,
+                    "is_active": user.is_active,
+                    "admin_notes": user.admin_notes,
+                },
+            },
+            status=status.HTTP_200_OK,
+        )
 
 #    delete admins
 class AdminDeleteUserView(generics.DestroyAPIView):
