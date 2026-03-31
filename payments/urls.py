@@ -7,14 +7,13 @@ from .views import (
     payment_cancel,
     landscaper_payment_history,
     # admin_transaction_summary,
-    admin_daily_income_overview,
     stripe_all_payments,
     ProLandscaperMonthlyRevenueView,
     RecentPaymentsAPIView,
     client_payment_history,
     delete_user_financial_data,
     ConfirmCashPaymentAPIView,
-    admin_income_overview,
+    # admin_income_overview,
     AdminStripeVsCashDashboardAPIView,
     admin_dashboard_stats
 
@@ -24,7 +23,7 @@ from .views import (
 
 urlpatterns = [
 
-    # Client Payments
+    # Client Payments old
 
     path("schedule/pay-online/", create_invoice_checkout_session),
        # -------------------------------
@@ -55,21 +54,7 @@ urlpatterns = [
     # Landscaper
     path("payments/history/", landscaper_payment_history),
     # Admin
-    # path(
-    #     "admin/transactions/summary/",
-    #     admin_transaction_summary,
-    #     name="admin-transaction-summary"
-    # ),
-    path(
-        "admin/stripe/daily-overview/",
-        admin_daily_income_overview,
-        name="admin-stripe-daily-overview"
-    ),
-    path(
-        "admin/stripe/monthly-overview/",
-        admin_income_overview,
-        name="admin-stripe-monthly-overview"
-    ),
+
     path(
         "admin/stripe/payments/",
         stripe_all_payments,

@@ -1108,11 +1108,9 @@ class AdminAuditLogView(APIView):
             })
 
         return Response(data)
-    
+
+
 # user detaisl
-
-
-
 from django.shortcuts import get_object_or_404
 from django.db.models import Sum, FloatField, Value
 from django.db.models.functions import Coalesce
