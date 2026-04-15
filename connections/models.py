@@ -17,13 +17,12 @@ class ConnectionRequest(models.Model):
     )
       
     schedule = models.OneToOneField(
-        "services.ServiceSchedule",
+        "jobs.Job",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="connection"
     )
-
 
     is_accepted = models.BooleanField(null=True)
       

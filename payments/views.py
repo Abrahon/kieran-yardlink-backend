@@ -9,7 +9,7 @@ from django.db.models import Sum, Count, F, FloatField
 from .serializers import PaymentHistorySerializer
 from datetime import datetime
 from profiles.models import LandscaperProfilies
-from services.models import PaymentStatus
+
 from datetime import datetime, timedelta
 from django.db.models.functions import TruncDate
 from rest_framework.permissions import IsAdminUser
@@ -74,6 +74,7 @@ from django.conf import settings
 from django.http import HttpResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
+from .enums import PaymentStatus
 
 from django.db import transaction
 from django.db.models import Q
@@ -117,7 +118,21 @@ from rest_framework.pagination import PageNumberPagination
 
 
 
+# payment notification
+from notifications.services import send_push_notification
 
+def payment_success(request):
+    payment = Payment.objects.create(...)
+
+    send_push_notification(
+        user=payment.user,
+        title="Payment Received",
+        message="Your payment has been completed",
+        notification_type="payment",
+        data={"screen": "payment_history"}
+    )
+
+    
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
@@ -193,7 +208,7 @@ class CashPaymentScheduleAPIView(APIView):
     def post(self, request, schedule_id):
         # 1️⃣ Get the schedule for this client
         client_profile = getattr(request.user, "clientprofile", None)
-        schedule = get_object_or_404(ServiceSchedule, id=schedule_id, client=client_profile)
+        schedule = get_object_or_404(Job, id=schedule_id, client=client_profile)
 
         # 2️⃣ Check if job is completed
         if not schedule.is_completed:
@@ -232,7 +247,7 @@ class ConfirmCashPaymentAPIView(APIView):
     def post(self, request, schedule_id):
         # 1️⃣ Get the schedule for this landscaper
         landscaper_profile = getattr(request.user, "landscaperprofilies", None)
-        schedule = get_object_or_404(ServiceSchedule, id=schedule_id, landscaper=landscaper_profile)
+        schedule = get_object_or_404(Job, id=schedule_id, landscaper=landscaper_profile)
 
         # 2️⃣ Check if job is completed and payment is cash pending
         if not schedule.is_completed or schedule.payment_status != PaymentStatus.CASH_PENDING:
@@ -628,7 +643,7 @@ class RecentPaymentsAPIView(APIView):
 
 #     # Client Job Payments
 #     # ======================
-#     paid_jobs = ServiceSchedule.objects.filter(
+#     paid_jobs = Job.objects.filter(
 #         payment_status=PaymentStatus.PAID
 #     )
 
@@ -1364,7 +1379,7 @@ def delete_user_financial_data(request, user_id):
         )
 
     # Delete Paid Job Payments (Client or Landscaper side)
-    job_qs = ServiceSchedule.objects.filter(
+    job_qs = Job.objects.filter(
         Q(client__user=user) | Q(landscaper__user=user),
         payment_status=PaymentStatus.PAID
     )
@@ -1524,7 +1539,7 @@ class AdminStripeVsCashDashboardAPIView(APIView):
         # --------------------------
         # Stripe payments
         # --------------------------
-        stripe_payments = ServiceSchedule.objects.filter(
+        stripe_payments = Job.objects.filter(
             payment_status=PaymentStatus.PAID
         ).exclude(stripe_payment_id__isnull=True).exclude(stripe_payment_id__exact='')
 
@@ -1535,7 +1550,7 @@ class AdminStripeVsCashDashboardAPIView(APIView):
         # --------------------------
         # Cash payments
         # --------------------------
-        cash_payments = ServiceSchedule.objects.filter(
+        cash_payments = Job.objects.filter(
             payment_status=PaymentStatus.PAID,
             stripe_payment_id__isnull=True
         )

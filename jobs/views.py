@@ -16,6 +16,20 @@ from jobs.serializers import (
     JobItemSerializer,
 )
 
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from notifications.services import send_push_notification
+
+@receiver(post_save, sender=Job)
+def job_created(sender, instance, created, **kwargs):
+    if created:
+        send_push_notification(
+            user=instance.assigned_user,
+            title="New Job",
+            message="You got a new job",
+            notification_type="job",
+        )
+
 
 # # --- Upcoming Jobs for Logged-in Landscaper ---
 # class UpcomingJobsListView(generics.ListAPIView):
@@ -266,3 +280,5 @@ class ManualOneTimeJobCreateView(generics.CreateAPIView):
         serializer.is_valid(raise_exception=True)
         job = serializer.save()
         return Response(JobSerializer(job).data, status=status.HTTP_201_CREATED)
+
+

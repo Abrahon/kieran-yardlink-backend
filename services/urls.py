@@ -1,9 +1,5 @@
 from django.urls import path
 from .views import (
-    # -------- Services --------
-    StandardServiceListAPIView,
-    StandardServiceCreateAPIView,
-    CustomServiceCreateAPIView,
 
     # -------- Client --------
     ClientServicePreferenceAPIView,
@@ -18,24 +14,11 @@ from .views import (
     CompletedJobsAPIView,
     ServiceScheduleDetailAPIView,
     RecentActivityAPIView,
-    AddOnServiceAPIView,
-    AddOnServiceDetailAPIView
     # RecentJobCompletionAPIView
 )
 
 
 urlpatterns = [
-
-    # ================= SERVICES =================
-
-    # List standard services (Client / Landscaper)
-    path("services/standard/", StandardServiceListAPIView.as_view(), name="standard-services"),
-
-    # Admin adds standard service
-    path("services/standard/add/", StandardServiceCreateAPIView.as_view(), name="add-standard-service"),
-
-    # Landscaper adds custom service
-    path("services/custom/add/", CustomServiceCreateAPIView.as_view(), name="add-custom-service"),
 
 
     # ================= CLIENT =================
@@ -68,22 +51,18 @@ urlpatterns = [
         name="client-job-history"
     ),
     # schedule
-    path(    
-        "schedule/<int:schedule_id>/reschedule/",
-        RescheduleServiceAPIView.as_view(),
-        name="reschedule-service"
-    ),
+
     # ================= LANDSCAPER =================
 
     # Landscaper marks a scheduled job as completed + uploads images
-    path(
-        "landscaper/schedule/<int:schedule_id>/complete/",
-        LandscaperCompleteJobAPIView.as_view(),
-        name="landscaper-complete-job"
-    ),
+    # path(
+    #     "landscaper/schedule/<int:schedule_id>/complete/",
+    #     LandscaperCompleteJobAPIView.as_view(),
+    #     name="landscaper-complete-job"
+    # ),
 
     # List all completed jobs for logged-in landscaper
-    path("completed-job/list/", CompletedJobsAPIView.as_view(), name="completed-jobs"),
+    # path("completed-job/list/", CompletedJobsAPIView.as_view(), name="completed-jobs"),
 
     path("service-overview/", ServiceOverviewAPIView.as_view()),
     path(
@@ -93,15 +72,9 @@ urlpatterns = [
 
     ),
     path("activity/recent/", RecentActivityAPIView.as_view(), name="recent-activity"),
-    path("add-ons/", AddOnServiceAPIView.as_view(), name="addon-services-list-create"),
-    path("add-ons/<int:service_id>/", AddOnServiceDetailAPIView.as_view(), name="addon-services-delete"),
+    # path("add-ons/", AddOnServiceAPIView.as_view(), name="addon-services-list-create"),
+    # path("add-ons/<int:service_id>/", AddOnServiceDetailAPIView.as_view(), name="addon-services-delete"),
 
-
-    # path(
-    #     "completed/job/recent/",
-    #     RecentCompletedJobsAPIView.as_view(),
-    #     name="recent-job-completion"
-    # ),
 
 
 ]

@@ -11,7 +11,7 @@ from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
 from rest_framework import status
 from decimal import Decimal
-from services.models import ServiceSchedule, PaymentStatus
+from jobs.models import Job
 from subscriptions.models import Subscription, SubscriptionStatus
 from django.db.models import Sum, DecimalField
 from django.db.models.functions import Coalesce
@@ -753,8 +753,6 @@ class AdminActiveProSubscriptionsAnalyticsView(BaseSubscriptionPlanAnalyticsView
 
 
 # job completd 
-from services.models import ServiceSchedule
-
 
 class AdminJobsCompletedAnalyticsView(APIView):
     permission_classes = [IsAdminUser]
@@ -762,7 +760,7 @@ class AdminJobsCompletedAnalyticsView(APIView):
     def get(self, request):
         now = timezone.now()
 
-        qs = ServiceSchedule.objects.filter(is_completed=True)
+        qs = Job.objects.filter(is_completed=True)
 
         total_completed_jobs = qs.count()
 
@@ -1290,7 +1288,7 @@ class AdminStripeFeeRevenueAnalyticsView(APIView):
     permission_classes = [IsAdminUser]
 
     def _period_fee_revenue(self, start_date, end_date):
-        total_job_amount = ServiceSchedule.objects.filter(
+        total_job_amount = Job.objects.filter(
             payment_status=PaymentStatus.PAID,
             scheduled_date__gte=start_date.date(),
             scheduled_date__lt=end_date.date()
@@ -1306,7 +1304,7 @@ class AdminStripeFeeRevenueAnalyticsView(APIView):
         next_month_start = add_months(current_month_start, 1)
         last_month_start = add_months(current_month_start, -1)
 
-        total_job_amount = ServiceSchedule.objects.filter(
+        total_job_amount = Job.objects.filter(
             payment_status=PaymentStatus.PAID
         ).aggregate(
             total=Coalesce(Sum("service__price", output_field=DecimalField(max_digits=12, decimal_places=2)), Decimal("0.00"))

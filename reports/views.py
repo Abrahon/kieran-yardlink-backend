@@ -265,7 +265,7 @@ from rest_framework import status
 from accounts.models import User
 from subscriptions.models import Subscription
 from subscriptions.enums import SubscriptionStatus
-from services.models import ServiceSchedule, PaymentStatus
+
 from .models import SiteVisit
 
 
@@ -391,7 +391,7 @@ class AdminDashboardReportsView(APIView):
         )
 
         revenue_qs = self.apply_date_filter(
-            ServiceSchedule.objects.filter(payment_status=PaymentStatus.PAID),
+            Job.objects.filter(payment_status=PaymentStatus.PAID),
             "created_at",
             start_dt,
             end_dt

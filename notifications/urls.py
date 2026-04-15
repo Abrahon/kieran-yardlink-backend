@@ -1,8 +1,18 @@
 from django.urls import path
-from .views import NotificationListView, NotificationSettingsView,RecentCompletedNotificationsAPIView
+from .views import (
+    NotificationListView,
+    NotificationSettingsView,
+    RecentCompletedNotificationsAPIView,
+    UserNotificationsAPIView,
+    save_fcm_token
+)
 
 urlpatterns = [
-    path("notifications/", NotificationListView.as_view(), name="notifications-list"),
-    path("notifications/settings/", NotificationSettingsView.as_view(), name="notifications-settings"),
-    path("notifications/recent-completed/", RecentCompletedNotificationsAPIView.as_view(), name="recent-completed-notifications"),
+    path("save-fcm-token/", save_fcm_token),
+
+    path("notifications/", NotificationListView.as_view()),
+    path("notifications/settings/", NotificationSettingsView.as_view()),
+    path("notifications/recent-completed/", RecentCompletedNotificationsAPIView.as_view()),
+
+    path("notifications/<int:notification_id>/", UserNotificationsAPIView.as_view()),
 ]

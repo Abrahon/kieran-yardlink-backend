@@ -4,6 +4,7 @@ from datetime import timedelta
 from django.contrib.auth import get_user_model
 from .enums import SubscriptionDuration, SubscriptionStatus
 from decimal import Decimal 
+# from .models import Subscription
 
 User = get_user_model()
 

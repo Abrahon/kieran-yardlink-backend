@@ -15,53 +15,21 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from django.utils import timezone
-from django.db.models import F
-from services.models import ServiceSchedule, PaymentStatus
 from django.utils import timezone
 from accounts.models import User
 from payments.serializers import PaymentHistorySerializer
 from rest_framework import generics, status
-from .models import ClientService, ClientServicePreference, ServiceSchedule, ScheduleCompletionImage
+from .models import ClientService, ClientServicePreference
 from .serializers import (
     ServiceSerializer,
     ClientServicePreferenceWriteSerializer,
     ClientServicePreferenceReadSerializer,
-    ServiceScheduleSerializer,
-    ScheduleRescheduleSerializer
+
 )
 from profiles.models import ClientProfile
 
 # -------------------- Standard Services --------------------
 
-class StandardServiceListAPIView(ListAPIView):
-    permission_classes = [IsAuthenticated | IsClient | IsLandscaper] 
-    serializer_class = ServiceSerializer
-
-    def get_queryset(self):
-        return ClientService.objects.filter(is_standard=True)
-
-
-class StandardServiceCreateAPIView(CreateAPIView):
-    permission_classes = [IsAdmin]  # Only admin can add standard services
-    serializer_class = ServiceSerializer
-
-    def perform_create(self, serializer):
-        serializer.save(is_standard=True, landscaper=None)
-
-
-class CustomServiceCreateAPIView(CreateAPIView):
-    permission_classes = [IsLandscaper]
-    serializer_class = ServiceSerializer
-
-    def perform_create(self, serializer):
-        landscaper = self.request.user.landscaper_profile
-        name = serializer.validated_data.get("name")
-
-        # Check if the service name already exists for this landscaper
-        if Service.objects.filter(landscaper=landscaper, name=name).exists():
-            raise ValidationError({"name": "You already have a service with this name."})
-
-        serializer.save(is_standard=False, landscaper=landscaper)
 
 
 # add ons
@@ -74,35 +42,6 @@ from django.shortcuts import get_object_or_404
 from .models import AddOnService
 from .serializers import AddOnServiceSerializer
 
-# -----------------------------
-# Client creates add-ons
-# -----------------------------
-class AddOnServiceAPIView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        # List only add-ons created by this client
-        services = AddOnService.objects.filter(client=request.user).order_by("-created_at")
-        serializer = AddOnServiceSerializer(services, many=True)
-        return Response(serializer.data)
-
-    def post(self, request):
-        serializer = AddOnServiceSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save(client=request.user)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-# -----------------------------
-# Admin delete any add-on
-# -----------------------------
-class AddOnServiceDetailAPIView(APIView):
-    permission_classes = [IsAdminUser]
-
-    def delete(self, request, pk):
-        service = get_object_or_404(AddOnService, pk=pk)
-        service.delete()
-        return Response({"detail": "Add-on deleted successfully"}, status=status.HTTP_204_NO_CONTENT)
 
 # -----------------------------
 # Landscaper gets add-ons of a client
@@ -115,44 +54,47 @@ class LandscaperClientAddOnsAPIView(APIView):
         serializer = AddOnServiceSerializer(services, many=True)
         return Response(serializer.data)
 
-class LandscaperUpdateAddOnsAPIView(APIView):
-    """
-    PATCH: Update add-ons for a scheduled service
-    """
-    permission_classes = [IsAuthenticated]
 
-    def patch(self, request, schedule_id):
-        schedule = get_object_or_404(ServiceSchedule, id=schedule_id)
 
-        # Optional: restrict update to assigned landscaper
-        if schedule.landscaper and schedule.landscaper.user != request.user:
-            return Response(
-                {"detail": "You are not allowed to update this schedule."},
-                status=status.HTTP_403_FORBIDDEN
-            )
+# class LandscaperUpdateAddOnsAPIView(APIView):
+#     """
+#     PATCH: Update add-ons for a scheduled service
+#     """
+#     permission_classes = [IsAuthenticated]
 
-        serializer = ServiceScheduleSerializer(
-            schedule, data=request.data, partial=True
-        )
+#     def patch(self, request, schedule_id):
+#         schedule = get_object_or_404(ServiceSchedule, id=schedule_id)
 
-        if serializer.is_valid():
-            serializer.save()
+#         # Optional: restrict update to assigned landscaper
+#         if schedule.landscaper and schedule.landscaper.user != request.user:
+#             return Response(
+#                 {"detail": "You are not allowed to update this schedule."},
+#                 status=status.HTTP_403_FORBIDDEN
+#             )
 
-            # Prepare response: show only add-ons with name, price, total
-            add_ons = [
-                {"id": a.id, "name": a.name, "price": float(a.price)}
-                for a in schedule.add_ons.all()
-            ]
+#         serializer = ServiceScheduleSerializer(
+#             schedule, data=request.data, partial=True
+#         )
 
-            total_add_ons = sum(a["price"] for a in add_ons)
+#         if serializer.is_valid():
+#             serializer.save()
 
-            return Response({
-                "message": "Add-ons updated successfully",
-                "add_ons": add_ons,
-                "total_add_ons": total_add_ons
-            }, status=status.HTTP_200_OK)
+#             # Prepare response: show only add-ons with name, price, total
+#             add_ons = [
+#                 {"id": a.id, "name": a.name, "price": float(a.price)}
+#                 for a in schedule.add_ons.all()
+#             ]
 
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+#             total_add_ons = sum(a["price"] for a in add_ons)
+
+#             return Response({
+#                 "message": "Add-ons updated successfully",
+#                 "add_ons": add_ons,
+#                 "total_add_ons": total_add_ons
+#             }, status=status.HTTP_200_OK)
+
+#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 # -------------------- Client Services --------------------
 
@@ -202,6 +144,8 @@ class ClientServiceOverviewAPIView(APIView):
         serializer = ClientServicePreferenceReadSerializer(preference)
 
         return Response({"service_overview": serializer.data})
+
+
 
 
 # -------------------- Job / Schedule --------------------
@@ -257,14 +201,7 @@ class LandscaperCompleteJobAPIView(APIView):
 
 
 
-# class ClientJobHistoryAPIView(APIView):
-#     permission_classes = [IsClient]  # Only client can view their completed jobs
 
-#     def get(self, request):
-#         client = request.user.clientprofile
-#         jobs = ServiceSchedule.objects.filter(client=client, is_completed=True).order_by("-completed_at")
-#         serializer = ServiceScheduleSerializer(jobs, many=True)
-#         return Response(serializer.data)
 
 
 

@@ -359,13 +359,7 @@ class AllLandscapersListView(generics.ListAPIView):
 
 
 # ---------------- All Clients ----------------
-# class ClientProfileListView(generics.ListAPIView):
-#     serializer_class = ClientProfileSerializer
 
-#     def get_queryset(self):
-#         queryset = ClientProfile.objects.all()  
-        
-#         return queryset
 
 class ClientProfileListView(generics.ListAPIView):
     serializer_class = ClientProfileSerializer
@@ -410,8 +404,8 @@ class ClientProfileListView(generics.ListAPIView):
         return Response(response_data)
 
 
-# views.py
-# profiles/views.py
+
+
 # profiles/views.py
 from rest_framework import generics, permissions
 from django.db.models import Q, F, FloatField
@@ -472,6 +466,8 @@ class LandscaperSearchByKMAPIView(generics.ListAPIView):
                 pass
 
         return queryset.distinct()
+
+
 
 # client search views
 class ClientSearchByKMAPIView(APIView):

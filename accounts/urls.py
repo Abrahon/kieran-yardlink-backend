@@ -51,16 +51,8 @@ urlpatterns = [
     path("admin/users/<int:user_id>/login-activities/", AdminUserLoginActivityView.as_view(), name="admin-user-login-activities"),
  
     # subscriptions/urls.py
-    path(
-        "admin/users/<int:user_id>/subscription-billing-history/",
-        AdminSubscriptionBillingHistoryView.as_view(),
-        name="admin-subscription-billing-history",
-    ),
-    path(
-        "admin/users/<int:user_id>/subscription-invoices/<str:invoice_id>/",
-        AdminSubscriptionInvoiceDetailView.as_view(),
-        name="admin-subscription-invoice-detail",
-    ),
+    path("admin/users/<int:user_id>/subscription-billing-history/",AdminSubscriptionBillingHistoryView.as_view(),name="admin-subscription-billing-history"),
+    path("admin/users/<int:user_id>/subscription-invoices/<str:invoice_id>/",AdminSubscriptionInvoiceDetailView.as_view(),name="admin-subscription-invoice-detail"),
     path("admin/users/<int:user_id>/suspend/", AdminUserSuspendView.as_view(), name="admin-user-suspend"),
 
 ]

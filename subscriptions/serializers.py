@@ -3,7 +3,7 @@ from .models import Plan,Subscription
 from django.utils import timezone
 from datetime import timedelta
 from django.contrib.auth import get_user_model
-
+from subscriptions.models import Subscription
 User = get_user_model()
 
 from decimal import Decimal

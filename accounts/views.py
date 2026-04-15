@@ -37,9 +37,28 @@ from django.db.models import Avg, Q
 from accounts.models import LoginActivity
 
 from django.db.models import Q, Sum, FloatField, Count
+from django.shortcuts import get_object_or_404
+from django.db.models import Sum, FloatField, Value
+from django.db.models.functions import Coalesce
 
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAdminUser
+from rest_framework.response import Response
+from rest_framework import status
+
+from .models import User, AdminAuditLog
+from .serializers import AdminUserDetailSerializer, AdminUserUpdateSerializer
+
+from subscriptions.models import Subscription
+
+
+# ✅ BusinessProfile stays where it is (your landscapers app)
+from landscapers.models import BusinessProfile
+
+# ✅ LandscaperProfilies is in profiles app (as you said)
+from profiles.models import LandscaperProfilies
 from subscriptions.models import Subscription, SubscriptionStatus
-from services.models import ServiceSchedule, PaymentStatus
+from jobs.models import Job
 from .utils import generate_otp, send_otp_email 
 from .serializers import (
     SendOTPSerializer, VerifyOTPSerializer, ResetPasswordSerializer,VerifyOTPForgetSerializer,UserReportSerializer
@@ -216,7 +235,7 @@ from .utils import generate_otp, send_otp_email
 from .security_utils import get_client_ip, parse_device
 from django.contrib.auth.models import update_last_login
 # your existing function
-from .views import get_tokens_for_user  # adjust import if it's in same file remove this
+from .views import get_tokens_for_user  
 
 
 class LoginView(generics.GenericAPIView):
@@ -294,6 +313,7 @@ class LoginView(generics.GenericAPIView):
                 "longitude": float(user.longitude) if getattr(user, "longitude", None) else None,
             }
         }, status=status.HTTP_200_OK)
+
 
 # create admin verify otp
 class AdminVerifyOTPView(APIView):
@@ -416,54 +436,6 @@ class ResendForgotOTPView(generics.GenericAPIView):
 
 
 # verify otpo for email
-
-# class VerifyOTPView(APIView):
-#     permission_classes = [AllowAny]
-
-#     def post(self, request):
-#         email = request.data.get("email")
-#         otp = request.data.get("otp")
-
-#         otp_obj = OTP.objects.filter(email=email, code=otp).first()
-#         if not otp_obj:
-#             return Response(
-#                 {"detail": "Invalid or expired OTP"},
-#                 status=400
-#             )
-
-#         pending_user = request.session.get("pending_user")
-#         if not pending_user or pending_user["email"] != email:
-#             return Response(
-#                 {"detail": "Session expired. Please signup again."},
-#                 status=400
-#             )
-
-#         # ✅ CREATE USER with correct role from session
-#         user = User.objects.create_user(
-#             email=pending_user["email"],
-#             name=pending_user["name"],
-#             password=pending_user["password"],
-#             phone=pending_user.get("phone"),
-#             address=pending_user.get("address"),
-#             role=pending_user["role"]   # <-- fixed
-#         )
-
-#         # cleanup
-#         OTP.objects.filter(email=email).delete()
-#         request.session.flush()
-
-#         # ✅ GENERATE TOKENS
-#         refresh = RefreshToken.for_user(user)
-
-#         return Response({
-#             "access": str(refresh.access_token),
-#             "refresh": str(refresh),
-#             "user": {
-#                 "id": user.id,
-#                 "email": user.email,
-#                 "role": user.role   # now correctly shows "client", "landscaper", etc.
-#             }
-#         }, status=201)
 
 class VerifyOTPView(APIView):
     permission_classes = [AllowAny]
@@ -619,6 +591,9 @@ class ResendForgotOTPView(generics.GenericAPIView):
         )
 
 
+# 
+
+
 # userlist views
 
 from datetime import timedelta
@@ -636,7 +611,7 @@ from rest_framework.pagination import PageNumberPagination
 from accounts.models import User
 from accounts.serializers import UserSerializer
 from subscriptions.models import Subscription, SubscriptionStatus
-from services.models import ServiceSchedule, PaymentStatus
+# from services.models import Job, PaymentStatus
 from landscapers.models import BusinessProfile
 
 
@@ -697,27 +672,27 @@ class UserListView(APIView):
             user=OuterRef("pk")
         ).values("id")[:1]
 
-        revenue_sq = ServiceSchedule.objects.filter(
+        revenue_sq = Job.objects.filter(
             landscaper_id=Subquery(business_profile_sq),
             payment_status=PaymentStatus.PAID
         ).values("landscaper_id").annotate(
             total=Sum("service__price", output_field=FloatField())
         ).values("total")[:1]
 
-        jobs_sq = ServiceSchedule.objects.filter(
+        jobs_sq = Job.objects.filter(
             landscaper_id=Subquery(business_profile_sq)
         ).values("landscaper_id").annotate(
             total=Count("id")
         ).values("total")[:1]
 
-        completed_jobs_sq = ServiceSchedule.objects.filter(
+        completed_jobs_sq = Job.objects.filter(
             landscaper_id=Subquery(business_profile_sq),
             is_completed=True
         ).values("landscaper_id").annotate(
             total=Count("id")
         ).values("total")[:1]
 
-        clients_sq = ServiceSchedule.objects.filter(
+        clients_sq = Job.objects.filter(
             landscaper_id=Subquery(business_profile_sq)
         ).values("landscaper_id").annotate(
             total=Count("client_id", distinct=True)
@@ -788,7 +763,7 @@ class UserListView(APIView):
             date_joined__gte=one_week_ago
         ).count()
 
-        paid_jobs = ServiceSchedule.objects.filter(
+        paid_jobs = Job.objects.filter(
             payment_status=PaymentStatus.PAID
         )
 
@@ -1111,26 +1086,7 @@ class AdminAuditLogView(APIView):
 
 
 # user detaisl
-from django.shortcuts import get_object_or_404
-from django.db.models import Sum, FloatField, Value
-from django.db.models.functions import Coalesce
 
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAdminUser
-from rest_framework.response import Response
-from rest_framework import status
-
-from .models import User, AdminAuditLog
-from .serializers import AdminUserDetailSerializer, AdminUserUpdateSerializer
-
-from subscriptions.models import Subscription
-from services.models import ServiceSchedule, PaymentStatus
-
-# ✅ BusinessProfile stays where it is (your landscapers app)
-from landscapers.models import BusinessProfile
-
-# ✅ LandscaperProfilies is in profiles app (as you said)
-from profiles.models import LandscaperProfilies
 
 
 class AdminUserDetailView(APIView):
@@ -1225,7 +1181,7 @@ class AdminUserDetailView(APIView):
         recent_jobs = []
 
         if landscaper_profile:
-            jobs_qs = ServiceSchedule.objects.filter(landscaper=landscaper_profile)
+            jobs_qs = Job.objects.filter(landscaper=landscaper_profile)
 
             total_jobs = jobs_qs.count()
             completed_jobs = jobs_qs.filter(is_completed=True).count()

@@ -2,18 +2,14 @@ from .models import AddOnService
 from rest_framework import serializers
 from .models import (
     ClientService,
-    ClientServicePreference,
-    ServiceSchedule,
-    ScheduleCompletionImage
+    ClientServicePreference
 )
 from rest_framework import serializers
-from .models import ServiceSchedule, ScheduleCompletionImage, ClientService
 from rest_framework import serializers
-from .models import ServiceSchedule
 from property.models import Property
 
 from rest_framework import serializers
-from services.models import ServiceSchedule, ClientService, ScheduleCompletionImage
+from services.models import  ClientService
 
 
 
@@ -67,10 +63,6 @@ class ClientServicePreferenceReadSerializer(serializers.ModelSerializer):
         return sum([s.price or 0 for s in obj.services.all()])
 
 
-class ScheduleCompletionImageSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ScheduleCompletionImage
-        fields = ["id", "image", "uploaded_at"]
 
 
 
@@ -103,86 +95,6 @@ class AddOnServiceSerializer(serializers.ModelSerializer):
             "email": obj.client.email
         }
 
-
-class ServiceScheduleSerializer(serializers.ModelSerializer):
-    completed_services = CompletedServiceSerializer(many=True, read_only=True)
-    images = serializers.SerializerMethodField()
-    before_images = serializers.SerializerMethodField()
-    after_images = serializers.SerializerMethodField()
-    total_price = serializers.SerializerMethodField()
-    payment_status = serializers.SerializerMethodField()
-
-    add_ons = AddOnServiceSerializer(many=True, read_only=True)
-    add_on_ids = serializers.PrimaryKeyRelatedField(
-        queryset=AddOnService.objects.all(),
-        many=True,
-        write_only=True,
-        required=False
-    )
-
-    class Meta:
-        model = ServiceSchedule
-        fields = [
-            "id",
-            "scheduled_date",
-            "scheduled_time",
-            "is_completed",
-            "completed_at",
-            "completion_note",
-            "completed_services",
-            "total_price",
-            "add_ons",
-            "add_on_ids",
-            "payment_status",
-            "before_images",
-            "after_images",
-            "images"
-        ]
-
-    def get_before_images(self, obj):
-        return [img.image.url for img in obj.images.filter(image_type="before")]
-
-    def get_after_images(self, obj):
-        return [img.image.url for img in obj.images.filter(image_type="after")]
-
-    def get_images(self, obj):
-        # Return all images (both before and after)
-        return [img.image.url for img in obj.images.all()]
-
-    def get_total_price(self, obj):
-        completed_services = obj.completed_services.all()
-        if completed_services.exists():
-            return sum(s.price for s in completed_services)
-        return obj.service.price
-
-    def get_payment_status(self, obj):
-        return obj.get_payment_status_display()
-
-    # def get_total_price(self, obj):
-    #     base_price = obj.service.price if obj.service else 0
-    #     add_on_total = obj.add_ons.aggregate(total=models.Sum("price"))["total"] or 0
-    #     return base_price + add_on_total
-
-    def update(self, instance, validated_data):
-        add_on_ids = validated_data.pop("add_on_ids", None)
-        instance = super().update(instance, validated_data)
-        if add_on_ids is not None:
-            instance.add_ons.set(add_on_ids)
-        return instance
-
-
-        
-# rechedule serializers
-class ScheduleRescheduleSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ServiceSchedule
-        fields = ["scheduled_date", "scheduled_time"]
-
-    def validate(self, attrs):
-        instance = self.instance
-        if instance.is_completed:
-            raise serializers.ValidationError("Completed job cannot be rescheduled")
-        return attrs
 
 
 # services/serializers.py

@@ -25,8 +25,13 @@ from subscriptions.enums import SubscriptionStatus
 # from profiles.models import BusinessProfile
 from geopy.geocoders import Nominatim
 from django.utils import timezone
-# from jobs .models import Job
-# from subscr.models import Plan
+
+from rest_framework import serializers
+from django.db.models import Avg
+from django.utils import timezone
+from landscapers.models import BusinessProfile
+from subscriptions.models import Subscription, SubscriptionStatus
+from jobs.models import Job
 User = get_user_model()
 
 
@@ -82,218 +87,7 @@ class WorkerProfileSerializer(serializers.ModelSerializer):
 
             return obj.image.url
               # return full Cloudinary URL
-        return None
 
-
-
-# class LandscaperProfileSerializer(serializers.ModelSerializer):
-#     user_id = serializers.IntegerField(source="user.id", read_only=True)
-#     email = serializers.EmailField(source="user.email", read_only=True)
-#     plan = serializers.SerializerMethodField()
-
-#     # Model fields for writable
-#     name = serializers.CharField(required=False)
-#     phone = serializers.CharField(required=False)
-#     image = serializers.ImageField(required=False, allow_null=True)
-
-#     # Read-only/derived fields
-#     # Fix latitude & longitude to fallback if null
-#     latitude = serializers.SerializerMethodField()
-
-#     longitude = serializers.SerializerMethodField()
-    
-#     business_name = serializers.SerializerMethodField()
-#     address = serializers.SerializerMethodField()
-
-#     upcoming_jobs = serializers.SerializerMethodField()
-#     completed_jobs = serializers.SerializerMethodField() 
-   
-#     working_hours = serializers.SerializerMethodField()
-#     services = serializers.SerializerMethodField()
-#     already_sent = serializers.SerializerMethodField() 
-#     connection_request_id = serializers.SerializerMethodField()
-#     average_rating = serializers.SerializerMethodField()
-#     total_reviews = serializers.SerializerMethodField()
-#     reviews = serializers.SerializerMethodField()
-
-#     class Meta:
-#         model = LandscaperProfilies
-#         fields = [
-#             "id",
-#             "user_id",
-#             "email",
-#             "plan",
-#             "name",
-#             "phone",
-#             "latitude",
-#             "longitude",
-#             "address",
-#             "image",
-#             "business_name",
-#             "working_hours",
-#             "services",
-#             "upcoming_jobs",
-#             "completed_jobs",
-#             "already_sent",
-#             "connection_request_id",
-#             "average_rating",
-#             "total_reviews",
-#             "reviews",
-#         ]
-
-#     def to_representation(self, instance):
-#         data = super().to_representation(instance)
-#         data["image"] = instance.image.url if instance.image else None
-#         return data
-
-#     def get_plan(self, obj):
-#         """
-#         Plan is derived from ACTIVE subscription (Stripe-controlled)
-#         """
-#         subscription = (
-#             Subscription.objects
-#             .filter(
-#                 user=obj.user,
-#                 is_active=True,
-#                 status=SubscriptionStatus.ACTIVE
-#             )
-#             .select_related("plan")
-#             .first()
-#         )
-
-#         if subscription:
-#             return subscription.plan.name.lower()  # e.g. "basic", "pro"
-
-#         return "free"
-
-
-#     def get_working_hours(self, obj):
-#         try:
-#             # Map your business profile to the landscaper
-#             profile = BusinessProfile.objects.get(user=obj.user)
-#         except BusinessProfile.DoesNotExist:
-#             return []
-
-#         hours = WorkingHours.objects.filter(landscaper=profile).order_by("day")
-#         return WHSerializer(hours, many=True).data
-    
-    
-#     def get_business_profile(self, obj):
-#         try:
-#             return BusinessProfile.objects.get(user=obj.user)
-#         except BusinessProfile.DoesNotExist:
-#             return None
-    
-#     def get_business_name(self, obj):
-#         business = self.get_business_profile(obj)
-#         return business.business_name if business else None
-    
-#         # lat and lng from business profile 
-
-#     def get_latitude(self, obj):
-#         business = getattr(obj.user, "landscaper_profile", None)  # your business model
-#         return float(business.latitude) if business and business.latitude else None
-
-#     def get_longitude(self, obj):
-#         business = getattr(obj.user, "landscaper_profile", None)
-#         return float(business.longitude) if business and business.longitude else None
-
-#     def get_address(self, obj):
-#         business = getattr(obj.user, "landscaper_profile", None)
-#         if business and business.latitude and business.longitude:
-#             # Use geopy or any reverse geocoding method
-#             from geopy.geocoders import Nominatim
-#             geolocator = Nominatim(user_agent="yardlink_app")
-#             try:
-#                 location = geolocator.reverse(f"{business.latitude}, {business.longitude}")
-#                 return location.address if location else None
-#             except:
-#                 return None
-#         return None
-
-#     def get_services(self, obj):
-#         """
-#         Return all services for the landscaper in a safe, DRF-friendly format.
-#         """
-#         services = Service.objects.filter(landscaper=obj.user)
-#         result = []
-
-#         for s in services:
-#             result.append({
-#                 "id": s.id,
-#                 "category": s.category,  # "standard" or "custom"
-#                 "standard_service": s.standard_service or "",
-#                 "description": s.description or "",
-#                 "price": float(s.price) if s.price else 0,
-#                 "time": float(s.time) if s.time else 0,
-#                 "rate_type": s.rate_type or "",
-#                 "latitude": float(s.latitude) if s.latitude else None,
-#                 "longitude": float(s.longitude) if s.longitude else None,
-#                 "is_active": s.is_active,
-#                 "created_at": s.created_at,
-#                 "updated_at": s.updated_at,
-#             })
-
-#         return result
-
-#     def get_upcoming_jobs(self, obj):
-#         jobs = ServiceSchedule.objects.filter(
-#             landscaper=obj,
-#             is_completed=False,
-#             scheduled_date__gte=timezone.now().date()
-#         ).order_by("scheduled_date", "scheduled_time")
-#         return JobSerializer(jobs, many=True).data
-
-#     def get_completed_jobs(self, obj):
-#         jobs = ServiceSchedule.objects.filter(
-#             landscaper=obj,
-#             is_completed=True
-#         ).order_by("-completed_at")
-#         return JobSerializer(jobs, many=True).data
-
-#     # Connection request helpers
-#     def get_connection_request_id(self, obj):
-#         request = self.context.get("request")
-#         if not request or not request.user.is_authenticated:
-#             return None
-#         connection = ConnectionRequest.objects.filter(
-#             Q(sender=request.user, receiver=obj.user) |
-#             Q(sender=obj.user, receiver=request.user),
-#             is_accepted__isnull=True
-#         ).first()
-#         return connection.id if connection else None
-
-
-#     def get_already_sent(self, obj):
-#         request = self.context.get("request")
-#         if not request or not request.user.is_authenticated:
-#             return False
-#         return ConnectionRequest.objects.filter(
-#             Q(sender=request.user, receiver=obj.user) |
-#             Q(sender=obj.user, receiver=request.user)
-#         ).exists()
-
-#     def get_average_rating(self, obj):
-#         avg = LandscaperReview.objects.filter(
-#             landscaper=obj.user
-#         ).aggregate(avg=Avg("rating"))["avg"] or 0
-#         return round(avg, 1)
-
-#     def get_total_reviews(self, obj):
-#         return LandscaperReview.objects.filter(landscaper=obj.user).count()
-
-#     def get_reviews(self, obj):
-#         reviews = LandscaperReview.objects.filter(
-#             landscaper=obj.user
-#         ).select_related("client").order_by("-created_at")
-#         return LandscaperReviewSerializer(reviews, many=True).data
-
-from rest_framework import serializers
-from django.db.models import Avg
-from django.utils import timezone
-from landscapers.models import BusinessProfile
-from subscriptions.models import Subscription, SubscriptionStatus
-from jobs.models import Job
 
 
 
@@ -606,6 +400,7 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
         return None
 
 
+
 # serializers.py for client
 class ClientProfileSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(read_only=True)
@@ -619,17 +414,15 @@ class ClientProfileSerializer(serializers.ModelSerializer):
     address = serializers.SerializerMethodField()
 
 
-    services = serializers.SerializerMethodField()
+    # services = serializers.SerializerMethodField()
     properties = serializers.SerializerMethodField()
-    total_service_price = serializers.SerializerMethodField()
+    # total_service_price = serializers.SerializerMethodField()
     already_sent = serializers.SerializerMethodField()  
     connection_request_id = serializers.SerializerMethodField()
   
-
-
     class Meta:
         model = ClientProfile
-        fields = [
+        fields = [   # ✅ MUST be inside Meta
             "id",
             "user_id",
             "email",
@@ -639,8 +432,6 @@ class ClientProfileSerializer(serializers.ModelSerializer):
             "longitude",
             "address",
             "image",
-            "services", 
-            "total_service_price",
             "properties",
             "already_sent",
             "connection_request_id",
@@ -652,32 +443,32 @@ class ClientProfileSerializer(serializers.ModelSerializer):
         return getattr(obj.user, "address", None)
 
 
-    def get_services(self, obj):
-        """
-        Return all standard services to the client.
-        """
-        services_qs = ClientService.objects.filter(is_standard=True) 
+    # def get_services(self, obj):
+    #     """
+    #     Return all standard services to the client.
+    #     """
+    #     services_qs = obj.services.all()  
 
-        return [
-            {
-                "id": s.id,
-                "name": s.name,
-                "description": s.description,
-                "category": s.category,
-                "price": str(s.price) if s.price else None,
-                "square_feet": float(s.square_feet) if s.square_feet else None,
-                "is_standard": s.is_standard,
-                "image": s.image.url if s.image else None,
-            }
-            for s in services_qs
-        ]
+    #     return [
+    #         {
+    #             "id": s.id,
+    #             "name": s.name,
+    #             "description": s.description,
+    #             "category": s.category,
+    #             "price": str(s.price) if s.price else None,
+    #             "square_feet": float(s.square_feet) if s.square_feet else None,
+    #             "is_standard": s.is_standard,
+    #             "image": s.image.url if s.image else None,
+    #         }
+    #         for s in services_qs
+    #     ]
 
 
 
     #  Add this method to calculate total service price
-    def get_total_service_price(self, obj):
-        services_qs = ClientService.objects.filter(is_standard=True)
-        return sum(float(service.price or 0) for service in services_qs)
+    # def get_total_service_price(self, obj):
+    #     services_qs = ClientService.objects.filter(is_standard=True)
+    #     return sum(float(service.price or 0) for service in services_qs)
 
 
     def get_properties(self, obj):

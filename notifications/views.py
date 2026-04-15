@@ -25,6 +25,8 @@ from rest_framework import status
 from notifications.models import Notification, NotificationSettings
 from notifications.serializers import NotificationSerializer, NotificationSettingsSerializer
 from firebase_admin import messaging  # If you use FCM
+from rest_framework.decorators import api_view, permission_classes
+from .models import Device
 
 class NotificationListView(APIView):
     permission_classes = [IsAuthenticated]
@@ -150,3 +152,27 @@ class RecentCompletedNotificationsAPIView(APIView):
             "count": notifications.count(),
             "notifications": serializer.data
         })
+
+# .....
+
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def save_fcm_token(request):
+    token = request.data.get("token")
+
+    if not token:
+        return Response({"error": "Token required"}, status=400)
+
+    # Create or update device
+    Device.objects.update_or_create(
+        token=token,
+        defaults={
+            "user": request.user,
+            "is_active": True
+        }
+    )
+
+    return Response({"message": "Token saved"})

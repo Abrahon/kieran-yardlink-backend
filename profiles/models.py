@@ -82,6 +82,8 @@ class ClientProfile(models.Model):
         return self.name
 
 
+
+
 from django.db import models
 from django.conf import settings
 from landscapers.models import BusinessProfile
