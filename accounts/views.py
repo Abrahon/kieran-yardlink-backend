@@ -52,6 +52,7 @@ from .serializers import AdminUserDetailSerializer, AdminUserUpdateSerializer
 from subscriptions.models import Subscription
 
 
+
 # ✅ BusinessProfile stays where it is (your landscapers app)
 from landscapers.models import BusinessProfile
 
@@ -228,6 +229,7 @@ def get_tokens_for_user(user):
 #                 "longitude": float(user.longitude) if getattr(user, "longitude", None) else None, 
 #             }
 #         }, status=status.HTTP_200_OK)
+
 
 from .serializers import LoginSerializer
 from .models import User, OTP, LoginActivity
@@ -596,9 +598,247 @@ class ResendForgotOTPView(generics.GenericAPIView):
 
 # userlist views
 
+# from datetime import timedelta
+# from django.db.models import (
+#     Q, Count, Sum, FloatField, Value, OuterRef, Subquery, Avg
+# )
+# from django.db.models.functions import Coalesce
+# from django.utils import timezone
+
+# from rest_framework.views import APIView
+# from rest_framework.permissions import IsAdminUser
+# from rest_framework.response import Response
+# from rest_framework.pagination import PageNumberPagination
+
+# from accounts.models import User
+# from accounts.serializers import UserSerializer
+# from subscriptions.models import Subscription, SubscriptionStatus
+# # from services.models import Job, PaymentStatus
+# from landscapers.models import BusinessProfile
+
+
+# class UserListView(APIView):
+#     permission_classes = [IsAdminUser]
+
+#     def get(self, request):
+
+#         role = request.query_params.get("role")
+#         plan = request.query_params.get("plan")
+#         status_param = request.query_params.get("status")
+#         location = request.query_params.get("location")
+#         search_query = request.query_params.get("search", "").strip()
+#         sort_by = request.query_params.get("sort")
+
+#         users = User.objects.all()
+
+#         # --------------------------
+#         # FILTERS
+#         # --------------------------
+#         if role:
+#             users = users.filter(role__iexact=role)
+
+#         if status_param:
+#             if status_param.lower() == "paused":
+#                 users = users.filter(is_active=False)
+#             elif status_param.lower() == "active":
+#                 users = users.filter(is_active=True)
+
+#         if location:
+#             users = users.filter(address__icontains=location)
+
+#         if plan:
+#             users = users.filter(
+#                 subscription__is_active=True,
+#                 subscription__plan__name__iexact=plan
+#             )
+
+#         # --------------------------
+#         # GLOBAL SEARCH
+#         # --------------------------
+#         if search_query:
+#             users = users.filter(
+#                 Q(name__icontains=search_query) |
+#                 Q(email__icontains=search_query) |
+#                 Q(role__icontains=search_query) |
+#                 Q(address__icontains=search_query) |
+#                 Q(subscription__plan__name__icontains=search_query) |
+#                 Q(subscription__status__icontains=search_query)
+#             )
+
+#         users = users.distinct()
+
+#         # ==========================================================
+#         # Subqueries using BusinessProfile
+#         # ==========================================================
+#         business_profile_sq = BusinessProfile.objects.filter(
+#             user=OuterRef("pk")
+#         ).values("id")[:1]
+
+#         revenue_sq = Job.objects.filter(
+#             landscaper_id=Subquery(business_profile_sq),
+#             # payment_status=PaymentStatus.PAID
+#             payment_status=Job.PaymentStatus.PAID
+#         ).values("landscaper_id").annotate(
+#             total=Sum("service__price", output_field=FloatField())
+#         ).values("total")[:1]
+
+#         jobs_sq = Job.objects.filter(
+#             landscaper_id=Subquery(business_profile_sq)
+#         ).values("landscaper_id").annotate(
+#             total=Count("id")
+#         ).values("total")[:1]
+
+#         completed_jobs_sq = Job.objects.filter(
+#             landscaper_id=Subquery(business_profile_sq),
+#             is_completed=True
+#         ).values("landscaper_id").annotate(
+#             total=Count("id")
+#         ).values("total")[:1]
+
+#         clients_sq = Job.objects.filter(
+#             landscaper_id=Subquery(business_profile_sq)
+#         ).values("landscaper_id").annotate(
+#             total=Count("client_id", distinct=True)
+#         ).values("total")[:1]
+
+#         users = users.annotate(
+#             total_revenue=Coalesce(Subquery(revenue_sq, output_field=FloatField()), Value(0.0)),
+#             total_jobs=Coalesce(Subquery(jobs_sq), Value(0)),
+#             completed_jobs=Coalesce(Subquery(completed_jobs_sq), Value(0)),
+#             total_clients=Coalesce(Subquery(clients_sq), Value(0)),
+#             # average_rating=Coalesce(Avg("received_reviews__rating"), Value(0.0), output_field=FloatField()),
+#         # average rating per landscaper
+
+#             average_rating=Coalesce(
+#                 Avg("received_reviews__rating"),
+#                 Value(0.0),
+#                 output_field=FloatField()
+#             ),
+#             review_count=Count("received_reviews", distinct=True)
+#         )
+
+#         # --------------------------
+#         # SORTING
+#         # --------------------------
+#         if sort_by == "revenue":
+#             users = users.order_by("-total_revenue", "-date_joined")
+#         elif sort_by == "clients":
+#             users = users.order_by("-total_clients", "-date_joined")
+#         elif sort_by == "jobs":
+#             users = users.order_by("-total_jobs", "-date_joined")
+#         elif sort_by == "rating":
+#             users = users.order_by("-average_rating", "-date_joined")
+#         elif sort_by == "newest":
+#             users = users.order_by("-date_joined")
+#         else:
+#             users = users.order_by("-date_joined")
+
+#         # --------------------------
+#         # SUMMARY
+#         # --------------------------
+#         total_users = User.objects.count()
+
+#         total_clients = User.objects.filter(
+#             role="client"
+#         ).count()
+
+#         total_landscapers = User.objects.filter(
+#             role="landscaper"
+#         ).count()
+
+#         paused_users = User.objects.filter(
+#             is_active=False
+#         ).count()
+
+#         active_users = User.objects.filter(
+#             is_active=True
+#         ).count()
+
+#         last_24h = timezone.now() - timedelta(hours=24)
+
+#         daily_active_users = User.objects.filter(
+#             last_login__gte=last_24h
+#         ).count()
+
+#         one_week_ago = timezone.now() - timedelta(days=7)
+
+#         weekly_new_signups = User.objects.filter(
+#             date_joined__gte=one_week_ago
+#         ).count()
+
+#         paid_jobs = Job.objects.filter(
+#             payment_status=PaymentStatus.PAID
+#         )
+
+#         total_job_amount = paid_jobs.aggregate(
+#             total=Sum("service__price", output_field=FloatField())
+#         )["total"] or 0.0
+
+#         platform_fee_collected = round(total_job_amount * 0.02, 2)
+
+#         active_subscriptions = Subscription.objects.filter(
+#             status=SubscriptionStatus.ACTIVE
+#         ).count()
+
+#         cancelled_subscriptions = Subscription.objects.filter(
+#             status=SubscriptionStatus.CANCELLED
+#         ).count()
+
+#         expired_subscriptions = Subscription.objects.filter(
+#             status=SubscriptionStatus.EXPIRED
+#         ).count()
+
+#         total_subscription_pool = (
+#             active_subscriptions +
+#             cancelled_subscriptions +
+#             expired_subscriptions
+#         )
+
+#         if total_subscription_pool > 0:
+#             churn_rate = round(
+#                 ((cancelled_subscriptions + expired_subscriptions) / total_subscription_pool) * 100,
+#                 2
+#             )
+#         else:
+#             churn_rate = 0.0
+
+#         overall_average_rating = users.aggregate(
+#             avg_rating=Coalesce(Avg("received_reviews__rating"), Value(0.0), output_field=FloatField())
+#         )["avg_rating"]
+
+#         # --------------------------
+#         # PAGINATION
+#         # --------------------------
+#         paginator = PageNumberPagination()
+#         paginator.page_size = 20
+
+#         page = paginator.paginate_queryset(users, request)
+
+#         serializer = AdminUserDetailSerializer(page, many=True, context={"request": request})
+
+#         return paginator.get_paginated_response({
+#             "status": "success",
+#             "summary": {
+#                 "total_users": total_users,
+#                 "total_clients": total_clients,
+#                 "total_landscapers": total_landscapers,
+#                 "active_users": active_users,
+#                 "paused_users": paused_users,
+#                 "daily_active_users": daily_active_users,
+#                 "weekly_new_signups": weekly_new_signups,
+#                 "active_subscriptions": active_subscriptions,
+#                 "cancelled_subscriptions": cancelled_subscriptions,
+#                 "expired_subscriptions": expired_subscriptions,
+#                 "churn_rate": churn_rate,
+#                 "platform_fee_collected": platform_fee_collected,
+#                 "average_rating": round(overall_average_rating, 2) if overall_average_rating else 0.0
+#             },
+#             "data": serializer.data
+#         })
+
 from datetime import timedelta
 from django.db.models import (
-    Q, Count, Sum, FloatField, Value, OuterRef, Subquery, Avg
+    Q, Count, Sum, FloatField, Value, OuterRef, Subquery, Avg, IntegerField
 )
 from django.db.models.functions import Coalesce
 from django.utils import timezone
@@ -609,10 +849,9 @@ from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 
 from accounts.models import User
-from accounts.serializers import UserSerializer
 from subscriptions.models import Subscription, SubscriptionStatus
-# from services.models import Job, PaymentStatus
 from landscapers.models import BusinessProfile
+from jobs.models import Job
 
 
 class UserListView(APIView):
@@ -651,60 +890,77 @@ class UserListView(APIView):
             )
 
         # --------------------------
-        # GLOBAL SEARCH
+        # SEARCH
         # --------------------------
-        if search_query:
-            users = users.filter(
-                Q(name__icontains=search_query) |
-                Q(email__icontains=search_query) |
-                Q(role__icontains=search_query) |
-                Q(address__icontains=search_query) |
-                Q(subscription__plan__name__icontains=search_query) |
-                Q(subscription__status__icontains=search_query)
-            )
+        # if search_query:
+        #     users = users.filter(
+        #         Q(name__icontains=search_query) |
+        #         Q(email__icontains=search_query) |
+        #         Q(role__icontains=search_query) |
+        #         Q(address__icontains=search_query) |
+        #         Q(subscription__plan__name__icontains=search_query) |
+        #         Q(subscription__status__icontains=search_query)
+        #     )
+            if search_query:
+                users = users.filter(
+                    Q(name__icontains=search_query) |
+                    Q(email__icontains=search_query) |   # partial email search
+                    Q(email__iexact=search_query) |      # exact email match (faster hit)
+                    Q(role__icontains=search_query) |
+                    Q(address__icontains=search_query) |
+                    Q(subscription__plan__name__icontains=search_query)
+                )
 
         users = users.distinct()
 
         # ==========================================================
-        # Subqueries using BusinessProfile
+        # SUBQUERIES
         # ==========================================================
+
         business_profile_sq = BusinessProfile.objects.filter(
             user=OuterRef("pk")
         ).values("id")[:1]
 
+        # ✅ Revenue (USE total_price)
         revenue_sq = Job.objects.filter(
             landscaper_id=Subquery(business_profile_sq),
-            payment_status=PaymentStatus.PAID
+            payment_status=Job.PaymentStatus.PAID
         ).values("landscaper_id").annotate(
-            total=Sum("service__price", output_field=FloatField())
+            total=Sum("total_price", output_field=FloatField())
         ).values("total")[:1]
 
+        # ✅ Total Jobs
         jobs_sq = Job.objects.filter(
             landscaper_id=Subquery(business_profile_sq)
         ).values("landscaper_id").annotate(
             total=Count("id")
         ).values("total")[:1]
 
+        # ✅ Completed Jobs
         completed_jobs_sq = Job.objects.filter(
             landscaper_id=Subquery(business_profile_sq),
-            is_completed=True
+            status=Job.Status.COMPLETED
         ).values("landscaper_id").annotate(
             total=Count("id")
         ).values("total")[:1]
 
+        # ✅ Total Clients (handles both client + external_client)
         clients_sq = Job.objects.filter(
             landscaper_id=Subquery(business_profile_sq)
         ).values("landscaper_id").annotate(
-            total=Count("client_id", distinct=True)
+            total=Count("client_id", distinct=True) +
+                  Count("external_client_id", distinct=True)
         ).values("total")[:1]
+
+        # ==========================================================
+        # ANNOTATIONS
+        # ==========================================================
 
         users = users.annotate(
             total_revenue=Coalesce(Subquery(revenue_sq, output_field=FloatField()), Value(0.0)),
-            total_jobs=Coalesce(Subquery(jobs_sq), Value(0)),
-            completed_jobs=Coalesce(Subquery(completed_jobs_sq), Value(0)),
-            total_clients=Coalesce(Subquery(clients_sq), Value(0)),
-            # average_rating=Coalesce(Avg("received_reviews__rating"), Value(0.0), output_field=FloatField()),
-        # average rating per landscaper
+            total_jobs=Coalesce(Subquery(jobs_sq, output_field=IntegerField()), Value(0)),
+            completed_jobs=Coalesce(Subquery(completed_jobs_sq, output_field=IntegerField()), Value(0)),
+            total_clients=Coalesce(Subquery(clients_sq, output_field=IntegerField()), Value(0)),
 
             average_rating=Coalesce(
                 Avg("received_reviews__rating"),
@@ -718,89 +974,59 @@ class UserListView(APIView):
         # SORTING
         # --------------------------
         if sort_by == "revenue":
-            users = users.order_by("-total_revenue", "-date_joined")
+            users = users.order_by("-total_revenue")
         elif sort_by == "clients":
-            users = users.order_by("-total_clients", "-date_joined")
+            users = users.order_by("-total_clients")
         elif sort_by == "jobs":
-            users = users.order_by("-total_jobs", "-date_joined")
+            users = users.order_by("-total_jobs")
         elif sort_by == "rating":
-            users = users.order_by("-average_rating", "-date_joined")
-        elif sort_by == "newest":
-            users = users.order_by("-date_joined")
+            users = users.order_by("-average_rating")
         else:
             users = users.order_by("-date_joined")
 
-        # --------------------------
-        # SUMMARY
-        # --------------------------
+        # ==========================================================
+        # PLATFORM METRICS
+        # ==========================================================
+
         total_users = User.objects.count()
-
-        total_clients = User.objects.filter(
-            role="client"
-        ).count()
-
-        total_landscapers = User.objects.filter(
-            role="landscaper"
-        ).count()
-
-        paused_users = User.objects.filter(
-            is_active=False
-        ).count()
-
-        active_users = User.objects.filter(
-            is_active=True
-        ).count()
+        total_clients = User.objects.filter(role="client").count()
+        total_landscapers = User.objects.filter(role="landscaper").count()
+        paused_users = User.objects.filter(is_active=False).count()
+        active_users = User.objects.filter(is_active=True).count()
 
         last_24h = timezone.now() - timedelta(hours=24)
-
-        daily_active_users = User.objects.filter(
-            last_login__gte=last_24h
-        ).count()
+        daily_active_users = User.objects.filter(last_login__gte=last_24h).count()
 
         one_week_ago = timezone.now() - timedelta(days=7)
+        weekly_new_signups = User.objects.filter(date_joined__gte=one_week_ago).count()
 
-        weekly_new_signups = User.objects.filter(
-            date_joined__gte=one_week_ago
-        ).count()
-
-        paid_jobs = Job.objects.filter(
-            payment_status=PaymentStatus.PAID
-        )
-
-        total_job_amount = paid_jobs.aggregate(
-            total=Sum("service__price", output_field=FloatField())
+        # ✅ FIXED: Platform Revenue
+        total_job_amount = Job.objects.filter(
+            payment_status=Job.PaymentStatus.PAID
+        ).aggregate(
+            total=Sum("total_price", output_field=FloatField())
         )["total"] or 0.0
 
         platform_fee_collected = round(total_job_amount * 0.02, 2)
 
-        active_subscriptions = Subscription.objects.filter(
-            status=SubscriptionStatus.ACTIVE
-        ).count()
+        # Subscriptions
+        active_subscriptions = Subscription.objects.filter(status=SubscriptionStatus.ACTIVE).count()
+        cancelled_subscriptions = Subscription.objects.filter(status=SubscriptionStatus.CANCELLED).count()
+        expired_subscriptions = Subscription.objects.filter(status=SubscriptionStatus.EXPIRED).count()
 
-        cancelled_subscriptions = Subscription.objects.filter(
-            status=SubscriptionStatus.CANCELLED
-        ).count()
+        total_subscription_pool = active_subscriptions + cancelled_subscriptions + expired_subscriptions
 
-        expired_subscriptions = Subscription.objects.filter(
-            status=SubscriptionStatus.EXPIRED
-        ).count()
-
-        total_subscription_pool = (
-            active_subscriptions +
-            cancelled_subscriptions +
-            expired_subscriptions
-        )
-
-        if total_subscription_pool > 0:
-            churn_rate = round(
-                ((cancelled_subscriptions + expired_subscriptions) / total_subscription_pool) * 100,
-                2
-            )
-        else:
-            churn_rate = 0.0
+        churn_rate = round(
+            ((cancelled_subscriptions + expired_subscriptions) / total_subscription_pool) * 100,
+            2
+        ) if total_subscription_pool > 0 else 0.0
 
         overall_average_rating = users.aggregate(
-            avg_rating=Coalesce(Avg("received_reviews__rating"), Value(0.0), output_field=FloatField())
+            avg_rating=Coalesce(
+                Avg("received_reviews__rating"),
+                Value(0.0),
+                output_field=FloatField()
+            )
         )["avg_rating"]
 
         # --------------------------
@@ -832,7 +1058,6 @@ class UserListView(APIView):
             },
             "data": serializer.data
         })
-
 
 
 

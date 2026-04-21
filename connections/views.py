@@ -50,6 +50,7 @@ from connections.models import ConnectionRequest
 User = get_user_model()
 
 
+
 class SendConnectionRequestAPIView(APIView):
     permission_classes = [IsAuthenticated]
 

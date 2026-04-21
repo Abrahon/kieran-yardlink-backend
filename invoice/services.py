@@ -140,7 +140,7 @@ def create_invoice_from_completed_job(job, created_by=None):
             service_fee_amount=Decimal("0.00"),
             net_amount=Decimal("0.00"),
             total=Decimal("0.00"),
-            sent_to_email=job.customer_email if hasattr(job, "customer_email") else None,
+            sent_to_email=job.client.user.email if job.client else None,
             created_by=created_by,
         )
 

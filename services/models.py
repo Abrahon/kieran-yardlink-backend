@@ -52,31 +52,26 @@ class ClientServicePreference(models.Model):
 
 
 
-# TODO 
-# services/models.py
-from django.conf import settings
+# # TODO 
+# # services/models.py
+# from django.conf import settings
 
-class AddOnService(models.Model):
-    client = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="add_on_services"
-    )
-    name = models.CharField(max_length=150)
-    price = models.DecimalField(max_digits=10, decimal_places=2)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+# class AddOnService(models.Model):
+#     client = models.ForeignKey(
+#         settings.AUTH_USER_MODEL,
+#         on_delete=models.CASCADE,
+#         related_name="add_on_services"
+#     )
+#     name = models.CharField(max_length=150)
+#     price = models.DecimalField(max_digits=10, decimal_places=2)
+#     created_at = models.DateTimeField(auto_now_add=True)
+#     updated_at = models.DateTimeField(auto_now=True)
 
-    class Meta:
-        unique_together = ('client', 'name')  # Same client can't create duplicate names
+#     class Meta:
+#         unique_together = ('client', 'name')  # Same client can't create duplicate names
 
-    def __str__(self):
-        return f"{self.name} - ${self.price}"
+#     def __str__(self):
+#         return f"{self.name} - ${self.price}"
 
-
-
-
-
-# ---------------- Client Job / Schedule ----------------
 
 

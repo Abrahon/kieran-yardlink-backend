@@ -11,8 +11,7 @@ from .views import (
     LandscaperCompleteJobAPIView,
     RescheduleServiceAPIView,
     ServiceOverviewAPIView,
-    CompletedJobsAPIView,
-    ServiceScheduleDetailAPIView,
+    # CompletedJobsAPIView,
     RecentActivityAPIView,
     # RecentJobCompletionAPIView
 )
@@ -54,23 +53,9 @@ urlpatterns = [
 
     # ================= LANDSCAPER =================
 
-    # Landscaper marks a scheduled job as completed + uploads images
-    # path(
-    #     "landscaper/schedule/<int:schedule_id>/complete/",
-    #     LandscaperCompleteJobAPIView.as_view(),
-    #     name="landscaper-complete-job"
-    # ),
-
-    # List all completed jobs for logged-in landscaper
-    # path("completed-job/list/", CompletedJobsAPIView.as_view(), name="completed-jobs"),
 
     path("service-overview/", ServiceOverviewAPIView.as_view()),
-    path(
-        "schedule/<int:schedule_id>/",
-        ServiceScheduleDetailAPIView.as_view(),
-        name="schedule-detail"
 
-    ),
     path("activity/recent/", RecentActivityAPIView.as_view(), name="recent-activity"),
     # path("add-ons/", AddOnServiceAPIView.as_view(), name="addon-services-list-create"),
     # path("add-ons/<int:service_id>/", AddOnServiceDetailAPIView.as_view(), name="addon-services-delete"),

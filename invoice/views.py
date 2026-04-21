@@ -43,6 +43,7 @@ class ClientInvoiceDetailView(generics.RetrieveAPIView):
 
 
 from rest_framework.permissions import IsAuthenticated
+
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def create_job_invoice(request, job_id):
@@ -110,16 +111,13 @@ def regenerate_invoice_checkout(request, invoice_id):
 
 
 
-
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def send_job_invoice(request, invoice_id):
+
     landscaper = getattr(request.user, "landscaper_profile", None)
     if not landscaper:
-        return Response(
-            {"error": "Landscaper profile not found."},
-            status=status.HTTP_403_FORBIDDEN
-        )
+        return Response({"error": "Landscaper profile not found."}, status=403)
 
     try:
         invoice = Invoice.objects.get(
@@ -127,35 +125,52 @@ def send_job_invoice(request, invoice_id):
             job__landscaper=landscaper
         )
     except Invoice.DoesNotExist:
-        return Response(
-            {"error": "Invoice not found."},
-            status=status.HTTP_404_NOT_FOUND
-        )
+        return Response({"error": "Invoice not found."}, status=404)
 
+    # 🚨 DO NOT reuse old Stripe session
+    import stripe
+    from django.conf import settings
+    stripe.api_key = settings.STRIPE_SECRET_KEY
+
+    # ✅ expire old session (optional but recommended)
+    if invoice.stripe_session_id:
+        try:
+            stripe.checkout.Session.expire(invoice.stripe_session_id)
+        except Exception:
+            pass
+
+    # ✅ CREATE NEW SESSION EVERY TIME
+    try:
+        session = create_invoice_checkout_session(invoice)
+    except Exception as e:
+        return Response({"error": str(e)}, status=400)
+
+    # ✅ SAVE NEW SESSION
+    invoice.stripe_session_id = session.id
+    invoice.stripe_checkout_url = session.url
+    invoice.status = Invoice.Status.SENT
+    invoice.save(update_fields=[
+        "stripe_session_id",
+        "stripe_checkout_url",
+        "status",
+        "updated_at"
+    ])
+
+    # ✅ SEND EMAIL WITH NEW URL
     frontend_invoice_url = request.data.get("frontend_invoice_url")
 
     try:
-        get_template("emails/invoice_email.txt")
-        get_template("emails/invoice_email.html")
         send_invoice_email(invoice, frontend_invoice_url=frontend_invoice_url)
     except Exception as e:
-        return Response(
-            {"error": f"Email send failed: {str(e)}"},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-    invoice.status = Invoice.Status.SENT
-    invoice.save(update_fields=["status", "updated_at"])
+        return Response({"error": f"Email send failed: {str(e)}"}, status=400)
 
     return Response({
         "message": "Invoice sent successfully.",
         "invoice_id": invoice.id,
         "invoice_number": invoice.invoice_number,
         "sent_to": invoice.sent_to_email,
-        "stripe_checkout_url": invoice.stripe_checkout_url,
-    }, status=status.HTTP_200_OK)
-
-
+        "stripe_checkout_url": session.url,  # ✅ NEW URL
+    }, status=200)
 
 
 @api_view(["POST"])

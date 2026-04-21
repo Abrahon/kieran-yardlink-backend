@@ -1,4 +1,4 @@
-from .models import AddOnService
+
 from rest_framework import serializers
 from .models import (
     ClientService,
@@ -74,44 +74,6 @@ class CompletedServiceSerializer(serializers.ModelSerializer):
 
 
 
-from rest_framework import serializers
-from .models import AddOnService
-from django.contrib.auth import get_user_model
-
-User = get_user_model()
-
-class AddOnServiceSerializer(serializers.ModelSerializer):
-    client = serializers.SerializerMethodField()  # show client info
-
-    class Meta:
-        model = AddOnService
-        fields = ["id", "name", "price", "client", "created_at", "updated_at"]
-
-    def get_client(self, obj):
-        # You can return id only, or a dict with id & name/email
-        return {
-            "id": obj.client.id,
-            "name": obj.client.get_full_name() or obj.client.username,
-            "email": obj.client.email
-        }
-
-
-
-# services/serializers.py
-
-
-class AddOnServiceSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = AddOnService
-        fields = ["id", "name", "price", "created_at", "updated_at"]
-        read_only_fields = ["id", "created_at", "updated_at"]
-
-# service mini serializers
-class ServiceMiniSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ClientService
-        fields = ["id", "name", "price", "category"]
-
 
 # service overview
 class ServiceOverviewSerializer(serializers.Serializer):
@@ -121,7 +83,7 @@ class ServiceOverviewSerializer(serializers.Serializer):
     last_service_date = serializers.DateField(allow_null=True)
     next_service_date = serializers.DateField(allow_null=True)
     next_payment_date = serializers.DateField(allow_null=True)
-    services = ServiceMiniSerializer(many=True)
+    # services = ServiceMiniSerializer(many=True)
     total_price = serializers.SerializerMethodField()
     property_active = serializers.SerializerMethodField()
 

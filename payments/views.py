@@ -69,6 +69,8 @@ from invoice.models import Invoice
 from payments.serializers import PaymentHistorySerializer
 from invoice.models import Invoice
 from jobs.models import Job
+from quickbooks.models import QuickBooksConnection
+# QuickBooksConnection
 import stripe
 from django.conf import settings
 from django.http import HttpResponse
@@ -134,44 +136,97 @@ def payment_success(request):
 
     
 
+# @api_view(["POST"])
+# @permission_classes([IsAuthenticated])
+# def create_invoice_checkout_session(request):
+#     invoice_id = request.data.get("invoice_id")
+#     if not invoice_id:
+#         return Response({"error": "invoice_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+#     client = getattr(request.user, "clientprofile", None)
+#     if not client:
+#         return Response({"error": "Client profile not found"}, status=status.HTTP_403_FORBIDDEN)
+
+#     try:
+#         invoice = Invoice.objects.select_related("job", "job__client", "job__landscaper").get(
+#             id=invoice_id,
+#             job__client=client
+#         )
+#     except Invoice.DoesNotExist:
+#         return Response({"error": "Invoice not found"}, status=status.HTTP_404_NOT_FOUND)
+
+#     if invoice.status == Invoice.Status.PAID:
+#         return Response({"message": "Invoice already paid"}, status=status.HTTP_200_OK)
+
+#     try:
+#         session = create_invoice_checkout_session(invoice)
+#     except Exception as e:
+#         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+#     invoice.status = Invoice.Status.PENDING
+#     invoice.stripe_session_id = session.id
+#     invoice.stripe_checkout_url = session.url
+#     invoice.save(update_fields=["status", "stripe_session_id", "stripe_checkout_url", "updated_at"])
+
+#     return Response({
+#         "invoice_id": invoice.id,
+#         "invoice_number": invoice.invoice_number,
+#         "checkout_url": session.url,
+#     }, status=status.HTTP_200_OK)
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def create_invoice_checkout_session(request):
     invoice_id = request.data.get("invoice_id")
+
     if not invoice_id:
-        return Response({"error": "invoice_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"error": "invoice_id is required"}, status=400)
 
     client = getattr(request.user, "clientprofile", None)
     if not client:
-        return Response({"error": "Client profile not found"}, status=status.HTTP_403_FORBIDDEN)
+        return Response({"error": "Client profile not found"}, status=403)
 
     try:
-        invoice = Invoice.objects.select_related("job", "job__client", "job__landscaper").get(
-            id=invoice_id,
-            job__client=client
-        )
+        invoice = Invoice.objects.select_related(
+            "job", "job__client", "job__landscaper"
+        ).get(id=invoice_id, job__client=client)
     except Invoice.DoesNotExist:
-        return Response({"error": "Invoice not found"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"error": "Invoice not found"}, status=404)
 
+    # ✅ already paid → block
     if invoice.status == Invoice.Status.PAID:
-        return Response({"message": "Invoice already paid"}, status=status.HTTP_200_OK)
+        return Response({"message": "Invoice already paid"}, status=200)
 
+    # 🔥 IMPORTANT: expire old session
+    if invoice.stripe_session_id:
+        try:
+            stripe.checkout.Session.expire(invoice.stripe_session_id)
+        except Exception:
+            pass
+
+    # ✅ create NEW session every time
     try:
-        session = create_invoice_checkout_session(invoice)
+        session = create_stripe_checkout_session(invoice)
     except Exception as e:
-        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response({"error": str(e)}, status=500)
 
+    # ✅ update invoice
     invoice.status = Invoice.Status.PENDING
     invoice.stripe_session_id = session.id
     invoice.stripe_checkout_url = session.url
-    invoice.save(update_fields=["status", "stripe_session_id", "stripe_checkout_url", "updated_at"])
+    invoice.save(update_fields=[
+        "status",
+        "stripe_session_id",
+        "stripe_checkout_url",
+        "updated_at"
+    ])
 
     return Response({
         "invoice_id": invoice.id,
         "invoice_number": invoice.invoice_number,
         "checkout_url": session.url,
-    }, status=status.HTTP_200_OK)
-    
+    }, status=200)
 
 
 # Success / Cancel Endpoints
@@ -275,7 +330,7 @@ class ConfirmCashPaymentAPIView(APIView):
 def payment_webhook(request):
     payload = request.body
     sig_header = request.META.get("HTTP_STRIPE_SIGNATURE")
-    endpoint_secret = settings.STRIPE_PAYMENT_WEBHOOK_SECRET
+    endpoint_secret = settings.STRIPE_WEBHOOK_SECRET
 
     if not sig_header:
         return HttpResponse(status=400)

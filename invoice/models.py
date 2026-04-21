@@ -44,7 +44,7 @@ class Invoice(models.Model):
 
     notes = models.TextField(blank=True, null=True)
 
-    sent_to_email = models.EmailField(blank=True, null=True)
+    sent_to_email = models.EmailField()
 
     stripe_checkout_url = models.URLField(max_length=1000, blank=True, null=True)
     stripe_session_id = models.CharField(max_length=255, blank=True, null=True)

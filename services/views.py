@@ -20,6 +20,9 @@ from accounts.models import User
 from payments.serializers import PaymentHistorySerializer
 from rest_framework import generics, status
 from .models import ClientService, ClientServicePreference
+from jobs.models import Job
+from bookings.models import BookingRequest
+
 from .serializers import (
     ServiceSerializer,
     ClientServicePreferenceWriteSerializer,
@@ -39,61 +42,49 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework import status
 from django.shortcuts import get_object_or_404
-from .models import AddOnService
-from .serializers import AddOnServiceSerializer
 
 
-# -----------------------------
-# Landscaper gets add-ons of a client
-# -----------------------------
-class LandscaperClientAddOnsAPIView(APIView):
+
+
+
+class LandscaperUpdateAddOnsAPIView(APIView):
+    """
+    PATCH: Update add-ons for a scheduled service
+    """
     permission_classes = [IsAuthenticated]
 
-    def get(self, request, client_id):
-        services = AddOnService.objects.filter(client_id=client_id).order_by("-created_at")
-        serializer = AddOnServiceSerializer(services, many=True)
-        return Response(serializer.data)
+    def patch(self, request, schedule_id):
+        schedule = get_object_or_404(ServiceSchedule, id=schedule_id)
 
+        # Optional: restrict update to assigned landscaper
+        if schedule.landscaper and schedule.landscaper.user != request.user:
+            return Response(
+                {"detail": "You are not allowed to update this schedule."},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
+        serializer = JobSerializer(
+            schedule, data=request.data, partial=True
+        )
 
-# class LandscaperUpdateAddOnsAPIView(APIView):
-#     """
-#     PATCH: Update add-ons for a scheduled service
-#     """
-#     permission_classes = [IsAuthenticated]
+        if serializer.is_valid():
+            serializer.save()
 
-#     def patch(self, request, schedule_id):
-#         schedule = get_object_or_404(ServiceSchedule, id=schedule_id)
+            # Prepare response: show only add-ons with name, price, total
+            add_ons = [
+                {"id": a.id, "name": a.name, "price": float(a.price)}
+                for a in schedule.add_ons.all()
+            ]
 
-#         # Optional: restrict update to assigned landscaper
-#         if schedule.landscaper and schedule.landscaper.user != request.user:
-#             return Response(
-#                 {"detail": "You are not allowed to update this schedule."},
-#                 status=status.HTTP_403_FORBIDDEN
-#             )
+            total_add_ons = sum(a["price"] for a in add_ons)
 
-#         serializer = ServiceScheduleSerializer(
-#             schedule, data=request.data, partial=True
-#         )
+            return Response({
+                "message": "Add-ons updated successfully",
+                "add_ons": add_ons,
+                "total_add_ons": total_add_ons
+            }, status=status.HTTP_200_OK)
 
-#         if serializer.is_valid():
-#             serializer.save()
-
-#             # Prepare response: show only add-ons with name, price, total
-#             add_ons = [
-#                 {"id": a.id, "name": a.name, "price": float(a.price)}
-#                 for a in schedule.add_ons.all()
-#             ]
-
-#             total_add_ons = sum(a["price"] for a in add_ons)
-
-#             return Response({
-#                 "message": "Add-ons updated successfully",
-#                 "add_ons": add_ons,
-#                 "total_add_ons": total_add_ons
-#             }, status=status.HTTP_200_OK)
-
-#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 # -------------------- Client Services --------------------
@@ -135,17 +126,136 @@ class ClientPreferenceNoteUpdateAPIView(APIView):
 
 
 
+# class ClientServiceOverviewAPIView(APIView):
+#     permission_classes = [IsClient]  # Only client can view their service overview
+
+#     def get(self, request):
+#         client_profile = request.user.clientprofile
+#         preference, _ = ClientServicePreference.objects.get_or_create(client=client_profile)
+#         serializer = ClientServicePreferenceReadSerializer(preference)
+
+#         return Response({"service_overview": serializer.data})
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from django.db.models import Q
+
 class ClientServiceOverviewAPIView(APIView):
-    permission_classes = [IsClient]  # Only client can view their service overview
+    permission_classes = [IsClient]
 
     def get(self, request):
-        client_profile = request.user.clientprofile
-        preference, _ = ClientServicePreference.objects.get_or_create(client=client_profile)
-        serializer = ClientServicePreferenceReadSerializer(preference)
+        client = request.user.clientprofile
 
-        return Response({"service_overview": serializer.data})
+        # -------------------------
+        # GET ALL CLIENT JOBS
+        # -------------------------
+        jobs = Job.objects.filter(
+            client=client
+        ).select_related(
+            "job_property",
+            "invoice"
+        ).order_by("-scheduled_date")
 
+        if not jobs.exists():
+            return Response({
+                "message": "No service history found.",
+                "data": None
+            })
 
+        last_job = jobs.first()
+
+        # -------------------------
+        # PROPERTY INFO
+        # -------------------------
+        property_obj = last_job.job_property
+
+        property_data = None
+        if property_obj:
+            property_data = {
+                "address": getattr(property_obj, "address", None),
+                "property_size": getattr(property_obj, "property_size", None),
+                "latitude": getattr(property_obj, "latitude", None),
+                "longitude": getattr(property_obj, "longitude", None),
+            }
+
+        # -------------------------
+        # LAST SERVICE INFO
+        # -------------------------
+        last_service_date = last_job.completed_at or last_job.scheduled_date
+
+        # -------------------------
+        # PAYMENT INFO
+        # -------------------------
+        last_invoice = getattr(last_job, "invoice", None)
+
+        payment_data = None
+        next_payment_due = None
+
+        if last_invoice:
+            payment_data = {
+                "invoice_id": last_invoice.id,
+                "invoice_number": last_invoice.invoice_number,
+                "status": last_invoice.status,
+                "total": last_invoice.total,
+                "paid_at": last_invoice.paid_at,
+                "checkout_url": last_invoice.stripe_checkout_url,
+            }
+
+            # next payment logic
+            if last_invoice.status != "paid":
+                next_payment_due = {
+                    "amount": last_invoice.total,
+                    "due_status": "pending",
+                    "pay_url": last_invoice.stripe_checkout_url,
+                }
+
+        # -------------------------
+        # SERVICE FREQUENCY (ESTIMATED)
+        # -------------------------
+        service_frequency = self.calculate_frequency(jobs)
+
+        return Response({
+            "property": property_data,
+            "service_summary": {
+                "total_jobs": jobs.count(),
+                "last_service_date": last_service_date,
+                "service_frequency": service_frequency,
+                "last_job_status": last_job.status,
+            },
+            "payment": payment_data,
+            "next_payment": next_payment_due,
+        })
+
+    # -------------------------
+    # SIMPLE FREQUENCY LOGIC
+    # -------------------------
+    def calculate_frequency(self, jobs):
+        if jobs.count() < 2:
+            return "Not enough data"
+
+        dates = list(
+            jobs.values_list("scheduled_date", flat=True).order_by("-scheduled_date")[:5]
+        )
+
+        if len(dates) < 2:
+            return "Not enough data"
+
+        gaps = []
+        for i in range(len(dates) - 1):
+            gap = (dates[i] - dates[i + 1]).days
+            gaps.append(gap)
+
+        avg_gap = sum(gaps) / len(gaps)
+
+        if avg_gap <= 7:
+            return "Weekly"
+        elif avg_gap <= 14:
+            return "Bi-weekly"
+        elif avg_gap <= 30:
+            return "Monthly"
+        else:
+            return "Occasional"
 
 
 # -------------------- Job / Schedule --------------------
@@ -156,7 +266,7 @@ class LandscaperCompleteJobAPIView(APIView):
 
     def patch(self, request, id):
         schedule = get_object_or_404(
-            ServiceSchedule,
+           Job,
             id=id,
             landscaper=request.user.landscaperprofilies
         )
@@ -201,10 +311,6 @@ class LandscaperCompleteJobAPIView(APIView):
 
 
 
-
-
-
-
 class ClientJobHistoryAPIView(APIView):
     permission_classes = [IsAuthenticated, IsClient]
 
@@ -213,14 +319,14 @@ class ClientJobHistoryAPIView(APIView):
 
         # Get all completed jobs for the client
         jobs = (
-            ServiceSchedule.objects
+            Job.objects
             .filter(client=client_profile, is_completed=True)
             .select_related("service", "landscaper", "client")
             .prefetch_related("completed_services", "images")
             .order_by("-completed_at")
         )
 
-        serializer = ServiceScheduleSerializer(jobs, many=True)
+        serializer =JobSerializer(jobs, many=True)
         return Response(serializer.data, status=200)
 
 
@@ -249,121 +355,260 @@ class RescheduleServiceAPIView(APIView):
         })
 
 
+
 # property overview 
 from property.models import Property
 from .serializers import ServiceOverviewSerializer
+
+
+# class ServiceOverviewAPIView(APIView):
+#     permission_classes = [IsAuthenticated]
+
+#     def get(self, request):
+#         client_profile = getattr(request.user, "clientprofile", None)
+
+#         if not client_profile:
+#             return Response({"detail": "Client profile not found"}, status=400)
+
+#         preference = ClientServicePreference.objects.filter(
+#             client=client_profile
+#         ).prefetch_related("services").first()
+
+#         if not preference:
+#             return Response({"detail": "Service preference not set"}, status=200)
+
+#         last_service =Job.objects.filter(
+#             client=client_profile,
+#             is_completed=True
+#         ).order_by("-scheduled_date").first()
+
+#         next_service =Job.objects.filter(
+#             client=client_profile,
+#             is_completed=False
+#         ).order_by("scheduled_date").first()
+
+#         data = {
+#             "frequency": preference.frequency,
+#             "last_service_date": last_service.scheduled_date if last_service else None,
+#             "next_service_date": next_service.scheduled_date if next_service else None,
+#             "next_payment_date": next_service.scheduled_date if next_service else None,
+#             "services": preference.services.all()
+#         }
+
+#         serializer = ServiceOverviewSerializer(
+#             data,
+#             context={"client_profile": client_profile}
+#         )
+#         return Response(serializer.data)
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from django.db.models import Count, Q
+from django.utils import timezone
+
+
 class ServiceOverviewAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsClient]
 
     def get(self, request):
-        client_profile = getattr(request.user, "clientprofile", None)
+        client = request.user.clientprofile
 
-        if not client_profile:
-            return Response({"detail": "Client profile not found"}, status=400)
+        # -----------------------------------
+        # BOOKINGS (SOURCE OF TRUTH)
+        # -----------------------------------
+        bookings = BookingRequest.objects.filter(
+            client=client
+        ).select_related(
+            "property",
+            "service",
+            "landscaper"
+        ).order_by("-created_at")
 
-        preference = ClientServicePreference.objects.filter(
-            client=client_profile
-        ).prefetch_related("services").first()
+        if not bookings.exists():
+            return Response({
+                "message": "No booking history found",
+                "data": None
+            })
 
-        if not preference:
-            return Response({"detail": "Service preference not set"}, status=200)
+        last_booking = bookings.first()
 
-        last_service = ServiceSchedule.objects.filter(
-            client=client_profile,
-            is_completed=True
-        ).order_by("-scheduled_date").first()
+        # -----------------------------------
+        # PROPERTY INFO
+        # -----------------------------------
+        property_obj = last_booking.property
 
-        next_service = ServiceSchedule.objects.filter(
-            client=client_profile,
-            is_completed=False
+        property_data = None
+        if property_obj:
+            property_data = {
+                "id": property_obj.id,
+                "address": getattr(property_obj, "address", None),
+                "property_size": getattr(property_obj, "property_size", None),
+                "latitude": getattr(property_obj, "latitude", None),
+                "longitude": getattr(property_obj, "longitude", None),
+            }
+
+        # -----------------------------------
+        # LAST SERVICE DATE
+        # -----------------------------------
+        last_service_date = last_booking.scheduled_date or last_booking.created_at.date()
+
+        # -----------------------------------
+        # NEXT UPCOMING BOOKING
+        # -----------------------------------
+        next_booking = bookings.filter(
+            status__in=[
+                BookingRequest.Status.PENDING,
+                BookingRequest.Status.ACCEPTED,
+                BookingRequest.Status.CONFIRMED
+            ],
+            scheduled_date__gte=timezone.now().date()
         ).order_by("scheduled_date").first()
 
-        data = {
-            "frequency": preference.frequency,
-            "last_service_date": last_service.scheduled_date if last_service else None,
-            "next_service_date": next_service.scheduled_date if next_service else None,
-            "next_payment_date": next_service.scheduled_date if next_service else None,
-            "services": preference.services.all()
+        # -----------------------------------
+        # COMPLETED JOBS COUNT
+        # -----------------------------------
+        completed_count = bookings.filter(
+            status=BookingRequest.Status.COMPLETED
+        ).count()
+
+        # -----------------------------------
+        # SERVICE FREQUENCY (REAL LOGIC)
+        # -----------------------------------
+        service_frequency = self.get_frequency(bookings)
+
+        # -----------------------------------
+        # LAST SERVICE DETAIL
+        # -----------------------------------
+        last_service = {
+            "service_name": last_booking.service.name if last_booking.service else "Custom Service",
+            "booking_type": last_booking.booking_type,
+            "status": last_booking.status,
+            "date": last_service_date
         }
 
-        serializer = ServiceOverviewSerializer(
-            data,
-            context={"client_profile": client_profile}
-        )
-        return Response(serializer.data)
+        # -----------------------------------
+        # NEXT PAYMENT (BASIC LOGIC)
+        # -----------------------------------
+        next_payment = None
 
+        if next_booking and next_booking.price:
+            next_payment = {
+                "amount": next_booking.price,
+                "scheduled_date": next_booking.scheduled_date,
+                "status": next_booking.status,
+            }
+
+        return Response({
+            "property": property_data,
+
+            "service_summary": {
+                "total_bookings": bookings.count(),
+                "completed_services": completed_count,
+                "last_service": last_service,
+                "service_frequency": service_frequency,
+            },
+
+            "next_service": {
+                "booking_id": next_booking.id if next_booking else None,
+                "service_name": next_booking.service.name if next_booking and next_booking.service else None,
+                "date": next_booking.scheduled_date if next_booking else None,
+                "status": next_booking.status if next_booking else None,
+            },
+
+            "next_payment": next_payment
+        })
+
+    # -----------------------------------
+    # SMART FREQUENCY CALCULATION
+    # -----------------------------------
+    def get_frequency(self, bookings):
+        completed = bookings.filter(
+            status=BookingRequest.Status.COMPLETED,
+            scheduled_date__isnull=False
+        ).order_by("-scheduled_date")[:6]
+
+        dates = list(completed.values_list("scheduled_date", flat=True))
+
+        if len(dates) < 2:
+            return "Not enough data"
+
+        gaps = []
+        for i in range(len(dates) - 1):
+            gap = (dates[i] - dates[i + 1]).days
+            gaps.append(abs(gap))
+
+        avg_gap = sum(gaps) / len(gaps)
+
+        if avg_gap <= 7:
+            return "Weekly"
+        elif avg_gap <= 14:
+            return "Bi-weekly"
+        elif avg_gap <= 30:
+            return "Monthly"
+        else:
+            return "Occasional"
 
 
 # job list complete
-class CompletedJobsAPIView(APIView):
-    permission_classes = [IsLandscaper]
+# class CompletedJobsAPIView(APIView):
+#     permission_classes = [IsLandscaper]
 
-    def get(self, request):
-        # Get the landscaper profile
-        landscaper_profile = getattr(request.user, "landscaperprofilies", None)
-        if not landscaper_profile:
-            return Response({"completed_jobs": []})
+#     def get(self, request):
+#         # Get the landscaper profile
+#         landscaper_profile = getattr(request.user, "landscaperprofilies", None)
+#         if not landscaper_profile:
+#             return Response({"completed_jobs": []})
 
-        # Fetch all completed jobs for this landscaper
-        completed_jobs = ServiceSchedule.objects.filter(
-            landscaper=landscaper_profile,
-            is_completed=True
-        ).order_by("-completed_at")
+#         # Fetch all completed jobs for this landscaper
+#         completed_jobs =Job.objects.filter(
+#             landscaper=landscaper_profile,
+#             is_completed=True
+#         ).order_by("-completed_at")
 
-        jobs_list = []
-        for job in completed_jobs:
-            client_user = job.client.user
-            landscaper_user = job.landscaper.user if job.landscaper else None
+#         jobs_list = []
+#         for job in completed_jobs:
+#             client_user = job.client.user
+#             landscaper_user = job.landscaper.user if job.landscaper else None
 
-            # Completion images
-            images = ScheduleCompletionImage.objects.filter(schedule=job)
+#             # Completion images
+#             images = ScheduleCompletionImage.objects.filter(schedule=job)
 
-            jobs_list.append({
-                "job_id": job.id,
-                "client": {
-                    "id": client_user.id,
-                    "name": getattr(client_user, "name", ""),
-                    "email": client_user.email
-                },
-                "landscaper": {
-                    "id": landscaper_user.id if landscaper_user else None,
-                    "name": getattr(landscaper_user, "name", "") if landscaper_user else None,
-                    "email": landscaper_user.email if landscaper_user else None
-                },
-                "services": [
-                    {
-                        "id": job.service.id,
-                        "name": job.service.name,
-                        "price": job.service.price
-                    }
-                ],
-                "total_price": getattr(job.service, "price", 0),
-                "note": job.completion_note,
-                "completed_at": job.completed_at,
-                "images": [img.image.url for img in images]
-            })
+#             jobs_list.append({
+#                 "job_id": job.id,
+#                 "client": {
+#                     "id": client_user.id,
+#                     "name": getattr(client_user, "name", ""),
+#                     "email": client_user.email
+#                 },
+#                 "landscaper": {
+#                     "id": landscaper_user.id if landscaper_user else None,
+#                     "name": getattr(landscaper_user, "name", "") if landscaper_user else None,
+#                     "email": landscaper_user.email if landscaper_user else None
+#                 },
+#                 "services": [
+#                     {
+#                         "id": job.service.id,
+#                         "name": job.service.name,
+#                         "price": job.service.price
+#                     }
+#                 ],
+#                 "total_price": getattr(job.service, "price", 0),
+#                 "note": job.completion_note,
+#                 "completed_at": job.completed_at,
+#                 "images": [img.image.url for img in images]
+#             })
 
-        return Response({"completed_jobs": jobs_list})
-
-
-
-class ServiceScheduleDetailAPIView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, schedule_id):
-        schedule = get_object_or_404(ServiceSchedule, id=schedule_id)
-
-        serializer = ServiceScheduleSerializer(schedule)
-        return Response({
-            "id": schedule.id,
-            "is_completed": schedule.is_completed,
-            "schedule": serializer.data
-        })
+#         return Response({"completed_jobs": jobs_list})
 
 
 
 
-
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from django.db.models import F
+from django.utils import timezone
 
 class RecentActivityAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -372,74 +617,97 @@ class RecentActivityAPIView(APIView):
         user = request.user
         limit = int(request.query_params.get("limit", 10))
 
-        # ------------------------------
-        # Payments
-        # ------------------------------
-        payments_qs = ServiceSchedule.objects.filter(payment_status=PaymentStatus.PAID)
-        if hasattr(user, "clientprofile"):
-            payments_qs = payments_qs.filter(client=user.clientprofile)
-        elif hasattr(user, "landscaperprofilies"):
-            payments_qs = payments_qs.filter(landscaper=user.landscaperprofilies)
-        payments_qs = payments_qs.order_by("-scheduled_date", "-scheduled_time")[:limit]
-
-        payments_data = []
-        for schedule in payments_qs:
-            client_profile = getattr(schedule.client, "image", None)
-            profile_image = client_profile.url if client_profile else None
-            serialized = PaymentHistorySerializer(schedule, context={"request": request}).data
-            serialized["client_profile_image"] = profile_image
-            payments_data.append(serialized)
+        # Detect role
+        client = getattr(user, "clientprofile", None)
+        landscaper = getattr(user, "landscaper_profile", None)
 
         # ------------------------------
-        # Completed Jobs
+        # BASE QUERY
         # ------------------------------
-        completed_qs = ServiceSchedule.objects.filter(is_completed=True)
-        if hasattr(user, "clientprofile"):
-            completed_qs = completed_qs.filter(client=user.clientprofile)
-        elif hasattr(user, "landscaperprofilies"):
-            completed_qs = completed_qs.filter(landscaper=user.landscaperprofilies)
-        completed_qs = completed_qs.order_by("-completed_at")[:limit]
-
-        completed_data = []
-        for job in completed_qs:
-            client_profile = getattr(job.client, "image", None)
-            profile_image = client_profile.url if client_profile else None
-            completed_data.append({
-                "job_id": job.id,
-                "service": job.service.name,
-                "scheduled_date": job.scheduled_date,
-                "completed_at": job.completed_at,
-                "client_name": getattr(job.client, "name", ""),
-                "client_profile_image": profile_image
-            })
-
-        # ------------------------------
-        # Rescheduled jobs
-        # Using scheduled_date > created_at as approximate "reschedule"
-        # ------------------------------
-        rescheduled_qs = ServiceSchedule.objects.filter(
-            scheduled_date__gt=F('created_at')
+        jobs = Job.objects.select_related(
+            "client__user",
+            "external_client",
+            "landscaper"
         )
-        if hasattr(user, "clientprofile"):
-            rescheduled_qs = rescheduled_qs.filter(client=user.clientprofile)
-        elif hasattr(user, "landscaperprofilies"):
-            rescheduled_qs = rescheduled_qs.filter(landscaper=user.landscaperprofilies)
-        rescheduled_qs = rescheduled_qs.order_by("-scheduled_date")[:limit]
 
-        rescheduled_data = []
-        for job in rescheduled_qs:
-            client_profile = getattr(job.client, "image", None)
-            profile_image = client_profile.url if client_profile else None
-            rescheduled_data.append({
-                "job_id": job.id,
-                "service": job.service.name,
-                "scheduled_date": job.scheduled_date,
-                "client_name": getattr(job.client, "name", ""),
-                "client_profile_image": profile_image
+        if client:
+            jobs = jobs.filter(client=client)
+        elif landscaper:
+            jobs = jobs.filter(landscaper=landscaper)
+        else:
+            return Response({
+                "recent_payments": [],
+                "recent_completed_jobs": [],
+                "recent_rescheduled_jobs": []
             })
+
+        # ------------------------------
+        # 1. RECENT PAYMENTS
+        # ------------------------------
+        payments_qs = jobs.filter(
+            payment_status=Job.PaymentStatus.PAID
+        ).order_by("-updated_at")[:limit]
+
+        payments_data = [
+            self.format_job(job, type="payment")
+            for job in payments_qs
+        ]
+
+        # ------------------------------
+        # 2. COMPLETED JOBS
+        # ------------------------------
+        completed_qs = jobs.filter(
+            status=Job.Status.COMPLETED
+        ).order_by("-completed_at")[:limit]
+
+        completed_data = [
+            self.format_job(job, type="completed")
+            for job in completed_qs
+        ]
+
+        # ------------------------------
+        # 3. RESCHEDULED JOBS
+        # ------------------------------
+        rescheduled_qs = jobs.filter(
+            status=Job.Status.RESCHEDULED
+        ).order_by("-updated_at")[:limit]
+
+        rescheduled_data = [
+            self.format_job(job, type="rescheduled")
+            for job in rescheduled_qs
+        ]
 
         return Response({
             "recent_payments": payments_data,
             "recent_completed_jobs": completed_data,
             "recent_rescheduled_jobs": rescheduled_data
         })
+
+    # =====================================================
+    # COMMON FORMATTER (VERY IMPORTANT)
+    # =====================================================
+    def format_job(self, job, type=""):
+        client_name = job.client_name
+        client_email = job.client_email
+
+        # profile image
+        profile_image = None
+        if job.client and getattr(job.client, "image", None):
+            profile_image = job.client.image.url
+
+        return {
+            "job_id": job.id,
+            "type": type,
+            "status": job.status,
+            "payment_status": job.payment_status,
+
+            "client_name": client_name,
+            "client_email": client_email,
+            "client_profile_image": profile_image,
+
+            "scheduled_date": job.scheduled_date,
+            "scheduled_time": job.scheduled_time,
+            "completed_at": job.completed_at,
+
+            "total_price": job.total_price,
+        }

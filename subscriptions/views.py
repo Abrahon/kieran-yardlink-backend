@@ -254,6 +254,9 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
 from datetime import timedelta
 
+stripe.api_key = settings.STRIPE_SECRET_KEY
+
+
 @csrf_exempt
 def stripe_webhook(request):
     print("=== STRIPE WEBHOOK HIT ===")
@@ -261,169 +264,144 @@ def stripe_webhook(request):
     payload = request.body
     sig_header = request.META.get("HTTP_STRIPE_SIGNATURE")
 
-    stripe.api_key = settings.STRIPE_SECRET_KEY
+    if not sig_header:
+        print("❌ Missing signature")
+        return HttpResponse(status=400)
 
+    # ✅ SINGLE SOURCE OF TRUTH SECRET
     try:
         event = stripe.Webhook.construct_event(
             payload,
             sig_header,
-            settings.STRIPE_SUBSCRIPTION_WEBHOOK_SECRET
+            settings.STRIPE_WEBHOOK_SECRET
         )
-    except Exception as e:
-        print("❌ Webhook error:", str(e))
+    except stripe.error.SignatureVerificationError as e:
+        print("❌ Signature failed:", str(e))
         return HttpResponse(status=400)
+
+    print("✅ EVENT:", event["type"])
 
     event_type = event["type"]
     data = event["data"]["object"]
 
-    print("✅ Event received:", event_type)
+    # =========================================================
+    # 1. SUBSCRIPTION CREATED (CHECKOUT)
+    # =========================================================
+    if event_type == "checkout.session.completed":
+        print("👉 checkout.session.completed")
 
-    try:
-        # =========================================================
-        # ✅ CHECKOUT COMPLETED (PRIMARY CREATION)
-        # =========================================================
-        if event_type == "checkout.session.completed":
-            print("👉 checkout.session.completed")
+        if data.get("mode") != "subscription":
+            return HttpResponse(status=200)
 
-            if data.get("mode") != "subscription":
-                return HttpResponse(status=200)
+        subscription_id = data.get("subscription")
+        metadata = data.get("metadata", {})
 
-            subscription_id = data.get("subscription")
-            if not subscription_id:
-                return HttpResponse(status=200)
+        user_id = metadata.get("user_id")
+        plan_id = metadata.get("plan_id")
 
-            # ✅ metadata comes from SESSION here
-            metadata = data.get("metadata", {})
-            print("SESSION metadata:", metadata)
+        if not user_id or not plan_id:
+            return HttpResponse(status=200)
 
-            user_id = metadata.get("user_id")
-            plan_id = metadata.get("plan_id")
+        stripe_sub = stripe.Subscription.retrieve(subscription_id)
 
-            if not user_id or not plan_id:
-                print("⚠️ Missing metadata")
-                return HttpResponse(status=200)
+        user = User.objects.filter(id=user_id).first()
+        plan = Plan.objects.filter(id=plan_id).first()
 
-            stripe_sub = stripe.Subscription.retrieve(subscription_id)
+        if not user or not plan:
+            return HttpResponse(status=200)
 
-            user = User.objects.filter(id=user_id).first()
-            plan = Plan.objects.filter(id=plan_id).first()
+        Subscription.objects.update_or_create(
+            stripe_subscription_id=subscription_id,
+            defaults={
+                "user": user,
+                "plan": plan,
+                "stripe_customer_id": stripe_sub.customer,
+                "status": stripe_sub.status,
+                "is_active": stripe_sub.status in ["active", "trialing"],
+                "is_trial": stripe_sub.status == "trialing",
+                "start_date": timezone.now(),
+                "end_date": timezone.now() + timedelta(days=plan.duration_days),
+            }
+        )
 
-            if not user or not plan:
-                return HttpResponse(status=200)
+        print("✅ Subscription created")
 
+    # =========================================================
+    # 2. PAYMENT SUCCESS (RECURRING)
+    # =========================================================
+    elif event_type == "invoice.payment_succeeded":
+        print("👉 invoice.payment_succeeded")
+
+        subscription_id = data.get("subscription")
+        if not subscription_id:
+            return HttpResponse(status=200)
+
+        stripe_sub = stripe.Subscription.retrieve(subscription_id)
+        metadata = stripe_sub.metadata
+
+        user_id = metadata.get("user_id")
+        plan_id = metadata.get("plan_id")
+
+        user = User.objects.filter(id=user_id).first()
+        plan = Plan.objects.filter(id=plan_id).first()
+
+        if user and plan:
             Subscription.objects.update_or_create(
                 stripe_subscription_id=subscription_id,
                 defaults={
                     "user": user,
                     "plan": plan,
-                    "stripe_customer_id": stripe_sub.get("customer"),
-                    "status": stripe_sub.get("status"),
-                    "is_active": True,
-                    "is_trial": stripe_sub.get("status") == "trialing",
+                    "stripe_customer_id": stripe_sub.customer,
+                    "status": stripe_sub.status,
+                    "is_active": stripe_sub.status in ["active", "trialing"],
+                    "is_trial": stripe_sub.status == "trialing",
                     "start_date": timezone.now(),
                     "end_date": timezone.now() + timedelta(days=plan.duration_days),
                 }
             )
 
-            print("✅ Subscription created from checkout")
+        print("✅ Payment succeeded")
 
-        # =========================================================
-        # ✅ PAYMENT SUCCESS (BACKUP CREATION + UPDATE)
-        # =========================================================
-        elif event_type == "invoice.payment_succeeded":
-            print("👉 invoice.payment_succeeded")
+    # =========================================================
+    # 3. FAILED PAYMENT
+    # =========================================================
+    elif event_type == "invoice.payment_failed":
+        Subscription.objects.filter(
+            stripe_subscription_id=data.get("subscription")
+        ).update(
+            status="past_due",
+            is_active=False,
+            updated_at=timezone.now(),
+        )
 
-            subscription_id = data.get("subscription")
-            if not subscription_id:
-                return HttpResponse(status=200)
+    # =========================================================
+    # 4. SUB UPDATED
+    # =========================================================
+    elif event_type == "customer.subscription.updated":
+        Subscription.objects.filter(
+            stripe_subscription_id=data.get("id")
+        ).update(
+            status=data.get("status"),
+            is_active=data.get("status") in ["active", "trialing"],
+            is_trial=data.get("status") == "trialing",
+            updated_at=timezone.now(),
+        )
 
-            stripe_sub = stripe.Subscription.retrieve(subscription_id)
-
-            # ✅ metadata comes from SUBSCRIPTION here
-            metadata = stripe_sub.get("metadata", {})
-            print("SUBSCRIPTION metadata:", metadata)
-
-            user_id = metadata.get("user_id")
-            plan_id = metadata.get("plan_id")
-
-            if not user_id or not plan_id:
-                print("⚠️ Missing metadata in invoice flow")
-                return HttpResponse(status=200)
-
-            user = User.objects.filter(id=user_id).first()
-            plan = Plan.objects.filter(id=plan_id).first()
-
-            if not user or not plan:
-                return HttpResponse(status=200)
-
-            Subscription.objects.update_or_create(
-                stripe_subscription_id=subscription_id,
-                defaults={
-                    "user": user,
-                    "plan": plan,
-                    "stripe_customer_id": stripe_sub.get("customer"),
-                    "status": stripe_sub.get("status"),
-                    "is_active": True,
-                    "is_trial": stripe_sub.get("status") == "trialing",
-                    "start_date": timezone.now(),
-                    "end_date": timezone.now() + timedelta(days=plan.duration_days),
-                }
-            )
-
-            print("✅ Subscription created/updated from invoice")
-
-        # =========================================================
-        # ❌ PAYMENT FAILED
-        # =========================================================
-        elif event_type == "invoice.payment_failed":
-            print("👉 invoice.payment_failed")
-
-            Subscription.objects.filter(
-                stripe_subscription_id=data.get("subscription")
-            ).update(
-                status="past_due",
-                is_active=False,
-                updated_at=timezone.now(),
-            )
-
-        # =========================================================
-        # 🔄 SUBSCRIPTION UPDATED
-        # =========================================================
-        elif event_type == "customer.subscription.updated":
-            print("👉 subscription.updated")
-
-            Subscription.objects.filter(
-                stripe_subscription_id=data.get("id")
-            ).update(
-                status=data.get("status"),
-                is_active=data.get("status") in ["active", "trialing"],
-                is_trial=data.get("status") == "trialing",
-                updated_at=timezone.now(),
-            )
-
-        # =========================================================
-        # ❌ SUBSCRIPTION CANCELLED
-        # =========================================================
-        elif event_type == "customer.subscription.deleted":
-            print("👉 subscription.deleted")
-
-            Subscription.objects.filter(
-                stripe_subscription_id=data.get("id")
-            ).update(
-                status="cancelled",
-                is_active=False,
-                updated_at=timezone.now(),
-            )
-
-        else:
-            print("ℹ️ Ignored event:", event_type)
-
-    except Exception as e:
-        print("🔥 Webhook processing error:", str(e))
+    # =========================================================
+    # 5. CANCELLED
+    # =========================================================
+    elif event_type == "customer.subscription.deleted":
+        Subscription.objects.filter(
+            stripe_subscription_id=data.get("id")
+        ).update(
+            status="cancelled",
+            is_active=False,
+            updated_at=timezone.now(),
+        )
 
     return HttpResponse(status=200)
 
-    
+
 # subscription list
 class SubscriptionListView(generics.ListAPIView):
     serializer_class = SubscriptionSerializer

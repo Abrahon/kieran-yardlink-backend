@@ -307,12 +307,13 @@ MEDIA_URL = "/media/"
 # ------------------------------------------------------------------------------
 # STRIPE
 # ------------------------------------------------------------------------------
-STRIPE_SECRET_KEY = config("STRIPE_SECRET_KEY", default="")
-STRIPE_PUBLIC_KEY = config("STRIPE_PUBLIC_KEY", default="")
-STRIPE_SUBSCRIPTION_WEBHOOK_SECRET = config("STRIPE_SUBSCRIPTION_WEBHOOK_SECRET", default="")
-STRIPE_PAYMENT_WEBHOOK_SECRET = config("STRIPE_PAYMENT_WEBHOOK_SECRET", default="")
-STRIPE_CURRENCY = "usd"
+from decouple import config
 
+STRIPE_SECRET_KEY = config("STRIPE_SECRET_KEY")
+STRIPE_PUBLIC_KEY = config("STRIPE_PUBLIC_KEY")
+STRIPE_WEBHOOK_SECRET = config("STRIPE_WEBHOOK_SECRET")
+# STRIPE_PAYMENT_WEBHOOK_SECRET = config("STRIPE_PAYMENT_WEBHOOK_SECRET")
+print("WEBHOOK SECRET:", STRIPE_WEBHOOK_SECRET)
 # quickbooks
 
 QUICKBOOKS_CLIENT_ID = os.getenv("QUICKBOOKS_CLIENT_ID")
@@ -322,6 +323,7 @@ QUICKBOOKS_REALM_ID = os.getenv("QUICKBOOKS_REALM_ID")
 QUICKBOOKS_ENVIRONMENT = os.getenv("QUICKBOOKS_ENVIRONMENT", "sandbox")
 QUICKBOOKS_MINOR_VERSION = os.getenv("QUICKBOOKS_MINOR_VERSION", "75")
 QUICKBOOKS_TOKEN_ENCRYPTION_KEY = os.getenv("QUICKBOOKS_TOKEN_ENCRYPTION_KEY")
+
 
 # ------------------------------------------------------------------------------
 # EMAIL

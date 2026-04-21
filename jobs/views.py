@@ -5,9 +5,7 @@ from rest_framework import generics, permissions, status, serializers
 from rest_framework.response import Response
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.parsers import MultiPartParser, FormParser
-from jobs.serializers import CompletedJobSerializer
-
-
+from jobs.serializers import CompletedJobSerializer,ManualOneTimeJobCreateSerializer
 from jobs.models import Job, JobItem
 from jobs.serializers import (
     JobSerializer,
@@ -19,37 +17,37 @@ from jobs.serializers import (
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from notifications.services import send_push_notification
+from rest_framework import generics, permissions, status
+from rest_framework.response import Response
+
+
+
+
+# @receiver(post_save, sender=Job)
+# def job_created(sender, instance, created, **kwargs):
+#     if created:
+#         send_push_notification(
+#             user=instance.assigned_user,
+#             title="New Job",
+#             message="You got a new job",
+#             notification_type="job",
+#         )
 
 @receiver(post_save, sender=Job)
 def job_created(sender, instance, created, **kwargs):
-    if created:
-        send_push_notification(
-            user=instance.assigned_user,
-            title="New Job",
-            message="You got a new job",
-            notification_type="job",
-        )
+    if not created:
+        return
+
+    if instance.client:
+        user = instance.client.user
+    elif instance.external_client:
+        user = instance.external_client
+    else:
+        return
+
+    # do your logic here (notification etc.)
 
 
-# # --- Upcoming Jobs for Logged-in Landscaper ---
-# class UpcomingJobsListView(generics.ListAPIView):
-#     serializer_class = JobSerializer
-#     permission_classes = [permissions.IsAuthenticated]
-
-#     def get_queryset(self):
-#         landscaper_profile = getattr(self.request.user, "landscaper_profile", None)
-#         if not landscaper_profile:
-#             return Job.objects.none()
-
-#         return Job.objects.filter(
-#             landscaper=landscaper_profile,
-#             status=Job.Status.UPCOMING,
-#             is_active=True
-#         ).order_by("scheduled_date", "scheduled_time")
-
-from rest_framework import generics, permissions
-from jobs.models import Job
-from jobs.serializers import JobSerializer
 
 
 class UpcomingJobsListView(generics.ListAPIView):
@@ -81,10 +79,6 @@ class JobDetailView(generics.RetrieveAPIView):
             return Job.objects.none()
         return Job.objects.filter(landscaper=landscaper)
 
-# progessing job
-from rest_framework import generics, permissions
-from jobs.models import Job
-from jobs.serializers import JobSerializer
 
 
 # --- In Progress Job List ---
@@ -102,6 +96,8 @@ class InProgressJobsListView(generics.ListAPIView):
             status=Job.Status.IN_PROGRESS,
             is_active=True
         ).order_by("scheduled_date", "scheduled_time")
+
+
 
 
 # --- In Progress Job Detail ---
@@ -139,6 +135,7 @@ class CompletedJobsListView(generics.ListAPIView):
             status=Job.Status.COMPLETED,
             is_active=True
         ).order_by("-completed_at", "-updated_at")
+
 
 
 
@@ -185,6 +182,8 @@ def toggle_job_item_completion(request, item_id):
     }, status=status.HTTP_200_OK)
 
 
+
+
 # --- Add Job Image ---
 class JobImageCreateView(generics.CreateAPIView):
     serializer_class = JobImageSerializer
@@ -210,6 +209,8 @@ class JobImageCreateView(generics.CreateAPIView):
             })
 
         serializer.save(uploaded_by=self.request.user)
+
+
 
 
 # --- Add Job Reschedule ---
@@ -239,6 +240,8 @@ class JobRescheduleCreateView(generics.CreateAPIView):
         )
 
 
+
+
 # --- Add or Update Note to Job ---
 @api_view(["PATCH"])
 @permission_classes([permissions.IsAuthenticated])
@@ -265,10 +268,9 @@ def add_job_note(request, job_id):
     }, status=status.HTTP_200_OK)
 
 
+
+
 # manual job created
-from rest_framework import generics, permissions, status
-from rest_framework.response import Response
-from jobs.serializers import ManualOneTimeJobCreateSerializer, JobSerializer
 
 
 class ManualOneTimeJobCreateView(generics.CreateAPIView):
