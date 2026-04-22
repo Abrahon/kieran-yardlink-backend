@@ -239,36 +239,25 @@ CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [("127.0.0.1", 6379)],
+            "hosts": [(
+                config("REDIS_HOST", default="redis"),
+                config("REDIS_PORT", default=6379, cast=int),
+            )],
         },
     },
 }
 
 # Celery
 # core/settings.py
-CELERY_BROKER_URL = "redis://localhost:6379/0"
-CELERY_RESULT_BACKEND = "redis://localhost:6379/0"
+# Celery
+CELERY_BROKER_URL = config("CELERY_BROKER_URL", default="redis://redis:6379/0")
+CELERY_RESULT_BACKEND = config("CELERY_RESULT_BACKEND", default=CELERY_BROKER_URL)
 
-CELERY_ACCEPT_CONTENT = ["json"]
-CELERY_TASK_SERIALIZER = "json"
-CELERY_RESULT_SERIALIZER = "json"
-CELERY_TIMEZONE = "UTC"
-CELERY_ENABLE_UTC = True
-
-# core/settings.py
-
-# Celery broker (use Redis, RabbitMQ, etc.)
-CELERY_BROKER_URL = "redis://localhost:6379/0"  # Redis example
-CELERY_RESULT_BACKEND = "redis://localhost:6379/0"  # Optional, for task results
-
-# Timezone
-CELERY_TIMEZONE = "UTC"  # or your timezone
-CELERY_ENABLE_UTC = True
-
-# Optional: configure task serialization
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'
+CELERY_ENABLE_UTC = True
 
 # Optional: periodic task settings
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
@@ -276,7 +265,7 @@ CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 
 RQ_QUEUES = {
     "default": {
-        "URL": config("REDIS_URL", default="redis://127.0.0.1:6379/1"),
+        "URL": config("REDIS_URL", default="redis://redis:6379/1"),
         "DEFAULT_TIMEOUT": 360,
     }
 }

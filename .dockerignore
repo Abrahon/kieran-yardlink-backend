@@ -1,0 +1,15 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
+*.log
+*.pot
+*.mo
+*.env
+.DS_Store
+.git
+.gitignore
+kieran_db_backup.sql
+docker-compose.override.yml
