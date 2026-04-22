@@ -84,6 +84,12 @@ class Migration(migrations.Migration):
             name='pricing_type',
             field=models.CharField(choices=[('fixed', 'Fixed Price'), ('request', 'Priced Upon Request')], default='fixed', max_length=10),
         ),
+        migrations.AddField(
+            model_name='service',
+            name='business',
+            field=models.ForeignKey(default=1, on_delete=django.db.models.deletion.CASCADE, related_name='services', to='landscapers.businessprofile'),
+            preserve_default=False,
+        ),
         migrations.AddIndex(
             model_name='service',
             index=models.Index(fields=['business', 'is_active'], name='landscapers_busines_c3d409_idx'),
@@ -104,11 +110,5 @@ class Migration(migrations.Migration):
             model_name='businessprofile',
             name='user',
             field=models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='business_profile', to=settings.AUTH_USER_MODEL),
-        ),
-        migrations.AddField(
-            model_name='service',
-            name='business',
-            field=models.ForeignKey(default=1, on_delete=django.db.models.deletion.CASCADE, related_name='services', to='landscapers.businessprofile'),
-            preserve_default=False,
         ),
     ]
