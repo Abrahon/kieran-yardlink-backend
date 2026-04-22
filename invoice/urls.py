@@ -5,7 +5,8 @@ from invoice.views import (
     create_job_invoice,
     send_job_invoice,
     mark_invoice_paid,
-    regenerate_invoice_checkout
+    regenerate_invoice_checkout,
+    list_invoices
 )
 
 urlpatterns = [
@@ -18,4 +19,10 @@ urlpatterns = [
 
     # optional manual mark paid, or call this from Stripe webhook
     path("invoices/<int:invoice_id>/mark-paid/", mark_invoice_paid, name="mark-invoice-paid"),
+
+ 
+
+
+    path("invoices/list/", list_invoices, name="list-invoices"),
+
 ]

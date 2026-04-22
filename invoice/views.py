@@ -13,7 +13,8 @@ from invoice.serializers import InvoiceSerializer
 from invoice.services import create_invoice_from_completed_job
 from invoice.utils import send_invoice_email
 from jobs.models import Job
-
+from landscapers.models import BusinessProfile
+from rest_framework.permissions import IsAuthenticated
 
 class ClientInvoiceListView(generics.ListAPIView):
     serializer_class = InvoiceSerializer
@@ -42,7 +43,7 @@ class ClientInvoiceDetailView(generics.RetrieveAPIView):
 
 
 
-from rest_framework.permissions import IsAuthenticated
+
 
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
@@ -109,6 +110,13 @@ def regenerate_invoice_checkout(request, invoice_id):
     
 
 
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+
+from invoice.models import Invoice
+from django.shortcuts import get_object_or_404
 
 
 @api_view(["POST"])
@@ -117,35 +125,53 @@ def send_job_invoice(request, invoice_id):
 
     landscaper = getattr(request.user, "landscaper_profile", None)
     if not landscaper:
-        return Response({"error": "Landscaper profile not found."}, status=403)
-
-    try:
-        invoice = Invoice.objects.get(
-            id=invoice_id,
-            job__landscaper=landscaper
+        return Response(
+            {"error": "Landscaper profile not found."},
+            status=status.HTTP_403_FORBIDDEN
         )
-    except Invoice.DoesNotExist:
-        return Response({"error": "Invoice not found."}, status=404)
 
-    # 🚨 DO NOT reuse old Stripe session
+    # ✅ STEP 1: GET INVOICE (NO FILTER FIRST)
+    invoice = get_object_or_404(
+        Invoice.objects.select_related("job", "job__landscaper"),
+        id=invoice_id
+    )
+
+    # ❌ STEP 2: VERIFY OWNERSHIP PROPERLY
+    if invoice.job.landscaper_id != landscaper.id:
+        return Response(
+            {
+                "error": "Invoice does not belong to this landscaper.",
+                "debug": {
+                    "invoice_job_landscaper_id": invoice.job.landscaper_id,
+                    "request_landscaper_id": landscaper.id
+                }
+            },
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    # 🚨 Stripe setup
     import stripe
     from django.conf import settings
+
     stripe.api_key = settings.STRIPE_SECRET_KEY
 
-    # ✅ expire old session (optional but recommended)
+    # expire old session safely
     if invoice.stripe_session_id:
         try:
             stripe.checkout.Session.expire(invoice.stripe_session_id)
         except Exception:
             pass
 
-    # ✅ CREATE NEW SESSION EVERY TIME
+    # create new session
     try:
         session = create_invoice_checkout_session(invoice)
     except Exception as e:
-        return Response({"error": str(e)}, status=400)
+        return Response(
+            {"error": str(e)},
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
-    # ✅ SAVE NEW SESSION
+    # save invoice
     invoice.stripe_session_id = session.id
     invoice.stripe_checkout_url = session.url
     invoice.status = Invoice.Status.SENT
@@ -156,23 +182,26 @@ def send_job_invoice(request, invoice_id):
         "updated_at"
     ])
 
-    # ✅ SEND EMAIL WITH NEW URL
-    frontend_invoice_url = request.data.get("frontend_invoice_url")
-
+    # send email
     try:
-        send_invoice_email(invoice, frontend_invoice_url=frontend_invoice_url)
+        send_invoice_email(
+            invoice,
+            frontend_invoice_url=request.data.get("frontend_invoice_url")
+        )
     except Exception as e:
-        return Response({"error": f"Email send failed: {str(e)}"}, status=400)
+        return Response(
+            {"error": f"Email send failed: {str(e)}"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
     return Response({
         "message": "Invoice sent successfully.",
         "invoice_id": invoice.id,
         "invoice_number": invoice.invoice_number,
         "sent_to": invoice.sent_to_email,
-        "stripe_checkout_url": session.url,  # ✅ NEW URL
-    }, status=200)
-
-
+        "stripe_checkout_url": session.url,
+    }, status=status.HTTP_200_OK)
+    
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def mark_invoice_paid(request, invoice_id):
@@ -215,3 +244,37 @@ def mark_invoice_paid(request, invoice_id):
         "status": invoice.status,
         "paid_at": invoice.paid_at
     }, status=status.HTTP_200_OK)
+
+
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
+from invoice.models import Invoice
+from profiles.models import LandscaperProfilies
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def list_invoices(request):
+
+    landscaper = LandscaperProfilies.objects.filter(user=request.user).first()
+
+    if not landscaper:
+        return Response({"error": "Landscaper not found"}, status=403)
+
+    invoices = Invoice.objects.filter(
+        job__landscaper_id=landscaper.id
+    ).select_related("job")
+
+    return Response({
+        "count": invoices.count(),
+        "results": [
+            {
+                "id": i.id,
+                "job_id": i.job_id,
+                "landscaper_id": i.job.landscaper_id
+            }
+            for i in invoices
+        ]
+    })

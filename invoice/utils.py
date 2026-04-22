@@ -66,3 +66,4 @@ def send_invoice_email(invoice, frontend_invoice_url=None):
     )
     msg.attach_alternative(html_body, "text/html")
     msg.send()
+

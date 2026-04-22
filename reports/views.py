@@ -3,29 +3,39 @@ from django.shortcuts import render
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-
-from rest_framework.views import APIView
 from rest_framework.permissions import IsAdminUser
-from rest_framework.response import Response
-from rest_framework import status
-
 from accounts.models import User
-from subscriptions.models import Subscription
 from subscriptions.enums import SubscriptionStatus
 from .models import SiteVisit
-
+from jobs.models import Job
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
-
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAdminUser
-from rest_framework.response import Response
-from rest_framework import status
-
 from accounts.models import User
 from .serializers import AdminInternalNoteSerializer
+from datetime import timedelta, datetime, time
+import csv
+from django.http import HttpResponse
+from django.utils import timezone
+from django.utils.dateparse import parse_date
+from django.db.models import Count, Sum, FloatField, Value
+from django.db.models.functions import Coalesce, TruncDate
 
-from .models import SiteVisit
+from rest_framework.views import APIView
+from rest_framework.permissions import AllowAny, IsAdminUser
+from rest_framework import status
+from subscriptions.models import Subscription
+from django.db.models import Q
+from django.shortcuts import get_object_or_404
+from rest_framework.views import APIView
+from rest_framework import status
+from accounts.models import User
+from reports.models import AdminInternalNote
+# from 
+from payments.enums import PaymentStatus
+from jobs.models import Job
+
+
+
 
 
 class TrackVisitAPIView(APIView):
@@ -48,8 +58,6 @@ class TrackVisitAPIView(APIView):
         )
 
         return Response({"status": "success"})
-
-
 
 
 
@@ -209,15 +217,10 @@ class AdminConversionMetricsView(APIView):
             }
         }, status=status.HTTP_200_OK)
 
+
+
+
 # user by region
-from django.db.models import Count
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAdminUser
-from rest_framework.response import Response
-from rest_framework import status
-
-from accounts.models import User
-
 class UserConcentrationByRegionView(APIView):
     permission_classes = [IsAdminUser]
 
@@ -247,28 +250,9 @@ class UserConcentrationByRegionView(APIView):
             }
         }, status=status.HTTP_200_OK)
 
+
+
 # new
-from datetime import timedelta, datetime, time
-import csv
-
-from django.http import HttpResponse
-from django.utils import timezone
-from django.utils.dateparse import parse_date
-from django.db.models import Count, Sum, FloatField, Value
-from django.db.models.functions import Coalesce, TruncDate
-
-from rest_framework.views import APIView
-from rest_framework.permissions import AllowAny, IsAdminUser
-from rest_framework.response import Response
-from rest_framework import status
-
-from accounts.models import User
-from subscriptions.models import Subscription
-from subscriptions.enums import SubscriptionStatus
-
-from .models import SiteVisit
-
-
 class TrackVisitAPIView(APIView):
     permission_classes = [AllowAny]
 
@@ -289,6 +273,8 @@ class TrackVisitAPIView(APIView):
         )
 
         return Response({"status": "success"}, status=status.HTTP_201_CREATED)
+
+
 
 
 class AdminDashboardReportsView(APIView):
@@ -621,16 +607,7 @@ class AdminDashboardReportsView(APIView):
 
         return Response(response_data, status=status.HTTP_200_OK)
 
-from django.db.models import Q
-from django.shortcuts import get_object_or_404
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import IsAdminUser
-from rest_framework import status
 
-from accounts.models import User
-from reports.models import AdminInternalNote
-from reports.serializers import AdminInternalNoteSerializer
 
 
 class AdminInternalNoteView(APIView):

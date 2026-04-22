@@ -549,26 +549,65 @@ class ClientSearchByKMAPIView(APIView):
 
 
 # user list detaisl
+# class LandscaperDetailWithChatView(generics.RetrieveAPIView):
+#     """
+#     Returns detailed landscaper info including:
+#     - Services, working hours, reviews
+#     - Message info (chat thread id if exists)
+#     """
+#     serializer_class = LandscaperProfileSerializer
+#     permission_classes = [IsAuthenticated]
+#     lookup_field = "id"  
+
+#     def get_object(self):
+#         landscaper_id = self.kwargs.get("id")
+#         return get_object_or_404(LandscaperProfilies, id=landscaper_id)
+
+#     def get(self, request, *args, **kwargs):
+#         landscaper = self.get_object()
+#         serializer = self.get_serializer(landscaper, context={"request": request})
+#         data = serializer.data
+
+#         # Message / chat info
+#         client = request.user
+#         landscaper_user = landscaper.user
+
+#         thread = ChatThread.objects.filter(
+#             Q(client=client, landscaper=landscaper_user) |
+#             Q(client=landscaper_user, landscaper=client)
+#         ).first()
+
+#         data["message_info"] = {
+#             "can_message": True, 
+#             "thread_id": thread.id if thread else None
+#         }
+
+#         return Response(data, status=status.HTTP_200_OK)
+
 class LandscaperDetailWithChatView(generics.RetrieveAPIView):
-    """
-    Returns detailed landscaper info including:
-    - Services, working hours, reviews
-    - Message info (chat thread id if exists)
-    """
     serializer_class = LandscaperProfileSerializer
     permission_classes = [IsAuthenticated]
-    lookup_field = "id"  
+    lookup_field = "id"
 
     def get_object(self):
+        # IMPORTANT: use BusinessProfile ONLY
         landscaper_id = self.kwargs.get("id")
-        return get_object_or_404(LandscaperProfilies, id=landscaper_id)
+
+        return get_object_or_404(
+            BusinessProfile.objects.select_related("user"),
+            id=landscaper_id
+        )
 
     def get(self, request, *args, **kwargs):
         landscaper = self.get_object()
-        serializer = self.get_serializer(landscaper, context={"request": request})
+
+        serializer = self.get_serializer(
+            landscaper,
+            context={"request": request}
+        )
+
         data = serializer.data
 
-        # Message / chat info
         client = request.user
         landscaper_user = landscaper.user
 
@@ -578,13 +617,12 @@ class LandscaperDetailWithChatView(generics.RetrieveAPIView):
         ).first()
 
         data["message_info"] = {
-            "can_message": True, 
+            "can_message": True,
             "thread_id": thread.id if thread else None
         }
 
         return Response(data, status=status.HTTP_200_OK)
-
-
+        
 
 # client details
 class ClientDetailWithChatView(generics.RetrieveAPIView):
