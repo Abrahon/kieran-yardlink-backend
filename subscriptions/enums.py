@@ -8,4 +8,5 @@ class SubscriptionDuration(models.TextChoices):
 class SubscriptionStatus(models.TextChoices):
     ACTIVE = "active", "Active"
     EXPIRED = "expired", "Expired"
+    TRIALING = "trialing", "Trialing"
     CANCELLED = "cancelled", "Cancelled"

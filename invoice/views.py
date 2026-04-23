@@ -201,6 +201,11 @@ def send_job_invoice(request, invoice_id):
         "sent_to": invoice.sent_to_email,
         "stripe_checkout_url": session.url,
     }, status=status.HTTP_200_OK)
+
+
+
+
+    
     
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])

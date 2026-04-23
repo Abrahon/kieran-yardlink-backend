@@ -92,7 +92,10 @@ def create_invoice_checkout_session(invoice):
         # success_url=f"{settings.FRONTEND_URL}/payment-success?invoice_id={invoice.id}&session_id={{CHECKOUT_SESSION_ID}}",
         # cancel_url=f"{settings.FRONTEND_URL}/payment-cancel?invoice_id={invoice.id}",
         
-        success_url=f"https://zznkjkkp-8000.inc1.devtunnels.ms/api/success/?invoice_id={invoice.id}&session_id={{CHECKOUT_SESSION_ID}}",
+        # success_url=f"https://api.yardlinkapp.com/success/?invoice_id={invoice.id}&session_id={{CHECKOUT_SESSION_ID}}",
+        # cancel_url=f"https://api.yardlinkapp.com/api/payment-cancel?invoice_id={invoice.id}",
+        
+        success_url=f"https://zznkjkkp-8000.inc1.devtunnels.ms/success/?invoice_id={invoice.id}&session_id={{CHECKOUT_SESSION_ID}}",
         cancel_url=f"https://zznkjkkp-8000.inc1.devtunnels.ms/api/payment-cancel?invoice_id={invoice.id}",
         metadata={
             "invoice_id": str(invoice.id),

@@ -232,6 +232,8 @@ def create_checkout_session(request):
             subscription_data={
                 "trial_period_days": 14
             },
+            # success_url="https://api.yardlinkapp.com/api/success/?session_id={CHECKOUT_SESSION_ID}",
+            # cancel_url="https://api.yardlinkapp.com/api/cancel/",
             success_url="https://zznkjkkp-8000.inc1.devtunnels.ms/api/success/?session_id={CHECKOUT_SESSION_ID}",
             cancel_url="https://zznkjkkp-8000.inc1.devtunnels.ms/api/cancel/",
         )
@@ -361,6 +363,7 @@ def stripe_webhook(request):
             )
 
         print("✅ Payment succeeded")
+
 
     # =========================================================
     # 3. FAILED PAYMENT

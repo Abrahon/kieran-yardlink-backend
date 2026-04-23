@@ -270,7 +270,7 @@ RQ_QUEUES = {
         "DEFAULT_TIMEOUT": 360,
     }
 }
-BACKEND_BASE_URL = "http://localhost:8000"
+BACKEND_BASE_URL = "https://api.yardlinkapp.com/"
 
 # ------------------------------------------------------------------------------
 # CLOUDINARY
