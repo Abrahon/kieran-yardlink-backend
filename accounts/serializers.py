@@ -348,7 +348,6 @@ class UserReportSerializer(serializers.ModelSerializer):
 # admin serializers
 
 from rest_framework import serializers
-
 from .models import User
 
 
@@ -362,15 +361,19 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
     completed_jobs = serializers.IntegerField(read_only=True)
     pending_jobs = serializers.IntegerField(read_only=True)
     total_clients = serializers.IntegerField(read_only=True)
+
     average_rating = serializers.SerializerMethodField()
     review_count = serializers.SerializerMethodField()
     last_login = serializers.SerializerMethodField()
+
+    # ✅ OVERRIDE NAME HERE
+    name = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = [
             "id",
-            "name",
+            "name",  # 👈 will now return real name
             "email",
             "phone",
             "address",
@@ -394,6 +397,16 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
 
             "recent_jobs",
         ]
+
+    # ✅ REAL NAME LOGIC
+    def get_name(self, obj):
+        landscaper_profile = getattr(obj, "landscaperprofilies", None)
+
+        if landscaper_profile and landscaper_profile.name:
+            return landscaper_profile.name
+
+        return obj.name or ""
+
     def get_average_rating(self, obj):
         if obj.role != "landscaper":
             return 0.0
@@ -406,7 +419,6 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
 
     def get_last_login(self, obj):
         return obj.last_login
-
 
 class AdminUserUpdateSerializer(serializers.Serializer):
 

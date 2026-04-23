@@ -35,7 +35,7 @@ from accounts.models import User, LoginActivity
 from accounts.models import LoginActivity  # add at top
 from django.db.models import Avg, Q
 from accounts.models import LoginActivity
-
+# from jobs.models import Job, PaymentStatus
 from django.db.models import Q, Sum, FloatField, Count
 from django.shortcuts import get_object_or_404
 from django.db.models import Sum, FloatField, Value
@@ -181,21 +181,27 @@ class LoginView(generics.GenericAPIView):
         # -------------------------
         # ✅ Create LoginActivity record
         # -------------------------
-        ip = get_client_ip(request)
-        ua = request.META.get("HTTP_USER_AGENT", "")
+        # -------------------------
+        # Create LoginActivity record (SAFE VERSION)
+        # -------------------------
 
-        device_info = parse_device(ua)
+        ip = get_client_ip(request)
+        ua = request.META.get("HTTP_USER_AGENT", "") or ""
+
+        device_info = parse_device(ua) or {}
+
         update_last_login(None, user)
 
         LoginActivity.objects.create(
             user=user,
             ip_address=ip,
             user_agent=ua,
-            device_type=device_info.get("device_type"),
-            os=device_info.get("os"),
-            browser=device_info.get("browser"),
+
+            device_type=device_info.get("device_type") or "unknown",
+            os=device_info.get("os") or "unknown",
+            browser=device_info.get("browser") or "unknown",
         )
-         
+
 
         return Response({
             "message": "Login successful",
@@ -212,6 +218,8 @@ class LoginView(generics.GenericAPIView):
                 "longitude": float(user.longitude) if getattr(user, "longitude", None) else None,
             }
         }, status=status.HTTP_200_OK)
+
+
 
 
 # create admin verify otp
@@ -862,17 +870,60 @@ class SelfDeleteUserView(generics.DestroyAPIView):
 
 # user puse 
 
+# class AdminPauseUserView(APIView):
+#     """
+#     Admin API to pause (deactivate) or unpause (activate) a user
+#     """
+#     permission_classes = [IsAdminUser]
+
+#     def patch(self, request, user_id):
+#         """
+#         Toggle user's active status.
+#         Send JSON payload: {"action": "pause"} or {"action": "unpause"}
+#         """
+#         user = get_object_or_404(User, id=user_id)
+
+#         action = request.data.get("action")
+#         if action not in ["pause", "unpause"]:
+#             return Response(
+#                 {"detail": "Invalid action. Must be 'pause' or 'unpause'."},
+#                 status=status.HTTP_400_BAD_REQUEST
+#             )
+
+#         if action == "pause":
+#             user.is_active = False
+#             message = "User has been paused."
+#         else:
+#             user.is_active = True
+#             message = "User has been unpaused."
+
+#         user.save(update_fields=["is_active"])
+        
+#         # 🔐 Create audit log
+#         AdminAuditLog.objects.create(
+#             admin=request.user,
+#             action=action,
+#             target_user=user,
+#             details=f"Admin {request.user.email} performed '{log_action}' on {user.email}"
+#         )
+
+#         return Response(
+#             {
+#                 "status": "success",
+#                 "message": message,
+#                 "user": {
+#                     "id": user.id,
+#                     "email": user.email,
+#                     "is_active": user.is_active,
+#                 }
+#             },
+#             status=status.HTTP_200_OK
+#         )
+
 class AdminPauseUserView(APIView):
-    """
-    Admin API to pause (deactivate) or unpause (activate) a user
-    """
     permission_classes = [IsAdminUser]
 
     def patch(self, request, user_id):
-        """
-        Toggle user's active status.
-        Send JSON payload: {"action": "pause"} or {"action": "unpause"}
-        """
         user = get_object_or_404(User, id=user_id)
 
         action = request.data.get("action")
@@ -890,13 +941,13 @@ class AdminPauseUserView(APIView):
             message = "User has been unpaused."
 
         user.save(update_fields=["is_active"])
-        
-        # 🔐 Create audit log
+
+        # 🔐 FIXED audit log
         AdminAuditLog.objects.create(
             admin=request.user,
-            action=log_action,
+            action=action,  
             target_user=user,
-            details=f"Admin {request.user.email} performed '{log_action}' on {user.email}"
+            details=f"Admin {request.user.email} performed '{action}' on {user.email}"
         )
 
         return Response(
@@ -911,6 +962,7 @@ class AdminPauseUserView(APIView):
             },
             status=status.HTTP_200_OK
         )
+
 
 
 # report views
@@ -965,7 +1017,24 @@ class AdminAuditLogView(APIView):
 
 
 # user detaisl
+from django.shortcuts import get_object_or_404
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.permissions import IsAdminUser
 
+from django.db.models import Sum, Value, FloatField, Avg
+from django.db.models.functions import Coalesce
+
+from accounts.models import User
+from subscriptions.models import Subscription
+from landscapers.models import BusinessProfile
+from profiles.models import LandscaperProfilies
+from jobs.models import Job
+from reviews.models import LandscaperReview
+from .models import LoginActivity, AdminAuditLog
+
+from .serializers import AdminUserDetailSerializer, AdminUserUpdateSerializer
 
 
 class AdminUserDetailView(APIView):
@@ -975,7 +1044,7 @@ class AdminUserDetailView(APIView):
         user = get_object_or_404(User, id=user_id)
 
         # -------------------------
-        # Subscription info
+        # Subscription
         # -------------------------
         subscription = (
             Subscription.objects
@@ -1009,31 +1078,31 @@ class AdminUserDetailView(APIView):
             }
 
         # -------------------------
-        # Business Profile info (business details)
+        # Profiles
         # -------------------------
         business_profile = BusinessProfile.objects.filter(user=user).first()
-        business_profile_data = None
+        landscaper_basic = LandscaperProfilies.objects.filter(user=user).first()
 
+        business_profile_data = None
         if business_profile:
             business_profile_data = {
                 "id": business_profile.id,
                 "business_name": getattr(business_profile, "business_name", None),
-                "bio": getattr(business_profile, "bio", None),
+                "bio": getattr(business_profile, "bio", None),  # SAFE
                 "selected_location": getattr(business_profile, "selected_location", None),
-                "address": user.address,
+                "address": getattr(user, "address", None),
+
+                # ✅ real name
+                "real_name": (
+                    getattr(landscaper_basic, "name", None)
+                    if landscaper_basic else getattr(user, "name", None)
+                )
             }
-        
-        
-
 
         # -------------------------
-        # Recent login activities
+        # Login Activity
         # -------------------------
-        login_qs = (
-            LoginActivity.objects
-            .filter(user=user)
-            .order_by("-created_at")[:20]
-        )
+        login_qs = LoginActivity.objects.filter(user=user).order_by("-created_at")[:20]
 
         login_activity = [{
             "id": x.id,
@@ -1044,11 +1113,10 @@ class AdminUserDetailView(APIView):
             "user_agent": x.user_agent,
             "created_at": x.created_at,
         } for x in login_qs]
-        # -------------------------
-        # Landscaper Profile info (jobs metrics)
-        # -------------------------
-        landscaper_profile = LandscaperProfilies.objects.filter(user=user).first()
 
+        # -------------------------
+        # DEFAULT METRICS
+        # -------------------------
         total_revenue = 0.0
         total_jobs = 0
         completed_jobs = 0
@@ -1059,57 +1127,73 @@ class AdminUserDetailView(APIView):
         average_rating = 0.0
         recent_jobs = []
 
-        if landscaper_profile:
-            jobs_qs = Job.objects.filter(landscaper=landscaper_profile)
+        # -------------------------
+        # JOB METRICS
+        # -------------------------
+        if business_profile:
+            jobs_qs = Job.objects.filter(landscaper=business_profile)
 
             total_jobs = jobs_qs.count()
-            completed_jobs = jobs_qs.filter(is_completed=True).count()
-            pending_jobs = jobs_qs.filter(is_completed=False).count()
 
-            # distinct clients from jobs
+            completed_jobs = jobs_qs.filter(
+                status=Job.Status.COMPLETED
+            ).count()
+
+            pending_jobs = jobs_qs.exclude(
+                status=Job.Status.COMPLETED
+            ).count()
+
             total_clients = jobs_qs.values("client_id").distinct().count()
             total_connected_clients = total_clients
 
             total_revenue = jobs_qs.filter(
-                payment_status=PaymentStatus.PAID
+                payment_status=Job.PaymentStatus.PAID
             ).aggregate(
-                total=Coalesce(Sum("service__price", output_field=FloatField()), Value(0.0))
+                total=Coalesce(Sum("total_price"), Value(0.0), output_field=FloatField())
             )["total"] or 0.0
 
-            # reviews are linked to User, not profile
+            # -------------------------
+            # REVIEWS
+            # -------------------------
             reviews_qs = LandscaperReview.objects.filter(landscaper=user)
+
             total_reviews = reviews_qs.count()
 
             average_rating = reviews_qs.aggregate(
-                avg=Coalesce(Avg("rating", output_field=FloatField()), Value(0.0))
+                avg=Coalesce(Avg("rating"), Value(0.0))
             )["avg"] or 0.0
 
+            # -------------------------
+            # RECENT JOBS
+            # -------------------------
             recent_jobs_qs = (
-                jobs_qs.select_related("service", "client")
+                jobs_qs.select_related("client")
                 .order_by("-created_at")[:10]
             )
 
             for job in recent_jobs_qs:
                 client_user = getattr(job.client, "user", None)
+
                 recent_jobs.append({
                     "id": job.id,
-                    "service_name": getattr(job.service, "name", None),
-                    "service_price": float(getattr(job.service, "price", 0) or 0),
+                    "service_name": f"Job #{job.id}",  # fallback
+
                     "scheduled_date": job.scheduled_date,
                     "scheduled_time": job.scheduled_time,
-                    "is_completed": job.is_completed,
+
+                    "is_completed": job.status == Job.Status.COMPLETED,
+
                     "completed_at": job.completed_at,
                     "payment_status": job.payment_status,
-                    "stripe_payment_id": job.stripe_payment_id,
+
                     "client_profile_id": job.client_id,
                     "client_id": client_user.id if client_user else None,
-                    "client_name": client_user.name if client_user else None,
-                    "client_email": client_user.email if client_user else None,
+                    "client_name": job.client_name,
+                    "client_email": job.client_email,
                 })
 
-
         # -------------------------
-        # Recent audit logs
+        # Audit Logs
         # -------------------------
         recent_logs_qs = (
             AdminAuditLog.objects
@@ -1127,6 +1211,9 @@ class AdminUserDetailView(APIView):
             "created_at": log.created_at,
         } for log in recent_logs_qs]
 
+        # -------------------------
+        # FINAL RESPONSE (UNCHANGED)
+        # -------------------------
         payload = {
             **AdminUserDetailSerializer(user).data,
             "subscription": subscription_data,
