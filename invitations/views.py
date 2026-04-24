@@ -14,7 +14,7 @@ from profiles.models import WorkerProfile
 from .models import TeamInvitation
 from .serializers import SendInvitationSerializer,AcceptInvitationSerializer,InvitationListSerializer
 from .permissions import IsProLandscaper
-
+from invitations.models import TeamInvitation
 
 # =========================
 # SEND INVITATION
@@ -34,7 +34,7 @@ class SendInvitationView(CreateAPIView):
             email=email
         )
 
-        invite_link = f"https://zznkjkkp-8000.inc1.devtunnels.ms/accept-invite/{invitation.token}"
+        invite_link = f"https://zznkjkkp-8000.inc1.devtunnels.ms/{invitation.token}"
 
         send_mail(
             subject="You're invited to join a landscaper team",
@@ -157,14 +157,16 @@ class DeleteInvitationView(APIView):
 
 # =========================
 # BLOCK WORKER
-# =========================
+from invitations.models import TeamInvitation, InvitationStatus
+from accounts.models import User
+from profiles.models import WorkerProfile 
+
+
 class WorkerBlockToggleView(APIView):
     permission_classes = [IsAuthenticated, IsProLandscaper]
 
     def post(self, request, worker_id):
-        """
-        action = 'block' or 'unblock'
-        """
+
         action = request.data.get("action")
         if action not in ["block", "unblock"]:
             return Response(
@@ -172,15 +174,42 @@ class WorkerBlockToggleView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Use user__id instead of WorkerProfile id
+        # 🔥 STEP 1: get invitation by ID
+        invitation = TeamInvitation.objects.filter(
+            id=worker_id,
+            status=InvitationStatus.ACCEPTED
+        ).first()
+
+        if not invitation:
+            return Response(
+                {"detail": "Accepted invitation not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # 🔥 STEP 2: get user by email (IMPORTANT FIX)
+        worker_user = User.objects.filter(email=invitation.email).first()
+
+        if not worker_user:
+            return Response(
+                {"detail": "User not found for this invitation"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # 🔥 STEP 3: get worker profile
         worker = WorkerProfile.objects.filter(
-            user__id=worker_id,
+            user=worker_user,
             pro_landscaper=request.user.landscaper_profile
         ).select_related("user").first()
 
         if not worker:
-            return Response({"detail": "Worker not found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"detail": "Worker profile not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
+        # -------------------------
+        # BLOCK / UNBLOCK
+        # -------------------------
         if action == "block":
             worker.is_blocked = True
             worker.user.is_active = False
@@ -190,10 +219,13 @@ class WorkerBlockToggleView(APIView):
             worker.user.is_active = True
             message = "Worker unblocked successfully"
 
-        worker.user.save()
-        worker.save()
+        worker.user.save(update_fields=["is_active"])
+        worker.save(update_fields=["is_blocked"])
 
-        return Response({"detail": message}, status=status.HTTP_200_OK)
+        return Response(
+            {"detail": message},
+            status=status.HTTP_200_OK
+        )
 
 class AcceptedInvitationListView(ListAPIView):
     permission_classes = [IsAuthenticated, IsProLandscaper]

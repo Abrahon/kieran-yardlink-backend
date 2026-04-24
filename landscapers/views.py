@@ -465,8 +465,8 @@ class ClientCustomServiceListCreateView(generics.ListCreateAPIView):
             client=client,
             status="pending",
             price=None,
-            preferred_date=None,
-            preferred_time=None
+            # preferred_date=None,
+            # preferred_time=None
         )
 
 
@@ -589,6 +589,91 @@ class ClientCustomServiceRetrieveDestroyView(generics.RetrieveDestroyAPIView):
 
 
 
+# @api_view(["PATCH"])
+# @permission_classes([permissions.IsAuthenticated])
+# def client_confirm_service(request, pk):
+#     action = request.data.get("action")
+
+#     if action not in ["confirm", "decline"]:
+#         return Response({"error": "Invalid action."}, status=400)
+
+#     client = getattr(request.user, "clientprofile", None)
+#     if not client:
+#         return Response({"error": "Client profile not found."}, status=403)
+
+#     try:
+#         service = ClientCustomService.objects.get(
+#             pk=pk,
+#             client=client,
+#             is_active=True
+#         )
+#     except ClientCustomService.DoesNotExist:
+#         return Response({"error": "Service not found."}, status=404)
+
+#     if service.status != "accepted":
+#         return Response({"error": "Service is not ready for confirmation."}, status=400)
+
+#     if action == "decline":
+#         service.status = "declined"
+#         service.save(update_fields=["status", "updated_at"])
+#         return Response({
+#             "message": "Service declined successfully.",
+#             "status": service.status
+#         }, status=200)
+
+#     if not service.preferred_date or not service.preferred_time:
+#         return Response({"error": "Landscaper has not set schedule yet."}, status=400)
+#     with transaction.atomic():
+#         service = ClientCustomService.objects.select_for_update().get(
+#             pk=pk,
+#             client=client,
+#             is_active=True
+#         )
+
+#         if not service.landscaper:
+#             return Response(
+#                 {"error": "No landscaper assigned to this service."},
+#                 status=400
+#             )
+
+#         booking = BookingRequest.objects.create(
+#             client=service.client,
+#             landscaper=service.landscaper,
+#             property=service.property,
+#             service=None,
+#             description=f"{service.name}\n\n{service.description or ''}".strip(),
+#             booking_type=booking_type,
+#             recurring_day_of_week=service.recurring_day_of_week,
+#             scheduled_date=service.preferred_date,
+#             scheduled_time=service.preferred_time,
+#             price=service.price,
+#             note=service.note,
+#             status=BookingRequest.Status.PENDING,
+#             is_active=True
+#         )
+
+#         service.status = "confirmed"
+#         service.booking = booking
+#         service.save(update_fields=["status", "booking", "updated_at"])
+
+#     return Response({
+#         "message": "Service confirmed successfully.",
+#         "status": service.status,
+#         "booking_id": booking.id,
+#         "custom_service": ClientCustomServiceSerializer(service).data,
+#         "client": ClientProfileSerializer(client).data
+#     }, status=status.HTTP_200_OK)
+
+from django.db import transaction
+from rest_framework.decorators import api_view, permission_classes
+
+
+from bookings.models import BookingRequest
+from profiles.models import ClientProfile
+from .models import ClientCustomService
+from .serializers import ClientCustomServiceSerializer
+
+
 @api_view(["PATCH"])
 @permission_classes([permissions.IsAuthenticated])
 def client_confirm_service(request, pk):
@@ -613,16 +698,27 @@ def client_confirm_service(request, pk):
     if service.status != "accepted":
         return Response({"error": "Service is not ready for confirmation."}, status=400)
 
+    # -------------------------
+    # DECLINE FLOW
+    # -------------------------
     if action == "decline":
         service.status = "declined"
         service.save(update_fields=["status", "updated_at"])
+
         return Response({
             "message": "Service declined successfully.",
             "status": service.status
         }, status=200)
 
-    if not service.preferred_date or not service.preferred_time:
-        return Response({"error": "Landscaper has not set schedule yet."}, status=400)
+    # -------------------------
+    # CONFIRM FLOW
+    # -------------------------
+    if not service.preferred_date:
+        return Response(
+            {"error": "Landscaper has not set schedule yet."},
+            status=400
+        )
+
     with transaction.atomic():
         service = ClientCustomService.objects.select_for_update().get(
             pk=pk,
@@ -636,16 +732,29 @@ def client_confirm_service(request, pk):
                 status=400
             )
 
+        # ✅ FIXED: booking_type logic
+        if service.recurring_type == "weekly":
+            booking_type = BookingRequest.BookingType.WEEKLY
+        elif service.recurring_type == "biweekly":
+            booking_type = BookingRequest.BookingType.BIWEEKLY
+        elif service.recurring_type:
+            booking_type = BookingRequest.BookingType.CUSTOM
+        else:
+            booking_type = BookingRequest.BookingType.ONE_TIME
+
         booking = BookingRequest.objects.create(
             client=service.client,
             landscaper=service.landscaper,
             property=service.property,
             service=None,
             description=f"{service.name}\n\n{service.description or ''}".strip(),
+
             booking_type=booking_type,
+
             recurring_day_of_week=service.recurring_day_of_week,
             scheduled_date=service.preferred_date,
             scheduled_time=service.preferred_time,
+
             price=service.price,
             note=service.note,
             status=BookingRequest.Status.PENDING,
@@ -691,14 +800,13 @@ from django.utils.dateparse import parse_date, parse_time
 
 
 
+
+
+from django.utils.dateparse import parse_date, parse_time
 @api_view(["PATCH"])
 @permission_classes([IsLandscaper])
 def landscaper_accept_service(request, pk):
-    """
-    Landscaper accepts pending service:
-    - sets price
-    - sets scheduled date & time (for one-time)
-    """
+
     price = request.data.get("price")
     scheduled_date_str = request.data.get("scheduled_date")
     scheduled_time_str = request.data.get("scheduled_time")
@@ -707,10 +815,10 @@ def landscaper_accept_service(request, pk):
         return Response({"error": "Price is required."}, status=400)
 
     try:
-        price = Decimal(price)
+        price = Decimal(str(price))
         if price <= 0:
             return Response({"error": "Price must be greater than 0."}, status=400)
-    except (InvalidOperation, TypeError, ValueError):
+    except Exception:
         return Response({"error": "Invalid price format."}, status=400)
 
     landscaper = getattr(request.user, "landscaper_profile", None)
@@ -719,28 +827,28 @@ def landscaper_accept_service(request, pk):
 
     try:
         service = ClientCustomService.objects.get(
-            pk=pk, landscaper=landscaper, status="pending", is_active=True
+            pk=pk,
+            landscaper=landscaper,
+            status="pending",
+            is_active=True
         )
     except ClientCustomService.DoesNotExist:
         return Response({"error": "Pending service not found."}, status=404)
 
-    # For one-time, date/time must be provided
-    if not service.recurring_type:
-        if not scheduled_date_str or not scheduled_time_str:
-            return Response(
-                {"error": "Scheduled date and time are required for one-time service."}, status=400
-            )
-        scheduled_date = parse_date(scheduled_date_str)
-        scheduled_time = parse_time(scheduled_time_str)
-        if not scheduled_date or not scheduled_time:
-            return Response({"error": "Invalid date or time format."}, status=400)
+    # ✅ APPLY DATE & TIME FOR BOTH TYPES
+    scheduled_date = parse_date(scheduled_date_str) if scheduled_date_str else None
+    scheduled_time = parse_time(scheduled_time_str) if scheduled_time_str else None
 
+    if scheduled_date:
         service.preferred_date = scheduled_date
+
+    if scheduled_time:
         service.preferred_time = scheduled_time
 
+    # SAVE
     service.price = price
     service.status = "accepted"
-    service.save(update_fields=["price", "preferred_date", "preferred_time", "status", "updated_at"])
+    service.save()
 
     return Response({
         "message": "Service accepted and schedule set successfully.",
@@ -750,6 +858,7 @@ def landscaper_accept_service(request, pk):
         "scheduled_date": service.preferred_date,
         "scheduled_time": service.preferred_time,
     }, status=200)
+
 
 # accepet client custom service landscaper
 # @api_view(["PATCH"])

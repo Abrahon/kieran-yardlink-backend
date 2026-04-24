@@ -66,6 +66,7 @@ class UpcomingJobsListView(generics.ListAPIView):
         ).order_by("scheduled_date", "scheduled_time")
 
 
+
 # --- Job Detail ---
 class JobDetailView(generics.RetrieveAPIView):
     serializer_class = JobSerializer
@@ -282,5 +283,158 @@ class ManualOneTimeJobCreateView(generics.CreateAPIView):
         serializer.is_valid(raise_exception=True)
         job = serializer.save()
         return Response(JobSerializer(job).data, status=status.HTTP_201_CREATED)
+
+
+from rest_framework import generics, permissions
+from rest_framework.response import Response
+from django.shortcuts import get_object_or_404
+
+from .models import Job, JobItem, JobImage
+
+
+class CompletedJobDetailView(generics.RetrieveAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        job_id = kwargs.get("pk")
+
+        job = get_object_or_404(
+            Job.objects.select_related(
+                "client__user",
+                "external_client",
+                "landscaper",
+                "job_property",
+                "booking",
+            ),
+            id=job_id
+        )
+
+        # -------------------------
+        # CLIENT INFO (SAFE FOR BOTH TYPES)
+        # -------------------------
+        client_data = {
+            "name": job.client_name,
+            "email": job.client_email,
+            "phone": job.client_phone,
+        }
+
+        # -------------------------
+        # LANDSCAPER INFO
+        # -------------------------
+        landscaper_data = {
+            "id": job.landscaper.id,
+            "business_name": getattr(job.landscaper, "business_name", None),
+        }
+
+        # -------------------------
+        # PROPERTY INFO
+        # -------------------------
+        property_data = None
+        if job.job_property:
+            property_data = {
+                "id": job.job_property.id,
+                "name": getattr(job.job_property, "name", None),
+                "address": getattr(job.job_property, "address", None),
+            }
+
+        # -------------------------
+        # JOB ITEMS
+        # -------------------------
+        items_qs = JobItem.objects.filter(job=job).select_related(
+            "service",
+            "addon",
+            "completed_by"
+        )
+
+        items_data = []
+        for item in items_qs:
+            items_data.append({
+                "id": item.id,
+                "item_type": item.item_type,
+                "name": item.name,
+                "description": item.description,
+                "price": float(item.price),
+                "is_completed": item.is_completed,
+                "completed_at": item.completed_at,
+                "note": item.note,
+                "service": item.service.name if item.service else None,
+                "addon": item.addon.name if item.addon else None,
+                "completed_by": item.completed_by.email if item.completed_by else None,
+            })
+
+        # -------------------------
+        # JOB IMAGES (BEFORE / AFTER GROUPED)
+        # -------------------------
+        images_qs = JobImage.objects.filter(job=job)
+
+        before_images = []
+        after_images = []
+
+        for img in images_qs:
+            img_data = {
+                "id": img.id,
+                "image_url": img.image.url if img.image else None,
+                "caption": img.caption,
+                "uploaded_by": img.uploaded_by.email if img.uploaded_by else None,
+                "created_at": img.created_at,
+            }
+
+            if img.image_type == JobImage.ImageType.BEFORE:
+                before_images.append(img_data)
+            else:
+                after_images.append(img_data)
+
+        # -------------------------
+        # PROGRESS CALCULATION
+        # -------------------------
+        total_items = job.total_items
+        completed_items = job.completed_items
+
+        progress_percentage = (
+            round((completed_items / total_items) * 100, 2)
+            if total_items > 0 else 0
+        )
+
+        # -------------------------
+        # RESPONSE
+        # -------------------------
+        return Response({
+            "id": job.id,
+
+            "status": job.status,
+            "payment_status": job.payment_status,
+            "is_active": job.is_active,
+
+            "scheduled_date": job.scheduled_date,
+            "scheduled_time": job.scheduled_time,
+
+            "total_price": float(job.total_price),
+
+            "progress": {
+                "total_items": total_items,
+                "completed_items": completed_items,
+                "percentage": progress_percentage,
+            },
+
+            "completed_at": job.completed_at,
+
+            # CLIENT
+            "client": client_data,
+
+            # LANDSCAPER
+            "landscaper": landscaper_data,
+
+            # PROPERTY
+            "property": property_data,
+
+            # ITEMS
+            "items": items_data,
+
+            # IMAGES
+            "images": {
+                "before": before_images,
+                "after": after_images,
+            }
+        })
 
 

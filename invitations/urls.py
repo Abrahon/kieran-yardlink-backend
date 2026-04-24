@@ -68,7 +68,7 @@ urlpatterns = [
     path("delete/<int:invitation_id>/", DeleteInvitationView.as_view(), name="delete-invitation"),
     # invitations/urls.py
     path(
-        "accept-invite-api/<uuid:token>/",
+        "accept-invite/<uuid:token>/",
         AcceptInvitationView.as_view(),
         name="accept-invite-api"
     ),

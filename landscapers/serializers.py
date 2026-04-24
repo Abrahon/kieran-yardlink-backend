@@ -269,44 +269,112 @@ class ServiceSerializer(serializers.ModelSerializer):
 
 
 
+# class ClientCustomServiceSerializer(serializers.ModelSerializer):
+#     client = serializers.ReadOnlyField(source="client.id")
+#     booking_id = serializers.ReadOnlyField(source="booking.id")  # link to BookingRequest
+
+#     class Meta:
+#         model = ClientCustomService
+#         fields = [
+#             "id", "client", "landscaper", "property", "name", "description", "note",
+#             "price", "status", "is_active",
+#             "preferred_date", "preferred_time",
+#             "recurring_type", "recurring_day_of_week",
+#             "booking_id",  # new field for linked booking
+#             "created_at", "updated_at"
+#         ]
+#         read_only_fields = [
+#             "id", "client", "status", "price", "is_active",
+#             "booking_id",
+#             "created_at", "updated_at",
+#             # "preferred_date", "preferred_time"  # landscaper sets date/time
+#         ]
+
+#     def validate(self, attrs):
+#         recurring_type = attrs.get("recurring_type")
+#         recurring_day_of_week = attrs.get("recurring_day_of_week")
+
+#         if not recurring_type:
+#             # One-time service
+#             if recurring_day_of_week:
+#                 raise serializers.ValidationError("One-time service cannot have day of week.")
+#             # preferred_date and preferred_time will be set later by landscaper
+#         else:
+#             # Recurring service
+#             if recurring_type not in ["weekly", "biweekly"]:
+#                 raise serializers.ValidationError("Invalid recurring type.")
+#             if not recurring_day_of_week:
+#                 raise serializers.ValidationError("Recurring service must include day of week.")
+#             # preferred_date can be optional; landscaper will set start date
+#             attrs["preferred_time"] = None  # recurring services don't need a time
+
+#         return attrs
+
+from rest_framework import serializers
+
 class ClientCustomServiceSerializer(serializers.ModelSerializer):
     client = serializers.ReadOnlyField(source="client.id")
-    booking_id = serializers.ReadOnlyField(source="booking.id")  # link to BookingRequest
+    booking_id = serializers.ReadOnlyField(source="booking.id")
 
     class Meta:
         model = ClientCustomService
         fields = [
             "id", "client", "landscaper", "property", "name", "description", "note",
             "price", "status", "is_active",
+
+            # ✅ allow these fields
             "preferred_date", "preferred_time",
+
             "recurring_type", "recurring_day_of_week",
-            "booking_id",  # new field for linked booking
+            "booking_id",
             "created_at", "updated_at"
         ]
+
         read_only_fields = [
-            "id", "client", "status", "price", "is_active",
+            "id", "client",
             "booking_id",
             "created_at", "updated_at",
-            "preferred_date", "preferred_time"  # landscaper sets date/time
         ]
-
     def validate(self, attrs):
         recurring_type = attrs.get("recurring_type")
         recurring_day_of_week = attrs.get("recurring_day_of_week")
 
+        preferred_date = attrs.get("preferred_date")
+        preferred_time = attrs.get("preferred_time")
+
+        # -------------------------
+        # ONE-TIME SERVICE
+        # -------------------------
         if not recurring_type:
-            # One-time service
             if recurring_day_of_week:
-                raise serializers.ValidationError("One-time service cannot have day of week.")
-            # preferred_date and preferred_time will be set later by landscaper
+                raise serializers.ValidationError(
+                    "One-time service cannot have day of week."
+                )
+
+            if preferred_time and not preferred_date:
+                raise serializers.ValidationError(
+                    "Preferred time requires a preferred date."
+                )
+
+        # -------------------------
+        # RECURRING SERVICE
+        # -------------------------
         else:
-            # Recurring service
             if recurring_type not in ["weekly", "biweekly"]:
                 raise serializers.ValidationError("Invalid recurring type.")
+
             if not recurring_day_of_week:
-                raise serializers.ValidationError("Recurring service must include day of week.")
-            # preferred_date can be optional; landscaper will set start date
-            attrs["preferred_time"] = None  # recurring services don't need a time
+                raise serializers.ValidationError(
+                    "Recurring service must include day of week."
+                )
+
+            if not preferred_date:
+                raise serializers.ValidationError(
+                    "Recurring service must include a start date (preferred_date)."
+                )
+
+            # ✅ DO NOTHING HERE (IMPORTANT)
+            # allow preferred_time to pass through
 
         return attrs
 

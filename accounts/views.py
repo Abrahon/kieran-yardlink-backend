@@ -40,14 +40,28 @@ from django.db.models import Q, Sum, FloatField, Count
 from django.shortcuts import get_object_or_404
 from django.db.models import Sum, FloatField, Value
 from django.db.models.functions import Coalesce
+from django.shortcuts import get_object_or_404
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.permissions import IsAdminUser
 
+from django.db.models import Sum, Value, FloatField, Avg
+from django.db.models.functions import Coalesce
+
+
+from subscriptions.models import Subscription
+from landscapers.models import BusinessProfile
+from profiles.models import LandscaperProfilies
+from jobs.models import Job
+from reviews.models import LandscaperReview
+from .models import LoginActivity, AdminAuditLog
+
+from .serializers import AdminUserDetailSerializer, AdminUserUpdateSerializer
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
 from rest_framework import status
-
-from .models import User, AdminAuditLog
-from .serializers import AdminUserDetailSerializer, AdminUserUpdateSerializer
 
 from subscriptions.models import Subscription
 
@@ -942,7 +956,7 @@ class AdminPauseUserView(APIView):
 
         user.save(update_fields=["is_active"])
 
-        # 🔐 FIXED audit log
+        #  FIXED audit log
         AdminAuditLog.objects.create(
             admin=request.user,
             action=action,  
@@ -1017,25 +1031,6 @@ class AdminAuditLogView(APIView):
 
 
 # user detaisl
-from django.shortcuts import get_object_or_404
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.permissions import IsAdminUser
-
-from django.db.models import Sum, Value, FloatField, Avg
-from django.db.models.functions import Coalesce
-
-from accounts.models import User
-from subscriptions.models import Subscription
-from landscapers.models import BusinessProfile
-from profiles.models import LandscaperProfilies
-from jobs.models import Job
-from reviews.models import LandscaperReview
-from .models import LoginActivity, AdminAuditLog
-
-from .serializers import AdminUserDetailSerializer, AdminUserUpdateSerializer
-
 
 class AdminUserDetailView(APIView):
     permission_classes = [IsAdminUser]

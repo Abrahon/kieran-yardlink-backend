@@ -221,6 +221,7 @@ class Job(TimeStampedModel):
         return f"Job #{self.id} - {self.client_name or 'No Client'} - {self.status}"
 
 
+
 class JobItem(TimeStampedModel):
     class ItemType(models.TextChoices):
         STANDARD_SERVICE = "standard_service", "Standard Service"

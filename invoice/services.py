@@ -40,6 +40,17 @@ def create_invoice_from_completed_job(job, created_by=None):
     completed_items = job.items.filter(is_completed=True).order_by("sort_order", "id")
     if not completed_items.exists():
         raise ValueError("Cannot create invoice without completed items.")
+        
+    recipient_email = None
+
+    if job.client and job.client.user and job.client.user.email:
+        recipient_email = job.client.user.email
+
+    elif job.external_client and job.external_client.email:
+        recipient_email = job.external_client.email
+
+    if not recipient_email:
+        raise ValueError("Client email not found.")
 
     with transaction.atomic():
         invoice = Invoice.objects.create(
@@ -52,7 +63,7 @@ def create_invoice_from_completed_job(job, created_by=None):
             service_fee_amount=Decimal("0.00"),
             net_amount=Decimal("0.00"),
             total=Decimal("0.00"),
-            sent_to_email=job.client.user.email if job.client else None,
+            sent_to_email=recipient_email,
             created_by=created_by,
         )
 

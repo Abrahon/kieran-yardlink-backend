@@ -104,8 +104,8 @@ class BookingRequest(models.Model):
 
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"
-        ACCEPTED = "accepted", "Accepted"     # landscaper accepted
-        CONFIRMED = "confirmed", "Confirmed"  # client confirmed price (request/custom)
+        ACCEPTED = "accepted", "Accepted"     
+        CONFIRMED = "confirmed", "Confirmed"  
         DECLINED = "declined", "Declined"
         COMPLETED = "completed", "Completed"
 

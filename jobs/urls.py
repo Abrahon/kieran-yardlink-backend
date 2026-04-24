@@ -12,7 +12,8 @@ from jobs.views import (
     CompletedJobsListView,
     ManualOneTimeJobCreateView,
     InProgressJobsListView,
-    InProgressJobDetailView
+    InProgressJobDetailView,
+    CompletedJobDetailView
 )
 
 
@@ -27,6 +28,8 @@ urlpatterns = [
     path("landscaper/jobs/images/add/", JobImageCreateView.as_view(), name="job-add-image"),
     path("landscaper/jobs/reschedule/add/", JobRescheduleCreateView.as_view(), name="job-reschedule"),
     path("landscaper/jobs/completed/", CompletedJobsListView.as_view(), name="completed-jobs"),
-    # manual job created
+    path("landscaper/jobs/completed/<int:pk>/",CompletedJobDetailView.as_view(),name="completed-job-detail"),
+
+    # manual job created external client
     path("landscaper/manual-jobs/create/", ManualOneTimeJobCreateView.as_view(), name="manual-job-create"),
 ]

@@ -1,129 +1,3 @@
-# # from rest_framework import serializers
-# # from invoice.models import Invoice, InvoiceLineItem
-
-
-# # class InvoiceLineItemSerializer(serializers.ModelSerializer):
-# #     class Meta:
-# #         model = InvoiceLineItem
-# #         fields = [
-# #             "id",
-# #             "item_type",
-# #             "name",
-# #             "description",
-# #             "unit_price",
-# #             "quantity",
-# #             "line_total",
-# #         ]
-
-
-# # class InvoiceSerializer(serializers.ModelSerializer):
-# #     line_items = InvoiceLineItemSerializer(many=True, read_only=True)
-# #     client_email = serializers.SerializerMethodField()
-# #     client_name = serializers.SerializerMethodField()
-# #     job_id = serializers.IntegerField(source="job.id", read_only=True)
-# #     property_address = serializers.SerializerMethodField()
-
-# #     class Meta:
-# #         model = Invoice
-# #         fields = [
-# #             "id",
-# #             "job_id",
-# #             "invoice_number",
-# #             "status",
-# #             "issued_at",
-# #             "due_at",
-# #             "subtotal",
-# #             "total",
-# #             "notes",
-# #             "stripe_checkout_url",
-# #             "client_email",
-# #             "client_name",
-# #             "property_address",
-# #             "line_items",
-# #             "paid_at",
-# #         ]
-
-# #     def get_client_email(self, obj):
-# #         return obj.job.client.user.email if obj.job and obj.job.client and obj.job.client.user else None
-
-# #     def get_client_name(self, obj):
-# #         profile = obj.job.client
-# #         return getattr(profile, "name", None) if profile else None
-
-# #     def get_property_address(self, obj):
-# #         return str(obj.job.job_property) if obj.job and obj.job.job_property else None
-
-# from rest_framework import serializers
-# from invoice.models import Invoice, InvoiceLineItem
-
-
-# class InvoiceLineItemSerializer(serializers.ModelSerializer):
-#     class Meta:
-#         model = InvoiceLineItem
-#         fields = [
-#             "id",
-#             "item_type",
-#             "name",
-#             "description",
-#             "unit_price",
-#             "quantity",
-#             "line_total",
-#         ]
-
-
-# class InvoiceSerializer(serializers.ModelSerializer):
-#     line_items = InvoiceLineItemSerializer(many=True, read_only=True)
-#     client_email = serializers.SerializerMethodField()
-#     client_name = serializers.SerializerMethodField()
-#     job_id = serializers.IntegerField(source="job.id", read_only=True)
-#     property_address = serializers.SerializerMethodField()
-
-#     class Meta:
-#         model = Invoice
-#         fields = [
-#             "id",
-#             "job_id",
-#             "invoice_number",
-#             "status",
-#             "issued_at",
-#             "due_at",
-#             "subtotal",
-#             "service_fee_percent",
-#             "service_fee_amount",
-#             "net_amount",
-#             "total",
-#             "notes",
-#             "stripe_checkout_url",
-#             "stripe_session_id",
-#             "client_email",
-#             "client_name",
-#             "property_address",
-#             "line_items",
-#             "paid_at",
-#         ]
-
-#     def get_client_email(self, obj):
-#         if getattr(obj.job, "client", None) and getattr(obj.job.client, "user", None):
-#             return obj.job.client.user.email
-#         if getattr(obj.job, "external_client", None):
-#             return obj.job.external_client.email
-#         return obj.sent_to_email
-
-#     def get_client_name(self, obj):
-#         if getattr(obj.job, "external_client", None):
-#             return obj.job.external_client.full_name
-
-#         if getattr(obj.job, "client", None):
-#             user = getattr(obj.job.client, "user", None)
-#             if user and getattr(user, "name", None):
-#                 return user.name
-#             if getattr(obj.job.client, "name", None):
-#                 return obj.job.client.name
-
-#         return "Client"
-
-#     def get_property_address(self, obj):
-#         return str(obj.job.job_property) if obj.job and obj.job.job_property else None
 
 from rest_framework import serializers
 from invoice.models import Invoice, InvoiceLineItem
@@ -208,7 +82,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
 
     def get_client_name(self, obj):
         if getattr(obj.job, "external_client", None):
-            return obj.job.external_client.full_name
+            return obj.job.external_client.name
 
         if getattr(obj.job, "client", None):
             user = getattr(obj.job.client, "user", None)
@@ -219,9 +93,9 @@ class InvoiceSerializer(serializers.ModelSerializer):
 
             # fallback first_name + last_name
             if user:
-                full_name = f"{getattr(user, 'first_name', '')} {getattr(user, 'last_name', '')}".strip()
-                if full_name:
-                    return full_name
+                name = f"{getattr(user, 'first_name', '')} {getattr(user, 'last_name', '')}".strip()
+                if name:
+                    return name
 
             # fallback client profile name if not generic
             if getattr(obj.job.client, "name", None) and obj.job.client.name != "Client":

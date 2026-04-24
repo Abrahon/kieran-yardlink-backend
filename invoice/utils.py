@@ -8,8 +8,8 @@ def get_job_recipient_name(job):
 
     # External client
     if getattr(job, "external_client", None):
-        if job.external_client.full_name:
-            return job.external_client.full_name
+        if job.external_client.name:
+            return job.external_client.name
 
     # App client
     client = getattr(job, "client", None)
@@ -21,9 +21,9 @@ def get_job_recipient_name(job):
             if getattr(user, "name", None):
                 return user.name
 
-            full_name = f"{getattr(user, 'first_name', '')} {getattr(user, 'last_name', '')}".strip()
-            if full_name:
-                return full_name
+            name = f"{getattr(user, 'first_name', '')} {getattr(user, 'last_name', '')}".strip()
+            if name:
+                return name
 
             if getattr(user, "username", None):
                 return user.username
