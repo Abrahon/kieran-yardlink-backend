@@ -405,6 +405,76 @@ class ClientProfileListView(generics.ListAPIView):
 
 
 
+class ClientDetailView(generics.RetrieveAPIView):
+    """
+    Retrieve a single client profile by USER ID (recommended)
+    Includes:
+    - profile data
+    - optional chat thread info for landscaper
+    """
+
+    serializer_class = ClientProfileSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self):
+        try:
+            user_id = self.kwargs.get("id")
+
+            if not user_id:
+                raise ValueError("User ID is required in URL")
+
+            # SAFE FETCH: ensure profile exists for user
+            profile = get_object_or_404(
+                ClientProfile.objects.select_related("user"),
+                user__id=user_id
+            )
+
+            return profile
+
+        except ValueError as e:
+            # bad request (missing id)
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({"detail": str(e)})
+
+        except Exception:
+            # unexpected server issue
+            from rest_framework.exceptions import NotFound
+            raise NotFound({"detail": "Client profile not found"})
+
+    def retrieve(self, request, *args, **kwargs):
+        try:
+            client_profile = self.get_object()
+
+            serializer = self.get_serializer(
+                client_profile,
+                context={"request": request}
+            )
+            data = serializer.data
+
+            # ---------------- CHAT LOGIC ----------------
+            data["message_info"] = None
+
+            if hasattr(request.user, "role") and request.user.role == "landscaper":
+                thread = ChatThread.objects.filter(
+                    Q(client=client_profile.user, landscaper=request.user) |
+                    Q(client=request.user, landscaper=client_profile.user)
+                ).first()
+
+                data["message_info"] = {
+                    "can_message": True,
+                    "thread_id": thread.id if thread else None
+                }
+
+            return Response(data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response(
+                {
+                    "detail": "Something went wrong while fetching client profile",
+                    "error": str(e)
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 # profiles/views.py
 from rest_framework import generics, permissions
@@ -625,43 +695,68 @@ class LandscaperDetailWithChatView(generics.RetrieveAPIView):
         
 
 # client details
+# class ClientDetailWithChatView(generics.RetrieveAPIView):
+#     """
+#     Returns detailed client info including:
+#     - Services, properties
+#     - Message info (chat thread with landscaper if exists)
+#     """
+#     serializer_class = ClientProfileSerializer
+#     permission_classes = [IsAuthenticated]
+#     lookup_field = "id"  # provide client profile id in URL
+
+#     def get_object(self):
+#         client_id = self.kwargs.get("id")
+#         return get_object_or_404(ClientProfile, id=client_id)
+
+#     def get(self, request, *args, **kwargs):
+#         client_profile = self.get_object()
+#         serializer = self.get_serializer(client_profile, context={"request": request})
+#         data = serializer.data
+
+#         # Optional: if logged-in user is a landscaper, check chat thread
+#         if request.user.role == "landscaper":
+#             landscaper_user = request.user
+#             client_user = client_profile.user
+#             thread = ChatThread.objects.filter(
+#                 Q(client=client_user, landscaper=landscaper_user) |
+#                 Q(client=landscaper_user, landscaper=client_user)
+#             ).first()
+#             data["message_info"] = {
+#                 "can_message": True,
+#                 "thread_id": thread.id if thread else None
+#             }
+#         else:
+#             # client viewing another client (optional)
+#             data["message_info"] = None
+
+#         return Response(data, status=status.HTTP_200_OK)
+
 class ClientDetailWithChatView(generics.RetrieveAPIView):
-    """
-    Returns detailed client info including:
-    - Services, properties
-    - Message info (chat thread with landscaper if exists)
-    """
     serializer_class = ClientProfileSerializer
     permission_classes = [IsAuthenticated]
-    lookup_field = "id"  # provide client profile id in URL
-
-    def get_object(self):
-        client_id = self.kwargs.get("id")
-        return get_object_or_404(ClientProfile, id=client_id)
+    queryset = ClientProfile.objects.all()
+    lookup_field = "id"
 
     def get(self, request, *args, **kwargs):
         client_profile = self.get_object()
         serializer = self.get_serializer(client_profile, context={"request": request})
         data = serializer.data
 
-        # Optional: if logged-in user is a landscaper, check chat thread
         if request.user.role == "landscaper":
-            landscaper_user = request.user
-            client_user = client_profile.user
             thread = ChatThread.objects.filter(
-                Q(client=client_user, landscaper=landscaper_user) |
-                Q(client=landscaper_user, landscaper=client_user)
+                Q(client=client_profile.user, landscaper=request.user) |
+                Q(client=request.user, landscaper=client_profile.user)
             ).first()
+
             data["message_info"] = {
                 "can_message": True,
                 "thread_id": thread.id if thread else None
             }
         else:
-            # client viewing another client (optional)
             data["message_info"] = None
 
-        return Response(data, status=status.HTTP_200_OK)
-
+        return Response(data)
 
 # reminder views
 # profiles/views.py

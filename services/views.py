@@ -31,9 +31,6 @@ from .serializers import (
 )
 from profiles.models import ClientProfile
 
-# -------------------- Standard Services --------------------
-
-
 
 # add ons
 # services/views.py

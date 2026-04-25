@@ -15,6 +15,12 @@ from invoice.utils import send_invoice_email
 from jobs.models import Job
 from landscapers.models import BusinessProfile
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.response import Response
+from django.shortcuts import get_object_or_404
+from invoice.models import Invoice
+from profiles.models import LandscaperProfilies
+
 
 class ClientInvoiceListView(generics.ListAPIView):
     serializer_class = InvoiceSerializer
@@ -110,13 +116,7 @@ def regenerate_invoice_checkout(request, invoice_id):
     
 
 
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework import status
 
-from invoice.models import Invoice
-from django.shortcuts import get_object_or_404
 
 
 @api_view(["POST"])
@@ -203,9 +203,6 @@ def send_job_invoice(request, invoice_id):
     }, status=status.HTTP_200_OK)
 
 
-
-
-    
     
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
@@ -251,12 +248,7 @@ def mark_invoice_paid(request, invoice_id):
     }, status=status.HTTP_200_OK)
 
 
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
 
-from invoice.models import Invoice
-from profiles.models import LandscaperProfilies
 
 
 @api_view(["GET"])

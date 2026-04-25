@@ -36,6 +36,9 @@ from django.db.models.functions import ACos, Cos, Sin, Radians
 from django.db.models import Q
 from rest_framework import generics, status
 # from .serializers import UpdateServiceSerializer
+from bookings.models import BookingRequest, BookingRequestItem
+from rest_framework.exceptions import PermissionDenied
+from landscapers.models import BusinessProfile
 from accounts.models import User
 from accounts.enums import RoleChoices
 from profiles.models import LandscaperProfilies
@@ -85,6 +88,17 @@ from profiles.serializers import ClientProfileSerializer
 from rest_framework.decorators import api_view, permission_classes
 from .serializers import PublicServiceSerializer, PublicAddonSerializer
 from django.db import transaction
+from django.db import transaction
+from rest_framework.decorators import api_view, permission_classes
+
+
+from bookings.models import BookingRequest
+from profiles.models import ClientProfile
+from .models import ClientCustomService
+from .serializers import ClientCustomServiceSerializer
+from rest_framework import generics, permissions
+from .models import ClientCustomService
+from .serializers import ClientCustomServiceSerializer
 
 from profiles.serializers import ClientProfileSerializer
 
@@ -151,9 +165,6 @@ class GetBusinessProfileView(generics.RetrieveAPIView):
             raise ValidationError("Business profile not found for this user.")
 
         return profile
-
-
-
 
 
 
@@ -256,12 +267,17 @@ class ServiceAddonListView(generics.ListAPIView):
         ).select_related("business").distinct().order_by("name")
 
 
-# # custom service request client
+
+
+
+
+
+# ================================
+# Client Views
+# ================================
+
+
 # class ClientCustomServiceListCreateView(generics.ListCreateAPIView):
-#     """
-#     GET  -> client sees own custom service requests
-#     POST -> client creates a new custom service request for a landscaper
-#     """
 #     serializer_class = ClientCustomServiceSerializer
 #     permission_classes = [permissions.IsAuthenticated]
 
@@ -280,17 +296,34 @@ class ServiceAddonListView(generics.ListAPIView):
 #         if not client:
 #             raise PermissionDenied("Client profile not found.")
 
+#         landscaper_id = self.request.data.get("landscaper")
+#         property_id = self.request.data.get("property")
+
+#         if not landscaper_id:
+#             raise serializers.ValidationError({"landscaper": "Required"})
+#         if not property_id:
+#             raise serializers.ValidationError({"property": "Required"})
+
+#         from landscapers.models import BusinessProfile
+#         from property.models import Property
+
+#         try:
+#             landscaper = BusinessProfile.objects.get(id=landscaper_id)
+#             property_obj = Property.objects.get(id=property_id)
+#         except BusinessProfile.DoesNotExist:
+#             raise serializers.ValidationError({"landscaper": "Invalid landscaper"})
+#         except Property.DoesNotExist:
+#             raise serializers.ValidationError({"property": "Invalid property"})
+
 #         serializer.save(
 #             client=client,
+#             landscaper=landscaper,
+#             property=property_obj,   # ✅ FIX HERE
 #             status="pending",
-#             price=None
+#             price=None,
 #         )
 
-# class ClientCustomServiceRetrieveDestroyView(generics.RetrieveDestroyAPIView):
-#     """
-#     GET    -> client retrieves one of their own service requests
-#     DELETE -> client deletes only if request is still pending
-#     """
+# class ClientCustomServiceListCreateView(generics.ListCreateAPIView):
 #     serializer_class = ClientCustomServiceSerializer
 #     permission_classes = [permissions.IsAuthenticated]
 
@@ -299,150 +332,47 @@ class ServiceAddonListView(generics.ListAPIView):
 #         if not client:
 #             return ClientCustomService.objects.none()
 
-#         return ClientCustomService.objects.filter(
-#             client=client,
-#             is_active=True
-#         )
-
-#     def destroy(self, request, *args, **kwargs):
-#         instance = self.get_object()
-
-#         if instance.status != "pending":
-#             return Response(
-#                 {"error": "Only pending requests can be deleted."},
-#                 status=status.HTTP_400_BAD_REQUEST
+#         return (
+#             ClientCustomService.objects.filter(
+#                 client=client,
+#                 is_active=True
 #             )
-
-#         instance.delete()
-#         return Response(
-#             {"message": "Service request deleted successfully."},
-#             status=status.HTTP_200_OK
+#             .select_related("client__user", "property", "landscaper__user")
+#             .order_by("-created_at")
 #         )
 
+#     def perform_create(self, serializer):
+#         client = getattr(self.request.user, "clientprofile", None)
+#         if not client:
+#             raise PermissionDenied("Client profile not found.")
 
-# # clinet confirm or decline
-# @api_view(["PATCH"])
-# @permission_classes([permissions.IsAuthenticated])
-# def client_confirm_service(request, pk):
-#     action = request.data.get("action")
+#         landscaper = serializer.validated_data.get("landscaper")
+#         property_obj = serializer.validated_data.get("property")
 
-#     if action not in ["confirm", "decline"]:
-#         return Response(
-#             {"error": "Invalid action. Must be 'confirm' or 'decline'."},
-#             status=status.HTTP_400_BAD_REQUEST
-#         )
+#         if not landscaper:
+#             raise serializers.ValidationError({"landscaper": "Required"})
+#         if not property_obj:
+#             raise serializers.ValidationError({"property": "Required"})
 
-#     client = getattr(request.user, "clientprofile", None)
+#         # serializer.save(
+#         #     client=client,
+#         #     landscaper=landscaper,
+#         #     property=property_obj,
+#         #     status="pending",
+#         #     price=None,
+#         # )
+#     def perform_create(self, serializer):
+#     client = getattr(self.request.user, "clientprofile", None)
 #     if not client:
-#         return Response(
-#             {"error": "Client profile not found."},
-#             status=status.HTTP_403_FORBIDDEN
-#         )
+#         raise PermissionDenied("Client profile not found.")
 
-#     try:
-#         service = ClientCustomService.objects.get(
-#             pk=pk,
-#             client=client,
-#             is_active=True
-#         )
-#     except ClientCustomService.DoesNotExist:
-#         return Response(
-#             {"error": "Service not found."},
-#             status=status.HTTP_404_NOT_FOUND
-#         )
-
-#     if service.status != "accepted":
-#         return Response(
-#             {"error": "Service is not ready for confirmation."},
-#             status=status.HTTP_400_BAD_REQUEST
-#         )
-
-#     if action == "decline":
-#         service.status = "declined"
-#         service.save(update_fields=["status", "updated_at"])
-#         return Response(
-#             {
-#                 "message": "Service declined successfully.",
-#                 "status": service.status
-#             },
-#             status=status.HTTP_200_OK
-#         )
-
-#     with transaction.atomic():
-
-#         service = ClientCustomService.objects.select_for_update().get(
-#             pk=pk,
-#             client=client,
-#             is_active=True
-#         )
-
-#         if service.status != "accepted":
-#             return Response(
-#                 {"error": "Service is no longer available for confirmation."},
-#                 status=status.HTTP_400_BAD_REQUEST
-#             )
-
-#         booking = BookingRequest.objects.create(
-#             client=service.client,
-#             landscaper=service.landscaper,
-#             property=service.property,  # ADD THIS
-#             service=None,
-#             description=f"{service.name}\n\n{service.description or ''}".strip(),
-#             booking_type=BookingRequest.BookingType.CUSTOM,
-#             scheduled_date=service.preferred_date,   # ADD THIS
-#             scheduled_time=service.preferred_time,   # ADD THIS
-#             price=service.price,
-#             note=service.note,
-#             status=BookingRequest.Status.CONFIRMED
-#         )
-
-#         service.status = "confirmed"
-#         service.booking = booking   # OPTIONAL (good practice)
-#         service.save(update_fields=["status", "booking", "updated_at"])
-
-#     return Response(
-#         {
-#             "message": "Service confirmed successfully.",
-#             "status": service.status,
-#             "booking_id": booking.id
-#         },
-#         status=status.HTTP_200_OK
+#     serializer.save(
+#         client=client,
+#         status="pending",
+#         price=None
 #     )
 
-# # landscapers see pending  request
-# class LandscaperCustomServicePendingListView(generics.ListAPIView):
-#     """
-#     GET -> landscaper sees only pending requests sent to them
-#     """
-#     serializer_class = ClientCustomServiceSerializer
-#     permission_classes = [IsLandscaper]
-
-#     def get_queryset(self):
-#         landscaper = getattr(self.request.user, "landscaper_profile", None)
-#         if not landscaper:
-#             return ClientCustomService.objects.none()
-
-#         return ClientCustomService.objects.filter(
-#             landscaper=landscaper,
-#             status="pending",
-#             is_active=True
-#         ).order_by("-created_at")
-
-# views.py
-
-
-
-
-# ================================
-# Client Views
-# ================================
-
 class ClientCustomServiceListCreateView(generics.ListCreateAPIView):
-    """
-    GET  -> client sees own custom service requests
-    POST -> client creates a new custom service request
-           (one-time by default; recurring optional)
-    """
     serializer_class = ClientCustomServiceSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -450,26 +380,31 @@ class ClientCustomServiceListCreateView(generics.ListCreateAPIView):
         client = getattr(self.request.user, "clientprofile", None)
         if not client:
             return ClientCustomService.objects.none()
-        return ClientCustomService.objects.filter(
-            client=client,
-            is_active=True
-        ).order_by("-created_at")
+
+        return (
+            ClientCustomService.objects.filter(
+                client=client,
+                is_active=True
+            )
+            .select_related(
+                "client__user",
+                "property",
+                "landscaper__user"
+            )
+            .order_by("-created_at")
+        )
 
     def perform_create(self, serializer):
         client = getattr(self.request.user, "clientprofile", None)
+
         if not client:
             raise PermissionDenied("Client profile not found.")
 
-        # One-time: preferred_date/time will be null initially
         serializer.save(
             client=client,
             status="pending",
-            price=None,
-            # preferred_date=None,
-            # preferred_time=None
+            price=None
         )
-
-
 class ClientCustomServiceRetrieveDestroyView(generics.RetrieveDestroyAPIView):
     """
     GET    -> client retrieves one of their own service requests
@@ -501,177 +436,34 @@ class ClientCustomServiceRetrieveDestroyView(generics.RetrieveDestroyAPIView):
         )
 
 
-# client confirm
-# @api_view(["PATCH"])
-# @permission_classes([permissions.IsAuthenticated])
-# def client_confirm_service(request, pk):
-
-#     action = request.data.get("action")
-
-#     if action not in ["confirm", "decline"]:
-#         return Response({"error": "Invalid action."}, status=400)
-
-#     client = getattr(request.user, "clientprofile", None)
-#     if not client:
-#         return Response({"error": "Client profile not found."}, status=403)
-
-#     try:
-#         service = ClientCustomService.objects.get(
-#             pk=pk,
-#             client=client,
-#             is_active=True
-#         )
-#     except ClientCustomService.DoesNotExist:
-#         return Response({"error": "Service not found."}, status=404)
-
-#     if service.status != "accepted":
-#         return Response({"error": "Service is not ready for confirmation."}, status=400)
-
-#     if action == "decline":
-#         service.status = "declined"
-#         service.save(update_fields=["status", "updated_at"])
-
-#         return Response({
-#             "message": "Service declined successfully.",
-#             "status": service.status
-#         })
-
-#     if not service.preferred_date or not service.preferred_time:
-#         return Response({"error": "Landscaper has not set schedule yet."}, status=400)
-#     with transaction.atomic():
-
-#         service = ClientCustomService.objects.select_for_update().get(
-#             pk=pk,
-#             client=client,
-#             is_active=True
-#         )
-
-#         # Determine booking type
-#         if service.recurring_type == "weekly":
-#             booking_type = BookingRequest.BookingType.WEEKLY
-#         elif service.recurring_type == "biweekly":
-#             booking_type = BookingRequest.BookingType.BIWEEKLY
-#         else:
-#             booking_type = BookingRequest.BookingType.CUSTOM
-
-#         booking = BookingRequest.objects.create(
-#             client=service.client,
-#             landscaper=service.landscaper,
-#             property=service.property,
-#             service=None,
-#             description=f"{service.name}\n\n{service.description or ''}".strip(),
-#             booking_type=booking_type,
-#             recurring_day_of_week=service.recurring_day_of_week,
-#             scheduled_date=service.preferred_date,
-#             scheduled_time=service.preferred_time,
-#             price=service.price,
-#             note=service.note,
-#             status=BookingRequest.Status.PENDING,
-#             is_active=True
-#         )
-#     if not service.landscaper:
-#         return response(
-#             {"error": "No Landscaper assign to service"},
-#             status=400
-#         )
-
-#         service.status = "confirmed"
-#         service.booking = booking
-#         service.save(update_fields=["status", "booking", "updated_at"])
-
-#     return Response({
-#         "message": "Service confirmed successfully.",
-#         "status": service.status,
-#         "booking_id": booking.id,
-#         "custom_service": ClientCustomServiceSerializer(service).data,
-#         "client": ClientProfileSerializer(client).data
-#     }, status=status.HTTP_200_OK)
 
 
+class ClientAcceptedServiceListView(generics.ListAPIView):
+    """
+    Client sees all accepted services waiting for confirmation
+    """
+    serializer_class = ClientCustomServiceSerializer
+    permission_classes = [permissions.IsAuthenticated]
 
-# @api_view(["PATCH"])
-# @permission_classes([permissions.IsAuthenticated])
-# def client_confirm_service(request, pk):
-#     action = request.data.get("action")
+    def get_queryset(self):
+        client = getattr(self.request.user, "clientprofile", None)
 
-#     if action not in ["confirm", "decline"]:
-#         return Response({"error": "Invalid action."}, status=400)
+        if not client:
+            return ClientCustomService.objects.none()
 
-#     client = getattr(request.user, "clientprofile", None)
-#     if not client:
-#         return Response({"error": "Client profile not found."}, status=403)
-
-#     try:
-#         service = ClientCustomService.objects.get(
-#             pk=pk,
-#             client=client,
-#             is_active=True
-#         )
-#     except ClientCustomService.DoesNotExist:
-#         return Response({"error": "Service not found."}, status=404)
-
-#     if service.status != "accepted":
-#         return Response({"error": "Service is not ready for confirmation."}, status=400)
-
-#     if action == "decline":
-#         service.status = "declined"
-#         service.save(update_fields=["status", "updated_at"])
-#         return Response({
-#             "message": "Service declined successfully.",
-#             "status": service.status
-#         }, status=200)
-
-#     if not service.preferred_date or not service.preferred_time:
-#         return Response({"error": "Landscaper has not set schedule yet."}, status=400)
-#     with transaction.atomic():
-#         service = ClientCustomService.objects.select_for_update().get(
-#             pk=pk,
-#             client=client,
-#             is_active=True
-#         )
-
-#         if not service.landscaper:
-#             return Response(
-#                 {"error": "No landscaper assigned to this service."},
-#                 status=400
-#             )
-
-#         booking = BookingRequest.objects.create(
-#             client=service.client,
-#             landscaper=service.landscaper,
-#             property=service.property,
-#             service=None,
-#             description=f"{service.name}\n\n{service.description or ''}".strip(),
-#             booking_type=booking_type,
-#             recurring_day_of_week=service.recurring_day_of_week,
-#             scheduled_date=service.preferred_date,
-#             scheduled_time=service.preferred_time,
-#             price=service.price,
-#             note=service.note,
-#             status=BookingRequest.Status.PENDING,
-#             is_active=True
-#         )
-
-#         service.status = "confirmed"
-#         service.booking = booking
-#         service.save(update_fields=["status", "booking", "updated_at"])
-
-#     return Response({
-#         "message": "Service confirmed successfully.",
-#         "status": service.status,
-#         "booking_id": booking.id,
-#         "custom_service": ClientCustomServiceSerializer(service).data,
-#         "client": ClientProfileSerializer(client).data
-#     }, status=status.HTTP_200_OK)
-
-from django.db import transaction
-from rest_framework.decorators import api_view, permission_classes
-
-
-from bookings.models import BookingRequest
-from profiles.models import ClientProfile
-from .models import ClientCustomService
-from .serializers import ClientCustomServiceSerializer
+        return (
+            ClientCustomService.objects.filter(
+                client=client,
+                status="accepted",
+                is_active=True
+            )
+            .select_related(
+                "landscaper__user",
+                "property",
+                "client__user"
+            )
+            .order_by("-created_at")
+        )
 
 
 @api_view(["PATCH"])
@@ -719,6 +511,52 @@ def client_confirm_service(request, pk):
             status=400
         )
 
+    # with transaction.atomic():
+    #     service = ClientCustomService.objects.select_for_update().get(
+    #         pk=pk,
+    #         client=client,
+    #         is_active=True
+    #     )
+
+    #     if not service.landscaper:
+    #         return Response(
+    #             {"error": "No landscaper assigned to this service."},
+    #             status=400
+    #         )
+
+    #     # ✅ FIXED: booking_type logic
+    #     if service.recurring_type == "weekly":
+    #         booking_type = BookingRequest.BookingType.WEEKLY
+    #     elif service.recurring_type == "biweekly":
+    #         booking_type = BookingRequest.BookingType.BIWEEKLY
+    #     elif service.recurring_type:
+    #         booking_type = BookingRequest.BookingType.CUSTOM
+    #     else:
+    #         booking_type = BookingRequest.BookingType.ONE_TIME
+
+    #     booking = BookingRequest.objects.create(
+    #         client=service.client,
+    #         landscaper=service.landscaper,
+    #         property=service.property,
+    #         service=None,
+    #         description=f"{service.name}\n\n{service.description or ''}".strip(),
+
+    #         booking_type=booking_type,
+
+    #         recurring_day_of_week=service.recurring_day_of_week,
+    #         scheduled_date=service.preferred_date,
+    #         scheduled_time=service.preferred_time,
+
+    #         price=service.price,
+    #         note=service.note,
+    #         status=BookingRequest.Status.PENDING,
+    #         is_active=True
+    #     )
+
+    #     service.status = "confirmed"
+    #     service.booking = booking
+    #     service.save(update_fields=["status", "booking", "updated_at"])
+
     with transaction.atomic():
         service = ClientCustomService.objects.select_for_update().get(
             pk=pk,
@@ -732,7 +570,6 @@ def client_confirm_service(request, pk):
                 status=400
             )
 
-        # ✅ FIXED: booking_type logic
         if service.recurring_type == "weekly":
             booking_type = BookingRequest.BookingType.WEEKLY
         elif service.recurring_type == "biweekly":
@@ -748,23 +585,31 @@ def client_confirm_service(request, pk):
             property=service.property,
             service=None,
             description=f"{service.name}\n\n{service.description or ''}".strip(),
-
             booking_type=booking_type,
-
             recurring_day_of_week=service.recurring_day_of_week,
             scheduled_date=service.preferred_date,
             scheduled_time=service.preferred_time,
-
             price=service.price,
             note=service.note,
             status=BookingRequest.Status.PENDING,
             is_active=True
         )
 
+        # =========================
+        # 🔥 CREATE BOOKING ITEMS (FIX)
+        # =========================
+        BookingRequestItem.objects.create(
+            booking=booking,
+            item_type=BookingRequestItem.ItemType.CUSTOM,
+            name=service.name,
+            description=service.description or "",
+            price=service.price or 0,
+            sort_order=0
+        )
+
         service.status = "confirmed"
         service.booking = booking
         service.save(update_fields=["status", "booking", "updated_at"])
-
     return Response({
         "message": "Service confirmed successfully.",
         "status": service.status,
@@ -773,27 +618,62 @@ def client_confirm_service(request, pk):
         "client": ClientProfileSerializer(client).data
     }, status=status.HTTP_200_OK)
 
+
+
+
 # ================================
 # Landscaper Views
 # ================================
 
+# class LandscaperCustomServicePendingListView(generics.ListAPIView):
+#     serializer_class = ClientCustomServiceSerializer
+#     permission_classes = [IsLandscaper]
+
+#     def get_queryset(self):
+#         # Get the landscaper profile for the logged-in user
+#         try:
+#             landscaper_profile = self.request.user.landscaper_profile
+#         except AttributeError:
+#             return ClientCustomService.objects.none()
+
+#         # Filter requests sent to this landscaper profile
+#         return ClientCustomService.objects.filter(
+#             landscaper=landscaper_profile,
+#             status="pending",
+#             is_active=True
+#         ).order_by("-created_at")
+
+
+
+
 class LandscaperCustomServicePendingListView(generics.ListAPIView):
+    """
+    Landsacaper sees all pending custom service requests
+    """
     serializer_class = ClientCustomServiceSerializer
-    permission_classes = [IsLandscaper]
+    permission_classes = [IsAuthenticated, IsLandscaper]
 
     def get_queryset(self):
-        # Get the landscaper profile for the logged-in user
+        user = self.request.user
+
         try:
-            landscaper_profile = self.request.user.landscaper_profile
+            landscaper_profile = user.landscaper_profile
         except AttributeError:
             return ClientCustomService.objects.none()
 
-        # Filter requests sent to this landscaper profile
-        return ClientCustomService.objects.filter(
-            landscaper=landscaper_profile,
-            status="pending",
-            is_active=True
-        ).order_by("-created_at")
+        return (
+            ClientCustomService.objects.filter(
+                landscaper=landscaper_profile,
+                status="pending",
+                is_active=True
+            )
+            .select_related(
+                "client__user",   # important for client serializer
+                "property" ,
+                "landscaper__user"       # important for property serializer
+            )
+            .order_by("-created_at")
+        )
 
 
 from django.utils.dateparse import parse_date, parse_time

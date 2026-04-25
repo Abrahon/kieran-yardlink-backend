@@ -362,7 +362,13 @@ class ClientCustomService(models.Model):
         BIWEEKLY = "biweekly", "Biweekly"
 
     client = models.ForeignKey("profiles.ClientProfile", on_delete=models.CASCADE)
-    landscaper = models.ForeignKey(BusinessProfile, on_delete=models.CASCADE)
+    # landscaper = models.ForeignKey(BusinessProfile, on_delete=models.CASCADE)
+    landscaper = models.ForeignKey(
+        BusinessProfile,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True
+    )
     property = models.ForeignKey(
         "property.Property",
         on_delete=models.CASCADE,

@@ -27,7 +27,8 @@ from .views import (
     get_landscaper_available_dates,
     get_landscaper_available_slots,
     PublicLandscaperServiceListView,
-    ServiceAddonListView
+    ServiceAddonListView,
+    ClientAcceptedServiceListView
 
 )
 
@@ -54,6 +55,7 @@ urlpatterns = [
     # custom service
     path('client/custom-services/', ClientCustomServiceListCreateView.as_view(), name="client-custom-service-list-create"),
     path('client/custom-services/<int:pk>/', ClientCustomServiceRetrieveDestroyView.as_view(), name="client-custom-service-detail"),
+    path("client/custom-services/accepted/",ClientAcceptedServiceListView.as_view(),name="client-accepted-services"),
     path("client/custom-services/<int:pk>/confirm/",client_confirm_service, name="client-confirm-service"),
     # List all client custom services for landscaper (filter by status if needed)
     path('landscaper/custom-service-requests/',LandscaperCustomServicePendingListView.as_view(), name='landscaper-custom-service-list'),

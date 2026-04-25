@@ -21,18 +21,6 @@ from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 
 
-
-
-# @receiver(post_save, sender=Job)
-# def job_created(sender, instance, created, **kwargs):
-#     if created:
-#         send_push_notification(
-#             user=instance.assigned_user,
-#             title="New Job",
-#             message="You got a new job",
-#             notification_type="job",
-#         )
-
 @receiver(post_save, sender=Job)
 def job_created(sender, instance, created, **kwargs):
     if not created:

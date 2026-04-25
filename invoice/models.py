@@ -110,3 +110,6 @@ class InvoiceLineItem(models.Model):
 
     def __str__(self):
         return f"{self.name} - {self.invoice.invoice_number}"
+
+
+
