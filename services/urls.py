@@ -44,11 +44,11 @@ urlpatterns = [
     ),
 
     # Client completed job history (with images)
-    path(
-        "client/job-history/",
-        ClientJobHistoryAPIView.as_view(),
-        name="client-job-history"
-    ),
+    # path(
+    #     "client/job-history/",
+    #     ClientJobHistoryAPIView.as_view(),
+    #     name="client-job-history"
+    # ),
     # schedule
 
     # ================= LANDSCAPER =================

@@ -759,8 +759,6 @@ def confirm_subscription(request):
 
 
 
-
-
 class MySubscriptionAPIView(APIView):
     """
     API to view the logged-in user's subscriptions,

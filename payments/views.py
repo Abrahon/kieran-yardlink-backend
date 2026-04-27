@@ -515,22 +515,13 @@ def landscaper_payment_history(request):
     }, status=200)
 
 
+from jobs.models import JobImage
+
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def client_payment_history(request):
-    """
-    Client view:
-    - shows all landscapers the client worked with
-    - each landscaper includes:
-        - name, email
-        - completed jobs/invoices
-        - property/location
-        - completed date
-        - total jobs worked
-        - total amount invoiced
-        - pay_url if still pending
-    """
+
     client = getattr(request.user, "clientprofile", None)
     if not client:
         return Response({"error": "Client profile not found"}, status=404)
@@ -546,13 +537,15 @@ def client_payment_history(request):
         "job__landscaper__user",
         "job__job_property",
     ).prefetch_related(
-        "job__items"
+        "job__items",
+        "job__images"   # ✅ IMPORTANT
     ).order_by("-job__completed_at", "-created_at")
 
     landscaper_dict = {}
 
     for invoice in invoices:
-        landscaper = invoice.job.landscaper
+        job = invoice.job
+        landscaper = job.landscaper
         landscaper_id = landscaper.id
 
         personal = getattr(landscaper.user, "landscaperprofilies", None)
@@ -571,15 +564,36 @@ def client_payment_history(request):
 
         invoice_amount = float(invoice.total or 0)
 
+        # -------------------------
+        # ✅ IMAGES (NEW)
+        # -------------------------
+        before_images = []
+        after_images = []
+
+        for img in job.images.all():
+            image_data = {
+                "id": img.id,
+                "url": img.image.url if img.image else None,
+                "caption": img.caption,
+                "uploaded_at": img.created_at
+            }
+
+            if img.image_type == JobImage.ImageType.BEFORE:
+                before_images.append(image_data)
+            else:
+                after_images.append(image_data)
+
         landscaper_dict[landscaper_id]["jobs"].append({
             "invoice_id": invoice.id,
             "invoice_number": invoice.invoice_number,
-            "job_id": invoice.job.id,
-            "property_address": str(invoice.job.job_property) if invoice.job.job_property else "",
-            "completed_at": invoice.job.completed_at.strftime("%Y-%m-%d %H:%M:%S") if invoice.job.completed_at else None,
+            "job_id": job.id,
+            "property_address": str(job.job_property) if job.job_property else "",
+            "completed_at": job.completed_at.strftime("%Y-%m-%d %H:%M:%S") if job.completed_at else None,
             "payment_status": invoice.status,
             "amount": round(invoice_amount, 2),
             "pay_url": invoice.stripe_checkout_url,
+
+            # ✅ ITEMS
             "completed_items": [
                 {
                     "id": item.id,
@@ -587,8 +601,15 @@ def client_payment_history(request):
                     "item_type": item.item_type,
                     "price": round(float(item.price or 0), 2)
                 }
-                for item in invoice.job.items.filter(is_completed=True).order_by("sort_order", "id")
-            ]
+                for item in job.items.filter(is_completed=True)
+                .order_by("sort_order", "id")
+            ],
+
+            # ✅ NEW IMAGE FIELD
+            "images": {
+                "before": before_images,
+                "after": after_images
+            }
         })
 
         landscaper_dict[landscaper_id]["jobs_count"] += 1

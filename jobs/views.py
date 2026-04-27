@@ -5,7 +5,7 @@ from rest_framework import generics, permissions, status, serializers
 from rest_framework.response import Response
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.parsers import MultiPartParser, FormParser
-from jobs.serializers import CompletedJobSerializer,ManualOneTimeJobCreateSerializer
+from jobs.serializers import CompletedJobSerializer,ManualOneTimeJobCreateSerializer,ClientJobDetailSerializer
 from jobs.models import Job, JobItem
 from jobs.serializers import (
     JobSerializer,
@@ -13,7 +13,7 @@ from jobs.serializers import (
     JobRescheduleSerializer,
     JobItemSerializer,
 )
-
+from django.utils.timezone import now
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from notifications.services import send_push_notification
@@ -38,21 +38,75 @@ def job_created(sender, instance, created, **kwargs):
 
 
 
+
+from django.utils.timezone import now
+from rest_framework import generics, permissions
+from jobs.models import Job
+from jobs.serializers import JobSerializer
+
+
 class UpcomingJobsListView(generics.ListAPIView):
     serializer_class = JobSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         landscaper_profile = getattr(self.request.user, "landscaper_profile", None)
+
         if not landscaper_profile:
             return Job.objects.none()
 
-        return Job.objects.filter(
+        queryset = Job.objects.filter(
             landscaper=landscaper_profile,
             status=Job.Status.UPCOMING,
             is_active=True
-        ).order_by("scheduled_date", "scheduled_time")
+        )
 
+        # 🔹 get query params
+        selected_date = self.request.query_params.get("date")
+        today_flag = self.request.query_params.get("today")
+
+        # ✅ PRIORITY 1: specific date (calendar click)
+        if selected_date:
+            queryset = queryset.filter(scheduled_date=selected_date)
+
+        # ✅ PRIORITY 2: today shortcut
+        elif today_flag == "true":
+            queryset = queryset.filter(scheduled_date=now().date())
+
+        return queryset.order_by("scheduled_date", "scheduled_time")
+
+
+
+
+class ClientUpcomingJobsListView(generics.ListAPIView):
+    serializer_class = JobSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        client_profile = getattr(self.request.user, "clientprofile", None)
+
+        if not client_profile:
+            return Job.objects.none()
+
+        queryset = Job.objects.filter(
+            client=client_profile,
+            status=Job.Status.UPCOMING,
+            is_active=True
+        )
+
+        # 🔹 query params
+        selected_date = self.request.query_params.get("date")
+        today_flag = self.request.query_params.get("today")
+
+        # ✅ PRIORITY 1: specific date
+        if selected_date:
+            queryset = queryset.filter(scheduled_date=selected_date)
+
+        # ✅ PRIORITY 2: today
+        elif today_flag == "true":
+            queryset = queryset.filter(scheduled_date=now().date())
+
+        return queryset.order_by("scheduled_date", "scheduled_time")
 
 
 # --- Job Detail ---
@@ -260,8 +314,6 @@ def add_job_note(request, job_id):
 
 
 # manual job created
-
-
 class ManualOneTimeJobCreateView(generics.CreateAPIView):
     serializer_class = ManualOneTimeJobCreateSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -424,5 +476,24 @@ class CompletedJobDetailView(generics.RetrieveAPIView):
                 "after": after_images,
             }
         })
+
+
+
+
+class ClientJobDetailView(generics.RetrieveAPIView):
+    serializer_class = ClientJobDetailSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = "id"
+
+    def get_queryset(self):
+        client = getattr(self.request.user, "clientprofile", None)
+
+        return Job.objects.filter(
+            client=client,
+            is_active=True
+        ).select_related("client", "landscaper").prefetch_related(
+            "items",
+            "images"
+        )
 
 

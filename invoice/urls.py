@@ -20,9 +20,6 @@ urlpatterns = [
     # optional manual mark paid, or call this from Stripe webhook
     path("invoices/<int:invoice_id>/mark-paid/", mark_invoice_paid, name="mark-invoice-paid"),
 
- 
-
-
     path("invoices/list/", list_invoices, name="list-invoices"),
 
 ]

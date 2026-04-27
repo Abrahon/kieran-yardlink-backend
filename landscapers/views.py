@@ -34,6 +34,7 @@ from .models import Service,BusinessProfile
 from django.db.models import F, Avg
 from django.db.models.functions import ACos, Cos, Sin, Radians
 from django.db.models import Q
+from django.db.models import Count, Avg, Q
 from rest_framework import generics, status
 # from .serializers import UpdateServiceSerializer
 from bookings.models import BookingRequest, BookingRequestItem
@@ -1164,31 +1165,77 @@ class ServiceStatsAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        user = request.user
+        # ✅ get landscaper profile
+        landscaper = getattr(request.user, "landscaper_profile", None)
 
-        queryset = Service.objects.filter(landscaper=user)
+        if not landscaper:
+            return Response(
+                {"error": "Landscaper profile not found."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # ✅ FIX: use business instead of landscaper
+        queryset = Service.objects.filter(business=landscaper)
 
         stats = queryset.aggregate(
             total_services=Count("id"),
             active_services=Count("id", filter=Q(is_active=True)),
-            seasonal_services=Count("id", filter=Q(category="seasonal")),
-            average_price=Avg("price")
+            pinned_services=Count("id", filter=Q(is_pinned=True)),
+
+            # ✅ FIX: correct price field
+            average_price=Avg("base_price")
         )
 
         return Response(
             {
                 "total_services": stats["total_services"] or 0,
                 "active_services": stats["active_services"] or 0,
-                "seasonal_services": stats["seasonal_services"] or 0,
+                "pinned_services": stats["pinned_services"] or 0,
                 "average_price": round(float(stats["average_price"] or 0), 2),
             },
             status=status.HTTP_200_OK
         )
 
+
 # for client list vailabe date
+# from jobs.models import Job
 
+# @api_view(["GET"])
+# @permission_classes([IsAuthenticated])
+# def get_landscaper_available_dates(request, landscaper_id):
 
-from jobs.models import Job
+#     try:
+#         landscaper = BusinessProfile.objects.get(id=landscaper_id)
+#     except BusinessProfile.DoesNotExist:
+#         return Response({"error": "Landscaper not found"}, status=404)
+
+#     # get working days
+#     working_days = WorkingHours.objects.filter(
+#         landscaper=landscaper,
+#         is_active=True
+#     ).values_list("day", flat=True)
+
+#     if not working_days:
+#         return Response({"available_dates": []})
+
+#     available_dates = []
+
+#     today = date.today()
+
+#     # next 30 days availability
+#     for i in range(30):
+#         check_date = today + timedelta(days=i)
+
+#         weekday = check_date.strftime("%A").upper()
+
+#         if weekday in working_days:
+#             available_dates.append(check_date)
+
+#     return Response({
+#         "landscaper_id": landscaper.id,
+#         "available_dates": available_dates
+#     })
+
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -1199,7 +1246,6 @@ def get_landscaper_available_dates(request, landscaper_id):
     except BusinessProfile.DoesNotExist:
         return Response({"error": "Landscaper not found"}, status=404)
 
-    # get working days
     working_days = WorkingHours.objects.filter(
         landscaper=landscaper,
         is_active=True
@@ -1208,17 +1254,27 @@ def get_landscaper_available_dates(request, landscaper_id):
     if not working_days:
         return Response({"available_dates": []})
 
+    today = date.today()
     available_dates = []
 
-    today = date.today()
-
-    # next 30 days availability
     for i in range(30):
         check_date = today + timedelta(days=i)
-
         weekday = check_date.strftime("%A").upper()
 
-        if weekday in working_days:
+        if weekday not in working_days:
+            continue
+
+        # 🔥 CHECK EXISTING BOOKINGS (IMPORTANT)
+        jobs_count = Job.objects.filter(
+            landscaper=landscaper,
+            scheduled_date=check_date,
+            is_active=True
+        ).count()
+
+        # 🔥 limit per day (you can adjust)
+        MAX_JOBS_PER_DAY = 5
+
+        if jobs_count < MAX_JOBS_PER_DAY:
             available_dates.append(check_date)
 
     return Response({
@@ -1280,43 +1336,59 @@ def get_landscaper_available_slots(request, landscaper_id):
 
 
 # views.py
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def service_performance_monthly(request):
     """
-    Return total number of services (Service model) created per month for last 12 months.
+    Return total number of services created per month for last 12 months.
     """
-    user = request.user
+    # ✅ FIX: get landscaper profile
+    landscaper = getattr(request.user, "landscaper_profile", None)
+
+    if not landscaper:
+        return Response(
+            {"error": "Landscaper profile not found."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
     today = now()
 
-    # Generate last 12 months
+    # ✅ generate last 12 months correctly
     month_labels = []
     month_start_dates = []
+
     for i in range(12):
-        month = (today.replace(day=1) - timedelta(days=i*30)).replace(day=1)
+        month = (today.replace(day=1) - timedelta(days=i * 30)).replace(day=1)
         month_start_dates.append(month)
         month_labels.append(month.strftime("%b %Y"))
 
-    month_labels = list(reversed(month_labels))
-    month_start_dates = list(reversed(month_start_dates))
+    month_labels.reverse()
+    month_start_dates.reverse()
 
-    # Get services created in the last 12 months
-    services_qs = Service.objects.filter(
-        landscaper=user,
-        created_at__gte=month_start_dates[0]
-    ).annotate(month=TruncMonth('created_at')).values('month').annotate(count=Count('id')).order_by('month')
+    # ✅ FIX: use business instead of landscaper
+    services_qs = (
+        Service.objects.filter(
+            business=landscaper,
+            created_at__gte=month_start_dates[0]
+        )
+        .annotate(month=TruncMonth("created_at"))
+        .values("month")
+        .annotate(count=Count("id"))
+        .order_by("month")
+    )
 
-    # Map counts to month labels
+    # map counts
     counts = {label: 0 for label in month_labels}
+
     for item in services_qs:
-        month_label = item['month'].strftime("%b %Y")
-        counts[month_label] = item['count']
+        label = item["month"].strftime("%b %Y")
+        counts[label] = item["count"]
 
     return Response({
         "months": month_labels,
         "service_count": counts
     })
-
 
 # pinned service /unpinned service
 @api_view(["POST"])

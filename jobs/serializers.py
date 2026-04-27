@@ -473,3 +473,66 @@ class ManualOneTimeJobCreateSerializer(serializers.Serializer):
             )
 
         return job
+
+
+
+
+class JobItemClientSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = JobItem
+        fields = [
+            "id",
+            "item_type",
+            "name",
+            "description",
+            "price",
+            "is_completed",
+            "completed_at",
+        ]
+
+
+class JobImageSerializer(serializers.ModelSerializer):
+    image_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = JobImage
+        fields = ["id", "image_url", "image_type", "caption"]
+
+    def get_image_url(self, obj):
+        return obj.image.url if obj.image else None
+
+
+class ClientJobDetailSerializer(serializers.ModelSerializer):
+    completed_items = serializers.SerializerMethodField()
+    before_images = serializers.SerializerMethodField()
+    after_images = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Job
+        fields = [
+            "id",
+            "client_name",
+            "scheduled_date",
+            "scheduled_time",
+            "status",
+            "payment_status",
+            "total_price",
+            "note",
+
+            # 👇 custom
+            "completed_items",
+            "before_images",
+            "after_images",
+        ]
+
+    def get_completed_items(self, obj):
+        items = obj.items.filter(is_completed=True)
+        return JobItemClientSerializer(items, many=True).data
+
+    def get_before_images(self, obj):
+        images = obj.images.filter(image_type="before")
+        return JobImageSerializer(images, many=True).data
+
+    def get_after_images(self, obj):
+        images = obj.images.filter(image_type="after")
+        return JobImageSerializer(images, many=True).data
