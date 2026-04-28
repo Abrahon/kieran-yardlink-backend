@@ -4,7 +4,7 @@ from .views import (
     # -------- Client --------
     ClientServicePreferenceAPIView,
     ClientPreferenceNoteUpdateAPIView,
-    ClientServiceOverviewAPIView,
+    # ClientServiceOverviewAPIView,
     ClientJobHistoryAPIView,
 
     # -------- Schedule / Job --------
@@ -37,11 +37,11 @@ urlpatterns = [
     ),
 
     # Client dashboard overview (next schedule, previous job, payment)
-    path(
-        "client/service-overview/",
-        ClientServiceOverviewAPIView.as_view(),
-        name="client-service-overview"
-    ),
+    # path(
+    #     "client/service-overview/",
+    #     ClientServiceOverviewAPIView.as_view(),
+    #     name="client-service-overview"
+    # ),
 
     # Client completed job history (with images)
     # path(

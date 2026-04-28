@@ -228,33 +228,73 @@ def toggle_job_item_completion(request, item_id):
 
 
 # --- Add Job Image ---
+# class JobImageCreateView(generics.CreateAPIView):
+#     serializer_class = JobImageSerializer
+#     permission_classes = [permissions.IsAuthenticated]
+#     parser_classes = [MultiPartParser, FormParser]
+
+#     def perform_create(self, serializer):
+#         job = serializer.validated_data.get("job")
+#         landscaper = getattr(self.request.user, "landscaper_profile", None)
+
+#         if not landscaper:
+#             raise serializers.ValidationError({"error": "Landscaper profile not found."})
+
+#         if not job:
+#             raise serializers.ValidationError({"error": "Job is required."})
+
+#         if job.landscaper != landscaper:
+#             raise serializers.ValidationError({"error": "You cannot upload images for this job."})
+
+#         if job.status != Job.Status.COMPLETED:
+#             raise serializers.ValidationError({
+#                 "error": "Images can only be uploaded after all services are completed."
+#             })
+
+#         serializer.save(uploaded_by=self.request.user)
 class JobImageCreateView(generics.CreateAPIView):
     serializer_class = JobImageSerializer
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
 
     def perform_create(self, serializer):
-        job = serializer.validated_data.get("job")
+
         landscaper = getattr(self.request.user, "landscaper_profile", None)
 
         if not landscaper:
-            raise serializers.ValidationError({"error": "Landscaper profile not found."})
+            raise serializers.ValidationError({
+                "error": "Landscaper profile not found."
+            })
 
-        if not job:
-            raise serializers.ValidationError({"error": "Job is required."})
+        # ✅ FIX: get job from request.data (NOT serializer)
+        job_id = self.request.data.get("job")
+
+        if not job_id:
+            raise serializers.ValidationError({
+                "error": "Job is required."
+            })
+
+        try:
+            job = Job.objects.get(id=job_id)
+        except Job.DoesNotExist:
+            raise serializers.ValidationError({
+                "error": "Job not found."
+            })
 
         if job.landscaper != landscaper:
-            raise serializers.ValidationError({"error": "You cannot upload images for this job."})
+            raise serializers.ValidationError({
+                "error": "You cannot upload images for this job."
+            })
 
         if job.status != Job.Status.COMPLETED:
             raise serializers.ValidationError({
-                "error": "Images can only be uploaded after all services are completed."
+                "error": "Images can only be uploaded after job completion."
             })
 
-        serializer.save(uploaded_by=self.request.user)
-
-
-
+        serializer.save(
+            job=job,
+            uploaded_by=self.request.user
+        )
 
 # --- Add Job Reschedule ---
 class JobRescheduleCreateView(generics.CreateAPIView):
@@ -478,22 +518,40 @@ class CompletedJobDetailView(generics.RetrieveAPIView):
         })
 
 
+from rest_framework import generics, permissions
+from rest_framework.exceptions import NotFound
+from django.db.models import Q
 
-
-class ClientJobDetailView(generics.RetrieveAPIView):
+class ClientUnpaidCompletedJobView(generics.RetrieveAPIView):
     serializer_class = ClientJobDetailSerializer
     permission_classes = [permissions.IsAuthenticated]
-    lookup_field = "id"
 
-    def get_queryset(self):
+    def get_object(self):
         client = getattr(self.request.user, "clientprofile", None)
 
-        return Job.objects.filter(
+        if not client:
+            raise NotFound("Client profile not found")
+
+        job = Job.objects.filter(
             client=client,
-            is_active=True
-        ).select_related("client", "landscaper").prefetch_related(
+            is_active=True,
+            status=Job.Status.COMPLETED
+        ).filter(
+            # 🔥 FIX: handle both invoice + job payment status
+            Q(payment_status=Job.PaymentStatus.PENDING) |
+            Q(invoice__status__in=["pending", "sent", "draft"]) |
+            Q(invoice__isnull=True)
+        ).select_related(
+            "client",
+            "landscaper",
+            "landscaper__user",
+            "invoice"
+        ).prefetch_related(
             "items",
             "images"
-        )
+        ).order_by("-completed_at").first()
 
+        if not job:
+            raise NotFound("No unpaid completed job found")
 
+        return job

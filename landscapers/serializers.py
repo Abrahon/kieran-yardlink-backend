@@ -623,3 +623,61 @@ class StandardServiceSerializer(serializers.ModelSerializer):
         rep = super().to_representation(instance)
         rep["time"] = float(instance.time)  # display in hours
         return rep
+
+
+
+# serializers.py
+from rest_framework import serializers
+from .models import ServiceQuote
+
+class ServiceQuoteSerializer(serializers.ModelSerializer):
+    client = ClientProfileMiniSerializer(read_only=True)
+    landscaper = serializers.SerializerMethodField()
+    # property = PropertySerializer(read_only=True)
+
+    class Meta:
+        model = ServiceQuote
+        fields = "__all__"
+        read_only_fields = [
+            "client",
+            "landscaper",
+            "status",
+            "counter_price",
+            "final_price"
+        ]
+
+    def get_landscaper(self, obj):
+        """
+        FIX: This method was missing (causing crash)
+        """
+        landscaper = obj.landscaper
+
+        if not landscaper:
+            return None
+
+        profile = getattr(landscaper, "landscaperprofilies", None)
+
+        return {
+            "id": landscaper.id,
+            "name": getattr(profile, "name", None),
+            "email": landscaper.user.email if landscaper.user else None,
+            "phone": getattr(profile, "phone", None),
+            "address": getattr(profile, "address", None),
+            "profile_image": getattr(profile, "profile_image", None),
+        }
+
+    def validate(self, data):
+
+        service = data.get("service")
+
+        if not service:
+            raise serializers.ValidationError({
+                "service": "Service is required."
+            })
+
+        if service.pricing_type == "fixed":
+            raise serializers.ValidationError({
+                "error": "Fixed price service cannot request quote."
+            })
+
+        return data

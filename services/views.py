@@ -125,165 +125,165 @@ class ClientPreferenceNoteUpdateAPIView(APIView):
 
 
 
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from django.db.models import Q
-from jobs.models import Job, JobImage
+# from rest_framework.views import APIView
+# from rest_framework.response import Response
+# from django.db.models import Q
+# from jobs.models import Job, JobImage
 
 
-class ClientServiceOverviewAPIView(APIView):
-    permission_classes = [IsClient]
+# class ClientServiceOverviewAPIView(APIView):
+#     permission_classes = [IsClient]
 
-    def get(self, request):
-        client = request.user.clientprofile
+#     def get(self, request):
+#         client = request.user.clientprofile
 
-        # -------------------------
-        # ALL CLIENT JOBS
-        # -------------------------
-        jobs = Job.objects.filter(
-            client=client,
-            is_active=True
-        ).select_related(
-            "job_property",
-            "invoice"
-        ).prefetch_related(
-            "images"
-        ).order_by("-scheduled_date")
+#         # -------------------------
+#         # ALL CLIENT JOBS
+#         # -------------------------
+#         jobs = Job.objects.filter(
+#             client=client,
+#             is_active=True
+#         ).select_related(
+#             "job_property",
+#             "invoice"
+#         ).prefetch_related(
+#             "images"
+#         ).order_by("-scheduled_date")
 
-        if not jobs.exists():
-            return Response({
-                "message": "No service history found.",
-                "data": None
-            })
+#         if not jobs.exists():
+#             return Response({
+#                 "message": "No service history found.",
+#                 "data": None
+#             })
 
-        # -------------------------
-        # LAST COMPLETED JOB (FOR SERVICE)
-        # -------------------------
-        last_completed_job = jobs.filter(
-            status=Job.Status.COMPLETED
-        ).order_by("-completed_at").first()
+#         # -------------------------
+#         # LAST COMPLETED JOB (FOR SERVICE)
+#         # -------------------------
+#         last_completed_job = jobs.filter(
+#             status=Job.Status.COMPLETED
+#         ).order_by("-completed_at").first()
 
-        # -------------------------
-        # LAST JOB WITH INVOICE (FOR PAYMENT)
-        # -------------------------
-        last_invoice_job = jobs.filter(
-            invoice__isnull=False
-        ).order_by("-created_at").first()
+#         # -------------------------
+#         # LAST JOB WITH INVOICE (FOR PAYMENT)
+#         # -------------------------
+#         last_invoice_job = jobs.filter(
+#             invoice__isnull=False
+#         ).order_by("-created_at").first()
 
-        # -------------------------
-        # PROPERTY INFO
-        # -------------------------
-        property_obj = last_completed_job.job_property if last_completed_job else None
+#         # -------------------------
+#         # PROPERTY INFO
+#         # -------------------------
+#         property_obj = last_completed_job.job_property if last_completed_job else None
 
-        property_data = None
-        if property_obj:
-            property_data = {
-                "address": getattr(property_obj, "address", None),
-                "property_size": getattr(property_obj, "property_size", None),
-                "latitude": getattr(property_obj, "latitude", None),
-                "longitude": getattr(property_obj, "longitude", None),
-            }
+#         property_data = None
+#         if property_obj:
+#             property_data = {
+#                 "address": getattr(property_obj, "address", None),
+#                 "property_size": getattr(property_obj, "property_size", None),
+#                 "latitude": getattr(property_obj, "latitude", None),
+#                 "longitude": getattr(property_obj, "longitude", None),
+#             }
 
-        # -------------------------
-        # SERVICE SUMMARY
-        # -------------------------
-        service_summary = {
-            "total_jobs": jobs.count(),
-            "last_service_date": (
-                last_completed_job.completed_at if last_completed_job else None
-            ),
-            "service_frequency": self.calculate_frequency(jobs),
-            "last_job_status": last_completed_job.status if last_completed_job else None,
-        }
+#         # -------------------------
+#         # SERVICE SUMMARY
+#         # -------------------------
+#         service_summary = {
+#             "total_jobs": jobs.count(),
+#             "last_service_date": (
+#                 last_completed_job.completed_at if last_completed_job else None
+#             ),
+#             "service_frequency": self.calculate_frequency(jobs),
+#             "last_job_status": last_completed_job.status if last_completed_job else None,
+#         }
 
-        # -------------------------
-        # PAYMENT INFO
-        # -------------------------
-        payment_data = None
-        next_payment_due = None
+#         # -------------------------
+#         # PAYMENT INFO
+#         # -------------------------
+#         payment_data = None
+#         next_payment_due = None
 
-        if last_invoice_job and hasattr(last_invoice_job, "invoice"):
-            invoice = last_invoice_job.invoice
+#         if last_invoice_job and hasattr(last_invoice_job, "invoice"):
+#             invoice = last_invoice_job.invoice
 
-            payment_data = {
-                "invoice_id": invoice.id,
-                "invoice_number": invoice.invoice_number,
-                "status": invoice.status,
-                "total": invoice.total,
-                "paid_at": invoice.paid_at,
-                "checkout_url": invoice.stripe_checkout_url,
-            }
+#             payment_data = {
+#                 "invoice_id": invoice.id,
+#                 "invoice_number": invoice.invoice_number,
+#                 "status": invoice.status,
+#                 "total": invoice.total,
+#                 "paid_at": invoice.paid_at,
+#                 "checkout_url": invoice.stripe_checkout_url,
+#             }
 
-            if invoice.status != "paid":
-                next_payment_due = {
-                    "amount": invoice.total,
-                    "status": invoice.status,
-                    "pay_url": invoice.stripe_checkout_url,
-                }
+#             if invoice.status != "paid":
+#                 next_payment_due = {
+#                     "amount": invoice.total,
+#                     "status": invoice.status,
+#                     "pay_url": invoice.stripe_checkout_url,
+#                 }
 
-        # -------------------------
-        # RECENT IMAGES
-        # -------------------------
-        recent_images = self.get_recent_images(jobs)
+#         # -------------------------
+#         # RECENT IMAGES
+#         # -------------------------
+#         recent_images = self.get_recent_images(jobs)
 
-        return Response({
-            "property": property_data,
-            "service_summary": service_summary,
-            "payment": payment_data,
-            "next_payment": next_payment_due,
-            "recent_images": recent_images
-        })
+#         return Response({
+#             "property": property_data,
+#             "service_summary": service_summary,
+#             "payment": payment_data,
+#             "next_payment": next_payment_due,
+#             "recent_images": recent_images
+#         })
 
-    # -------------------------
-    # RECENT IMAGES METHOD
-    # -------------------------
-    def get_recent_images(self, jobs):
-        images = JobImage.objects.filter(
-            job__in=jobs
-        ).order_by("-created_at")[:10]
+#     # -------------------------
+#     # RECENT IMAGES METHOD
+#     # -------------------------
+#     def get_recent_images(self, jobs):
+#         images = JobImage.objects.filter(
+#             job__in=jobs
+#         ).order_by("-created_at")[:10]
 
-        return [
-            {
-                "id": img.id,
-                "job_id": img.job_id,
-                "image": img.image.url if img.image else None,
-                "image_type": img.image_type,
-                "caption": img.caption,
-                "created_at": img.created_at,
-            }
-            for img in images
-        ]
+#         return [
+#             {
+#                 "id": img.id,
+#                 "job_id": img.job_id,
+#                 "image": img.image.url if img.image else None,
+#                 "image_type": img.image_type,
+#                 "caption": img.caption,
+#                 "created_at": img.created_at,
+#             }
+#             for img in images
+#         ]
 
-    # -------------------------
-    # SERVICE FREQUENCY
-    # -------------------------
-    def calculate_frequency(self, jobs):
-        if jobs.count() < 2:
-            return "Not enough data"
+#     # -------------------------
+#     # SERVICE FREQUENCY
+#     # -------------------------
+#     def calculate_frequency(self, jobs):
+#         if jobs.count() < 2:
+#             return "Not enough data"
 
-        dates = list(
-            jobs.values_list("scheduled_date", flat=True)
-            .order_by("-scheduled_date")[:5]
-        )
+#         dates = list(
+#             jobs.values_list("scheduled_date", flat=True)
+#             .order_by("-scheduled_date")[:5]
+#         )
 
-        if len(dates) < 2:
-            return "Not enough data"
+#         if len(dates) < 2:
+#             return "Not enough data"
 
-        gaps = []
-        for i in range(len(dates) - 1):
-            gap = (dates[i] - dates[i + 1]).days
-            gaps.append(gap)
+#         gaps = []
+#         for i in range(len(dates) - 1):
+#             gap = (dates[i] - dates[i + 1]).days
+#             gaps.append(gap)
 
-        avg_gap = sum(gaps) / len(gaps)
+#         avg_gap = sum(gaps) / len(gaps)
 
-        if avg_gap <= 7:
-            return "Weekly"
-        elif avg_gap <= 14:
-            return "Bi-weekly"
-        elif avg_gap <= 30:
-            return "Monthly"
-        else:
-            return "Occasional"
+#         if avg_gap <= 7:
+#             return "Weekly"
+#         elif avg_gap <= 14:
+#             return "Bi-weekly"
+#         elif avg_gap <= 30:
+#             return "Monthly"
+#         else:
+#             return "Occasional"
 
 
 # -------------------- Job / Schedule --------------------
@@ -433,17 +433,24 @@ class ServiceOverviewAPIView(APIView):
         # -------------------------
         # PROPERTY INFO
         # -------------------------
-        property_obj = last_completed_job.job_property if last_completed_job else None
+        property_obj = (
+            jobs.filter(job_property__isnull=False)
+            .select_related("job_property")
+            .order_by("-created_at")
+            .first()
+        )
 
         property_data = None
-        if property_obj:
+        if property_obj and property_obj.job_property:
+            prop = property_obj.job_property
             property_data = {
-                "address": getattr(property_obj, "address", None),
-                "property_size": getattr(property_obj, "property_size", None),
-                "latitude": getattr(property_obj, "latitude", None),
-                "longitude": getattr(property_obj, "longitude", None),
+                "id": prop.id,
+                "address": getattr(prop, "address", None),
+                "property_size": getattr(prop, "property_size", None),
+                "latitude": getattr(prop, "latitude", None),
+                "longitude": getattr(prop, "longitude", None),
+                "is_active": getattr(prop, "is_active", True),
             }
-
         # -------------------------
         # SERVICE SUMMARY
         # -------------------------

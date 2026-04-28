@@ -517,6 +517,17 @@ def landscaper_payment_history(request):
 
 from jobs.models import JobImage
 
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.pagination import PageNumberPagination
+
+# ✅ Custom Pagination Class
+class CustomPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = "page_size"
+    max_page_size = 100
+
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -538,7 +549,7 @@ def client_payment_history(request):
         "job__job_property",
     ).prefetch_related(
         "job__items",
-        "job__images"   # ✅ IMPORTANT
+        "job__images"
     ).order_by("-job__completed_at", "-created_at")
 
     landscaper_dict = {}
@@ -564,9 +575,7 @@ def client_payment_history(request):
 
         invoice_amount = float(invoice.total or 0)
 
-        # -------------------------
-        # ✅ IMAGES (NEW)
-        # -------------------------
+        # ✅ IMAGES
         before_images = []
         after_images = []
 
@@ -593,7 +602,6 @@ def client_payment_history(request):
             "amount": round(invoice_amount, 2),
             "pay_url": invoice.stripe_checkout_url,
 
-            # ✅ ITEMS
             "completed_items": [
                 {
                     "id": item.id,
@@ -605,7 +613,6 @@ def client_payment_history(request):
                 .order_by("sort_order", "id")
             ],
 
-            # ✅ NEW IMAGE FIELD
             "images": {
                 "before": before_images,
                 "after": after_images
@@ -615,13 +622,17 @@ def client_payment_history(request):
         landscaper_dict[landscaper_id]["jobs_count"] += 1
         landscaper_dict[landscaper_id]["total_amount"] += invoice_amount
 
+    # ✅ Round totals
     for value in landscaper_dict.values():
         value["total_amount"] = round(value["total_amount"], 2)
 
-    return Response(list(landscaper_dict.values()), status=200)
+    # ✅ APPLY PAGINATION HERE
+    paginator = CustomPagination()
+    paginated_data = paginator.paginate_queryset(
+        list(landscaper_dict.values()), request
+    )
 
-
-
+    return paginator.get_paginated_response(paginated_data)
 # recent payments user
 
 class RecentPaymentsAPIView(APIView):
@@ -1481,6 +1492,7 @@ def delete_user_financial_data(request, user_id):
 
 
 # revenue overviw for pro landscapers
+
 class ProLandscaperMonthlyRevenueView(APIView):
     permission_classes = [IsLandscaper]
 

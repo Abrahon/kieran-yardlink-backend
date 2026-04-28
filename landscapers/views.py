@@ -21,7 +21,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from .models import WorkingHours, DAYS_OF_WEEK
-from .serializers import WorkingHoursSerializer,ServiceSerializer
+from .serializers import WorkingHoursSerializer,ServiceSerializer,ServiceQuoteSerializer
 from bookings.models import BookingStatus
 from rest_framework import generics, status
 from rest_framework.permissions import IsAdminUser
@@ -1137,6 +1137,9 @@ def toggle_working_hour(request, pk):
     })
 
 
+# views.py
+
+
 
 # 4️⃣ Toggle active/inactive
 @api_view(["POST"])
@@ -1197,46 +1200,7 @@ class ServiceStatsAPIView(APIView):
         )
 
 
-# for client list vailabe date
-# from jobs.models import Job
-
-# @api_view(["GET"])
-# @permission_classes([IsAuthenticated])
-# def get_landscaper_available_dates(request, landscaper_id):
-
-#     try:
-#         landscaper = BusinessProfile.objects.get(id=landscaper_id)
-#     except BusinessProfile.DoesNotExist:
-#         return Response({"error": "Landscaper not found"}, status=404)
-
-#     # get working days
-#     working_days = WorkingHours.objects.filter(
-#         landscaper=landscaper,
-#         is_active=True
-#     ).values_list("day", flat=True)
-
-#     if not working_days:
-#         return Response({"available_dates": []})
-
-#     available_dates = []
-
-#     today = date.today()
-
-#     # next 30 days availability
-#     for i in range(30):
-#         check_date = today + timedelta(days=i)
-
-#         weekday = check_date.strftime("%A").upper()
-
-#         if weekday in working_days:
-#             available_dates.append(check_date)
-
-#     return Response({
-#         "landscaper_id": landscaper.id,
-#         "available_dates": available_dates
-#     })
-
-
+# for client list vailabe data
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def get_landscaper_available_dates(request, landscaper_id):
@@ -1411,3 +1375,343 @@ def toggle_service_pin(request, service_id):
         "standard_service": service.standard_service,
         "is_pinned": service.is_pinned
     })
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def send_quote(request, pk):
+
+    landscaper = getattr(request.user, "landscaper_profile", None)
+    if not landscaper:
+        return Response({"error": "Landscaper profile not found"}, status=403)
+
+    try:
+        quote = ClientCustomService.objects.get(
+            id=pk,
+            landscaper=landscaper,
+            is_active=True
+        )
+    except ClientCustomService.DoesNotExist:
+        return Response({"error": "Quote not found"}, status=404)
+
+    if quote.status != "pending":
+        return Response({"error": "Quote already processed"}, status=400)
+
+    price = request.data.get("price")
+
+    if not price:
+        return Response({"error": "Price is required"}, status=400)
+
+    try:
+        price = Decimal(price)
+    except:
+        return Response({"error": "Invalid price"}, status=400)
+
+    if price <= 0:
+        return Response({"error": "Price must be greater than 0"}, status=400)
+
+    quote.price = price
+    quote.status = "quoted"
+    quote.note = request.data.get("note", "")
+    quote.save()
+
+    return Response({
+        "message": "Quote sent successfully",
+        "quote_id": quote.id,
+        "price": quote.price
+    })
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def confirm_quote(request, pk):
+
+    client = getattr(request.user, "clientprofile", None)
+    if not client:
+        return Response({"error": "Client profile not found"}, status=403)
+
+    action = request.data.get("action")
+
+    if action not in ["confirm", "decline"]:
+        return Response({"error": "Invalid action"}, status=400)
+
+    try:
+        quote = ClientCustomService.objects.get(
+            id=pk,
+            client=client,
+            is_active=True
+        )
+    except ClientCustomService.DoesNotExist:
+        return Response({"error": "Quote not found"}, status=404)
+
+    if quote.status != "quoted":
+        return Response({"error": "Quote is not ready"}, status=400)
+
+    if action == "decline":
+        quote.status = "declined"
+        quote.save()
+        return Response({"message": "Quote declined"})
+
+    # ✅ CONFIRM → CREATE BOOKING
+    booking = BookingRequest.objects.create(
+        client=quote.client,
+        landscaper=quote.landscaper,
+        property=quote.property,
+        description=quote.description,
+        scheduled_date=quote.preferred_date,
+        scheduled_time=quote.preferred_time,
+        price=quote.price,
+        status="pending",
+        is_active=True
+    )
+
+    quote.status = "confirmed"
+    quote.booking = booking
+    quote.save()
+
+    return Response({
+        "message": "Quote accepted",
+        "booking_id": booking.id
+    })
+
+class ClientQuoteListView(generics.ListAPIView):
+    serializer_class = ClientCustomServiceSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        client = getattr(self.request.user, "clientprofile", None)
+        return ClientCustomService.objects.filter(client=client).order_by("-created_at")
+        
+
+class LandscaperQuoteListView(generics.ListAPIView):
+    serializer_class = ClientCustomServiceSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        landscaper = getattr(self.request.user, "landscaper_profile", None)
+        return ClientCustomService.objects.filter(
+            landscaper=landscaper
+        ).order_by("-created_at")
+
+
+from rest_framework import generics, permissions, status
+from rest_framework.response import Response
+from rest_framework.exceptions import ValidationError
+
+from .models import ServiceQuote
+from .serializers import ServiceQuoteSerializer
+
+
+class ServiceQuoteCreateView(generics.CreateAPIView):
+    serializer_class = ServiceQuoteSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def perform_create(self, serializer):
+
+        client = getattr(self.request.user, "clientprofile", None)
+
+        if not client:
+            raise ValidationError({
+                "error": "Client profile not found."
+            })
+
+        service = serializer.validated_data.get("service")
+
+        if not service:
+            raise ValidationError({
+                "error": "Service is required."
+            })
+
+        serializer.save(
+            client=client,
+            landscaper=service.business,
+            status=ServiceQuote.Status.PENDING
+        )
+
+    def create(self, request, *args, **kwargs):
+        try:
+            return super().create(request, *args, **kwargs)
+
+        except ValidationError as e:
+            return Response(
+                {"success": False, "errors": e.detail},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+class ServiceQuoteCounterView(generics.UpdateAPIView):
+    serializer_class = ServiceQuoteSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    queryset = ServiceQuote.objects.all()
+
+    def update(self, request, *args, **kwargs):
+
+        quote = self.get_object()
+        landscaper = getattr(request.user, "landscaper_profile", None)
+
+        if not landscaper:
+            return Response({"error": "Landscaper profile not found"}, status=400)
+
+        if quote.landscaper != landscaper:
+            return Response({"error": "Not allowed"}, status=403)
+
+        if quote.status not in [
+            ServiceQuote.Status.PENDING,
+            ServiceQuote.Status.COUNTERED
+        ]:
+            return Response({"error": "Cannot counter this quote"}, status=400)
+
+        counter_price = request.data.get("counter_price")
+
+        if not counter_price:
+            return Response({"error": "counter_price is required"}, status=400)
+
+        quote.counter_price = counter_price
+        quote.status = ServiceQuote.Status.COUNTERED
+        quote.save()
+
+        return Response({
+            "message": "Quote countered successfully",
+            "data": ServiceQuoteSerializer(quote).data
+        })
+
+
+
+
+
+
+class ClientCounterOfferListView(generics.ListAPIView):
+    serializer_class = ServiceQuoteSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+
+        client = getattr(self.request.user, "clientprofile", None)
+
+        if not client:
+            return ServiceQuote.objects.none()
+
+        return ServiceQuote.objects.filter(
+            client=client,
+            status__in=[
+                ServiceQuote.Status.PENDING,
+                ServiceQuote.Status.COUNTERED
+            ]
+        ).select_related(
+            "service",
+            "landscaper",
+            "property"
+        ).order_by("-updated_at")
+
+
+
+
+from decimal import Decimal
+from rest_framework.response import Response
+from rest_framework import generics, permissions
+from django.db import transaction
+
+from jobs.models import Job
+from .models import ServiceQuote
+
+
+class ServiceQuoteActionView(generics.UpdateAPIView):
+    serializer_class = ServiceQuoteSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    queryset = ServiceQuote.objects.all()
+
+    @transaction.atomic
+    def update(self, request, *args, **kwargs):
+
+        quote = self.get_object()
+        client = getattr(request.user, "clientprofile", None)
+
+        if not client or quote.client != client:
+            return Response({"error": "Not allowed"}, status=403)
+
+        action = request.data.get("action")
+
+        job = None  # 👈 important
+
+        # -------------------------
+        # ACCEPT FLOW
+        # -------------------------
+        if action == "accept":
+
+            if quote.status == ServiceQuote.Status.CONVERTED:
+                return Response({"error": "Already converted"}, status=400)
+
+            quote.status = ServiceQuote.Status.ACCEPTED
+
+            # safe pricing
+            if quote.counter_price is not None:
+                quote.final_price = Decimal(str(quote.counter_price))
+            elif quote.requested_price is not None:
+                quote.final_price = Decimal(str(quote.requested_price))
+            else:
+                quote.final_price = Decimal("0.00")
+
+            quote.save()
+
+            # -------------------------
+            # CREATE JOB (AUTO)
+            # -------------------------
+            job = Job.objects.create(
+                client=quote.client,
+                landscaper=quote.landscaper,
+                job_property=quote.property,
+                scheduled_date=quote.scheduled_date,
+                scheduled_time=quote.scheduled_time,
+                total_price=quote.final_price,
+                status=Job.Status.UPCOMING,
+            )
+
+            # mark quote converted
+            quote.status = ServiceQuote.Status.CONVERTED
+            quote.save()
+
+        # -------------------------
+        # REJECT FLOW
+        # -------------------------
+        elif action == "reject":
+
+            quote.status = ServiceQuote.Status.REJECTED
+            quote.save()
+
+        else:
+            return Response({"error": "Invalid action"}, status=400)
+
+        # -------------------------
+        # RESPONSE
+        # -------------------------
+        return Response({
+            "message": f"Quote {action}ed successfully",
+            "quote_id": quote.id,
+            "job_id": job.id if job else None
+        })
+  
+
+
+
+from rest_framework import generics, permissions
+from rest_framework.exceptions import PermissionDenied
+from .models import ServiceQuote
+from .serializers import ServiceQuoteSerializer
+
+
+class ServiceQuoteListForLandscaper(generics.ListAPIView):
+    serializer_class = ServiceQuoteSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+
+        landscaper = getattr(self.request.user, "landscaper_profile", None)
+
+        if not landscaper:
+            raise PermissionDenied("Landscaper profile not found.")
+
+        return ServiceQuote.objects.filter(
+            landscaper=landscaper
+        ).select_related(
+            "client",
+            "landscaper",
+            "service",
+            "property"
+        ).order_by("-created_at")

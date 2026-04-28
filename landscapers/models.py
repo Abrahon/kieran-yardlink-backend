@@ -188,7 +188,77 @@ class Service(models.Model):
     def __str__(self):
         return f"{self.name} ({self.business.business_name})"
 
+# qute model
+class ServiceQuote(models.Model):
 
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        COUNTERED = "countered", "Countered"
+        ACCEPTED = "accepted", "Accepted"
+        REJECTED = "rejected", "Rejected"
+        CONVERTED = "converted", "Converted"
+
+    service = models.ForeignKey(
+        "landscapers.Service",
+        on_delete=models.CASCADE,
+        related_name="quotes"
+    )
+
+    client = models.ForeignKey(
+        "profiles.ClientProfile",
+        on_delete=models.CASCADE,
+        related_name="service_quotes"
+    )
+
+    landscaper = models.ForeignKey(
+        "landscapers.BusinessProfile",
+        on_delete=models.CASCADE,
+        related_name="service_quotes"
+    )
+
+    property = models.ForeignKey(
+        "property.Property",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True
+    )
+
+    message = models.TextField(blank=True, null=True)
+
+    # client request
+    requested_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True
+    )
+
+    # landscaper response
+    counter_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True
+    )
+
+    final_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True
+    )
+
+    scheduled_date = models.DateField(null=True, blank=True)
+    scheduled_time = models.TimeField(null=True, blank=True)
+
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
 
 

@@ -306,7 +306,7 @@ class BookingRequestItem(models.Model):
     class ItemType(models.TextChoices):
         STANDARD_SERVICE = "standard_service", "Standard Service"
         ADDON = "addon", "Addon"
-        CUSTOM = "custom", "Custom"
+        CUSTOM = "custom", "Custom" 
 
     booking = models.ForeignKey(
         BookingRequest,

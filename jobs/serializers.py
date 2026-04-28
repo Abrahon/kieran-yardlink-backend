@@ -46,6 +46,10 @@ class JobImageSerializer(serializers.ModelSerializer):
             ret['image'] = None
         return ret
 
+
+
+
+
 class JobRescheduleSerializer(serializers.ModelSerializer):
     class Meta:
         model = JobReschedule
@@ -58,81 +62,6 @@ class JobRescheduleSerializer(serializers.ModelSerializer):
 
 
 
-
-# class JobSerializer(serializers.ModelSerializer):
-#     total_price = serializers.SerializerMethodField()
-#     booking_price = serializers.SerializerMethodField()
-#     items = serializers.SerializerMethodField()
-#     images = serializers.SerializerMethodField()
-#     reschedules = serializers.SerializerMethodField()
-#     client = ClientProfileSerializer(read_only=True)
-#     landscaper_info = serializers.SerializerMethodField()
-#     job_property = serializers.StringRelatedField()
-#     external_client = ExternalClientSerializer(read_only=True)
-
-#     class Meta:
-#         model = Job
-#         fields = [
-#             "id",
-#             "booking",
-#             "client",
-#             "external_client",
-#             "landscaper_info",
-#             "job_property",
-#             "scheduled_date",
-#             "scheduled_time",
-#             "booking_price",
-#             "total_price",
-#             "note",
-#             "status",
-#             "is_active",
-#             "completed_at",
-#             "items",
-#             "images",
-#             "reschedules",
-#         ]
-
-#     def get_booking_price(self, obj):
-#         if obj.booking and obj.booking.price is not None:
-#             return str(obj.booking.price)
-#         return "0.00"
-
-#     def get_total_price(self, obj):
-#         # If no completed items yet, show original booking total
-#         if obj.total_price is None or obj.total_price == 0:
-#             if obj.booking and obj.booking.price is not None:
-#                 return str(obj.booking.price)
-#             return "0.00"
-
-#         # Once work starts / items are completed, show actual completed total
-#         return str(obj.total_price)
-
-#     def get_landscaper_info(self, obj):
-#         business = obj.landscaper
-#         if not business:
-#             return None
-
-#         user = business.user
-#         personal = getattr(user, "landscaperprofilies", None)
-
-#         return {
-#             "id": business.id,
-#             "name": personal.name if personal else None,
-#             "phone": personal.phone if personal else None,
-#             "image": personal.image.url if personal and personal.image else None,
-#             "business_name": business.business_name,
-#             "business_email": business.business_email,
-#             "business_phone": business.business_phone,
-#         }
-
-#     def get_items(self, obj):
-#         return JobItemSerializer(obj.items.all(), many=True).data
-
-#     def get_images(self, obj):
-#         return JobImageSerializer(obj.images.all(), many=True).data
-
-#     def get_reschedules(self, obj):
-#         return JobRescheduleSerializer(obj.reschedules.all(), many=True).data
 
 from rest_framework import serializers
 from profiles.serializers import ExternalClientSerializer, ClientProfileSerializer
@@ -214,82 +143,6 @@ class JobSerializer(serializers.ModelSerializer):
     def get_reschedules(self, obj):
         return JobRescheduleSerializer(obj.reschedules.all(), many=True).data
 
-
-# class JobSerializer(serializers.ModelSerializer):
-#     items = serializers.SerializerMethodField()
-#     images = serializers.SerializerMethodField()
-#     reschedules = serializers.SerializerMethodField()
-#     client = ClientProfileSerializer(read_only=True)
-#     landscaper_info = serializers.SerializerMethodField()
-#     job_property = serializers.StringRelatedField()
-
-#     class Meta:
-#         model = Job
-#         fields = [
-#             "id",
-#             "booking",
-#             "client",
-#             "landscaper_info",
-#             "job_property",
-#             "scheduled_date",
-#             "scheduled_time",
-#             "total_price",
-#             "note",
-#             "status",
-#             "is_active",
-#             "completed_at",
-#             "items",
-#             "images",
-#             "reschedules",
-#         ]
-
-#     # def get_debug_booking_price(self, obj):
-#     #     return str(obj.booking.price) if obj.booking and obj.booking.price is not None else None
-
-#     # def get_landscaper_info(self, obj):
-#     #     business = obj.landscaper
-
-#     #     if not business:
-#     #         return None
-
-#     def get_booking_price(self, obj):
-#         if obj.booking and obj.booking.price is not None:
-#             return str(obj.booking.price)
-#         return "0.00"
-
-#     def get_landscaper_info(self, obj):
-#         business = obj.landscaper
-
-#         if not business:
-#             return None
-
-#     def get_landscaper_info(self, obj):
-#         business = obj.landscaper
-
-#         if not business:
-#             return None
-
-#         user = business.user
-#         personal = getattr(user, "landscaperprofilies", None)
-
-#         return {
-#             "id": business.id,
-#             "name": personal.name if personal else None,
-#             "phone": personal.phone if personal else None,
-#             "image": personal.image.url if personal and personal.image else None,
-#             "business_name": business.business_name,
-#             "business_email": business.business_email,
-#             "business_phone": business.business_phone,
-#         }
-
-#     def get_items(self, obj):
-#         return JobItemSerializer(obj.items.all(), many=True).data
-
-#     def get_images(self, obj):
-#         return JobImageSerializer(obj.images.all(), many=True).data
-
-#     def get_reschedules(self, obj):
-#         return JobRescheduleSerializer(obj.reschedules.all(), many=True).data
 
 
 # completd job serializers
@@ -491,35 +344,39 @@ class JobItemClientSerializer(serializers.ModelSerializer):
         ]
 
 
-class JobImageSerializer(serializers.ModelSerializer):
-    image_url = serializers.SerializerMethodField()
+# class JobImageSerializer(serializers.ModelSerializer):
+#     image_url = serializers.SerializerMethodField()
 
-    class Meta:
-        model = JobImage
-        fields = ["id", "image_url", "image_type", "caption"]
+#     class Meta:
+#         model = JobImage
+#         fields = ["id", "image_url", "image_type", "caption"]
 
-    def get_image_url(self, obj):
-        return obj.image.url if obj.image else None
+#     def get_image_url(self, obj):
+#         return obj.image.url if obj.image else None
 
 
 class ClientJobDetailSerializer(serializers.ModelSerializer):
     completed_items = serializers.SerializerMethodField()
     before_images = serializers.SerializerMethodField()
     after_images = serializers.SerializerMethodField()
+    landscaper_name = serializers.SerializerMethodField()  # ✅ ADD THIS
+    stripe_pay_url = serializers.SerializerMethodField()   
 
     class Meta:
         model = Job
         fields = [
             "id",
             "client_name",
+            "landscaper_name",  # ✅ ADD THIS
             "scheduled_date",
             "scheduled_time",
             "status",
             "payment_status",
             "total_price",
             "note",
+            "stripe_pay_url",
 
-            # 👇 custom
+            # custom
             "completed_items",
             "before_images",
             "after_images",
@@ -536,3 +393,28 @@ class ClientJobDetailSerializer(serializers.ModelSerializer):
     def get_after_images(self, obj):
         images = obj.images.filter(image_type="after")
         return JobImageSerializer(images, many=True).data
+
+    # ✅ NEW METHOD
+    def get_landscaper_name(self, obj):
+        landscaper = obj.landscaper
+        if not landscaper:
+            return None
+
+    def get_stripe_pay_url(self, obj):
+        invoice = getattr(obj, "invoice", None)
+
+        if invoice and invoice.status != "paid":
+            return {
+                "pay_button": True,
+                "amount": invoice.total,
+                "url": invoice.stripe_checkout_url
+            }
+
+        return None
+
+        profile = getattr(landscaper.user, "landscaperprofilies", None)
+
+        if profile and profile.name:
+            return profile.name
+
+        return landscaper.business_name

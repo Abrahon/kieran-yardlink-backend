@@ -135,68 +135,6 @@ def safe_subscription_dates(stripe_sub, plan=None):
 
 
 
-# ================================================
-# Create Checkout Session
-# ================================================
-
-# @api_view(["POST"])
-# @permission_classes([permissions.IsAuthenticated])
-# def create_checkout_session(request):
-#     stripe.api_key = settings.STRIPE_SECRET_KEY
-
-#     plan_id = request.data.get("plan_id")
-#     if not plan_id:
-#         return Response({"detail": "plan_id is required"}, status=400)
-
-#     plan = get_object_or_404(Plan, id=plan_id)
-
-#     if not plan.stripe_price_id:
-#         return Response({"detail": "Plan not linked with Stripe"}, status=400)
-
-#     if not request.user.stripe_customer_id:
-#         customer = stripe.Customer.create(
-#             email=request.user.email,
-#             name=request.user.name or request.user.email,
-#         )
-#         request.user.stripe_customer_id = customer.id
-#         request.user.save(update_fields=["stripe_customer_id"])
-
-#     # session = stripe.checkout.Session.create(
-#     #     mode="subscription",
-#     #     customer=request.user.stripe_customer_id,
-#     #     line_items=[{"price": plan.stripe_price_id, "quantity": 1}],
-#     #     subscription_data={
-#     #         "trial_period_days": 14,
-#     #         "metadata": {
-#     #             "user_id": str(request.user.id),
-#     #             "plan_id": str(plan.id),
-#     #         }
-#     #     },
-#     #     success_url="https://zznkjkkp-8000.inc1.devtunnels.ms/api/success/?session_id={CHECKOUT_SESSION_ID}",
-#     #     cancel_url="https://zznkjkkp-8000.inc1.devtunnels.ms/api/cancel/",
-#     # )
-
-#     # return Response({"checkout_url": session.url})
-
-#     session = stripe.checkout.Session.create(
-#         mode="subscription",
-#         customer=request.user.stripe_customer_id,
-#         line_items=[{"price": plan.stripe_price_id, "quantity": 1}],
-
-#         # ✅ PUT METADATA HERE (THIS IS THE FIX)
-#         metadata={
-#             "user_id": str(request.user.id),
-#             "plan_id": str(plan.id),
-#         },
-
-#         subscription_data={
-#             "trial_period_days": 14
-#         },
-
-#         success_url="https://zznkjkkp-8000.inc1.devtunnels.ms/api/success/?session_id={CHECKOUT_SESSION_ID}",
-#         cancel_url="https://zznkjkkp-8000.inc1.devtunnels.ms/api/cancel/",
-#     )
-#     return Response({"checkout_url": session.url})
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])

@@ -14,7 +14,7 @@ from jobs.views import (
     InProgressJobsListView,
     InProgressJobDetailView,
     CompletedJobDetailView,
-    ClientJobDetailView,
+    ClientUnpaidCompletedJobView,
     ClientUpcomingJobsListView
 )
 
@@ -35,7 +35,7 @@ urlpatterns = [
     # manual job created external client
     path("landscaper/manual-jobs/create/", ManualOneTimeJobCreateView.as_view(), name="manual-job-create"),
         # 🔹 Get single job details (items + images + price)
-    path("client/job-history/<int:id>/",ClientJobDetailView.as_view(),name="client-job-detail"),
+    path("client/job-history/",ClientUnpaidCompletedJobView.as_view(),name="client-job-detail"),
 
     # 🔹 Pay for completed job
     # path("client/jobs/<int:job_id>/pay/",client_pay_job,name="client-pay-job"),

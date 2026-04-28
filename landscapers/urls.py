@@ -28,7 +28,12 @@ from .views import (
     get_landscaper_available_slots,
     PublicLandscaperServiceListView,
     ServiceAddonListView,
-    ClientAcceptedServiceListView
+    ClientAcceptedServiceListView,
+    ServiceQuoteCreateView,
+    ServiceQuoteCounterView,
+    ServiceQuoteActionView,
+    ServiceQuoteListForLandscaper,
+    ClientCounterOfferListView
 
 )
 
@@ -63,7 +68,6 @@ urlpatterns = [
     path('landscaper/custom-service-requests/<int:pk>/accept/',landscaper_accept_service,name="landscaper-accept-custom-service"),
 
     path('client/custom-services/<int:pk>/toggle/', toggle_client_custom_service_active, name='toggle-client-custom-service'),
-
 
     # add ons
     path("addons/", AddonListCreateView.as_view(), name="addon-list-create"),
@@ -101,10 +105,16 @@ urlpatterns = [
         get_landscaper_available_slots
     ),
 
-
     path("services/stats/", ServiceStatsAPIView.as_view(), name="service-stats"),
     path("services/performance/", service_performance_monthly, name="service-performance-monthly"),
     path("services/<int:service_id>/pin/", toggle_service_pin, name="service-pin"),
+
+
+    path("quotes/create/", ServiceQuoteCreateView.as_view()),
+    path("quotes/landscaper/", ServiceQuoteListForLandscaper.as_view()),
+    path("quotes/<int:pk>/counter/", ServiceQuoteCounterView.as_view()),
+    path("quotes/<int:pk>/action/", ServiceQuoteActionView.as_view()),
+    path("quotes/counter-list/", ClientCounterOfferListView.as_view()),
 
 
 ]
