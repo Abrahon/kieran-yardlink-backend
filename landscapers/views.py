@@ -278,101 +278,6 @@ class ServiceAddonListView(generics.ListAPIView):
 # ================================
 
 
-# class ClientCustomServiceListCreateView(generics.ListCreateAPIView):
-#     serializer_class = ClientCustomServiceSerializer
-#     permission_classes = [permissions.IsAuthenticated]
-
-#     def get_queryset(self):
-#         client = getattr(self.request.user, "clientprofile", None)
-#         if not client:
-#             return ClientCustomService.objects.none()
-
-#         return ClientCustomService.objects.filter(
-#             client=client,
-#             is_active=True
-#         ).order_by("-created_at")
-
-#     def perform_create(self, serializer):
-#         client = getattr(self.request.user, "clientprofile", None)
-#         if not client:
-#             raise PermissionDenied("Client profile not found.")
-
-#         landscaper_id = self.request.data.get("landscaper")
-#         property_id = self.request.data.get("property")
-
-#         if not landscaper_id:
-#             raise serializers.ValidationError({"landscaper": "Required"})
-#         if not property_id:
-#             raise serializers.ValidationError({"property": "Required"})
-
-#         from landscapers.models import BusinessProfile
-#         from property.models import Property
-
-#         try:
-#             landscaper = BusinessProfile.objects.get(id=landscaper_id)
-#             property_obj = Property.objects.get(id=property_id)
-#         except BusinessProfile.DoesNotExist:
-#             raise serializers.ValidationError({"landscaper": "Invalid landscaper"})
-#         except Property.DoesNotExist:
-#             raise serializers.ValidationError({"property": "Invalid property"})
-
-#         serializer.save(
-#             client=client,
-#             landscaper=landscaper,
-#             property=property_obj,   # ✅ FIX HERE
-#             status="pending",
-#             price=None,
-#         )
-
-# class ClientCustomServiceListCreateView(generics.ListCreateAPIView):
-#     serializer_class = ClientCustomServiceSerializer
-#     permission_classes = [permissions.IsAuthenticated]
-
-#     def get_queryset(self):
-#         client = getattr(self.request.user, "clientprofile", None)
-#         if not client:
-#             return ClientCustomService.objects.none()
-
-#         return (
-#             ClientCustomService.objects.filter(
-#                 client=client,
-#                 is_active=True
-#             )
-#             .select_related("client__user", "property", "landscaper__user")
-#             .order_by("-created_at")
-#         )
-
-#     def perform_create(self, serializer):
-#         client = getattr(self.request.user, "clientprofile", None)
-#         if not client:
-#             raise PermissionDenied("Client profile not found.")
-
-#         landscaper = serializer.validated_data.get("landscaper")
-#         property_obj = serializer.validated_data.get("property")
-
-#         if not landscaper:
-#             raise serializers.ValidationError({"landscaper": "Required"})
-#         if not property_obj:
-#             raise serializers.ValidationError({"property": "Required"})
-
-#         # serializer.save(
-#         #     client=client,
-#         #     landscaper=landscaper,
-#         #     property=property_obj,
-#         #     status="pending",
-#         #     price=None,
-#         # )
-#     def perform_create(self, serializer):
-#     client = getattr(self.request.user, "clientprofile", None)
-#     if not client:
-#         raise PermissionDenied("Client profile not found.")
-
-#     serializer.save(
-#         client=client,
-#         status="pending",
-#         price=None
-#     )
-
 class ClientCustomServiceListCreateView(generics.ListCreateAPIView):
     serializer_class = ClientCustomServiceSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -401,11 +306,20 @@ class ClientCustomServiceListCreateView(generics.ListCreateAPIView):
         if not client:
             raise PermissionDenied("Client profile not found.")
 
+        property_id = self.request.data.get("property")
+
+        if not property_id:
+            raise serializers.ValidationError({
+                "property": "Property is required."
+            })
+
         serializer.save(
             client=client,
+            property_id=property_id,
             status="pending",
             price=None
         )
+
 class ClientCustomServiceRetrieveDestroyView(generics.RetrieveDestroyAPIView):
     """
     GET    -> client retrieves one of their own service requests

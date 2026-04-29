@@ -15,7 +15,9 @@ from jobs.views import (
     InProgressJobDetailView,
     CompletedJobDetailView,
     ClientUnpaidCompletedJobView,
-    ClientUpcomingJobsListView
+    ClientUpcomingJobsListView,
+    update_job_status,
+    ProblemJobsListView
 )
 
 
@@ -40,4 +42,6 @@ urlpatterns = [
     # 🔹 Pay for completed job
     # path("client/jobs/<int:job_id>/pay/",client_pay_job,name="client-pay-job"),
     path("client/upcoming-service/", ClientUpcomingJobsListView.as_view()),
+    path("landscaper/jobs/<int:job_id>/status/", update_job_status, name="job-status-update"),
+    path("landscaper/jobs/problem/", ProblemJobsListView.as_view(), name="problem-jobs"),
 ]

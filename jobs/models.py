@@ -34,6 +34,8 @@ class Job(TimeStampedModel):
         COMPLETED = "completed", "Completed"
         RESCHEDULED = "rescheduled", "Rescheduled"
         CANCELLED = "cancelled", "Cancelled"
+        MISSED = "missed", "Missed"        # ✅ NEW
+        SKIPPED = "skipped", "Skipped"     # ✅ NEW
 
     class PaymentStatus(models.TextChoices):
         PENDING = "pending", "Pending"
@@ -96,6 +98,7 @@ class Job(TimeStampedModel):
     )
 
     note = models.TextField(blank=True, null=True)
+    # status_note = models.TextField(blank=True, null=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.UPCOMING)
     is_active = models.BooleanField(default=True)
     completed_at = models.DateTimeField(null=True, blank=True)
@@ -205,6 +208,15 @@ class Job(TimeStampedModel):
             raise ValidationError("This job has no items.")
         if completed_items != total_items:
             raise ValidationError("All job items must be completed first.")
+    
+    def mark_missed_if_needed(self):
+        
+        if (
+            self.status == self.Status.UPCOMING and
+            self.scheduled_date < timezone.now().date()
+        ):
+            self.status = self.Status.MISSED
+            self.save(update_fields=["status", "updated_at"])
 
     def mark_completed(self):
         self.can_be_completed()

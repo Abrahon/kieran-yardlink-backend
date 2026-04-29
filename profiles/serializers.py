@@ -90,15 +90,37 @@ class WorkerProfileSerializer(serializers.ModelSerializer):
 
 
 
-
 class LandscaperPersonalProfileSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(source="user.email", read_only=True)
-    profile_image = serializers.ImageField(source="image", required=False, allow_null=True)
+
+    profile_image = serializers.ImageField(
+        source="image",
+        required=False,
+        allow_null=True
+    )
+
+    # ✅ business info (from BusinessProfile)
+    business_name = serializers.SerializerMethodField()
+    # business_phone = serializers.SerializerMethodField()
+    # business_email = serializers.SerializerMethodField()
+
+    # ✅ user + business + landscaper address combined view
+    address = serializers.SerializerMethodField()
 
     class Meta:
         model = LandscaperProfilies
-        fields = ["email", "name", "phone", "profile_image"]
+        fields = [
+            "email",
+            "name",
+            "phone",
+            "profile_image",
+            "business_name",
+            "address",
+        ]
 
+    # -------------------------
+    # UPDATE
+    # -------------------------
     def update(self, instance, validated_data):
         instance.name = validated_data.get("name", instance.name)
         instance.phone = validated_data.get("phone", instance.phone)
@@ -109,11 +131,42 @@ class LandscaperPersonalProfileSerializer(serializers.ModelSerializer):
         instance.save()
         return instance
 
+    # -------------------------
+    # IMAGE FIX
+    # -------------------------
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data["profile_image"] = instance.image.url if instance.image else None
         return data
 
+    # -------------------------
+    # BUSINESS HELPERS
+    # -------------------------
+    def get_business_profile(self, obj):
+        try:
+            return obj.user.landscaper_profile  # BusinessProfile
+        except Exception:
+            return None
+
+    def get_business_name(self, obj):
+        bp = self.get_business_profile(obj)
+        return bp.business_name if bp else None
+
+
+    # -------------------------
+    # ADDRESS (COMBINED)
+    # -------------------------
+    def get_address(self, obj):
+        user = obj.user
+        bp = self.get_business_profile(obj)
+
+        return {
+            "user_address": user.address,
+            "user_latitude": user.latitude,
+            "user_longitude": user.longitude,
+            "business_latitude": bp.latitude if bp else None,
+            "business_longitude": bp.longitude if bp else None,
+        }
 
 
 from rest_framework import serializers
