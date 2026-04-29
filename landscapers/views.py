@@ -1582,34 +1582,50 @@ class ClientCounterOfferListView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-
         client = getattr(self.request.user, "clientprofile", None)
 
         if not client:
             return ServiceQuote.objects.none()
 
-        return ServiceQuote.objects.filter(
-            client=client,
-            status__in=[
-                ServiceQuote.Status.PENDING,
-                ServiceQuote.Status.COUNTERED
-            ]
-        ).select_related(
-            "service",
-            "landscaper",
-            "property"
-        ).order_by("-updated_at")
-
+        return (
+            ServiceQuote.objects.filter(
+                client=client,
+                status__in=[
+                    ServiceQuote.Status.PENDING,
+                    ServiceQuote.Status.COUNTERED
+                ]
+            )
+            .select_related(
+                "service",
+                "landscaper",
+                "property"
+            )
+            .order_by("-updated_at")
+        )
 
 
 
 from decimal import Decimal
+from django.db import transaction
 from rest_framework.response import Response
 from rest_framework import generics, permissions
-from django.db import transaction
 
-from jobs.models import Job
+from jobs.models import Job, JobItem
 from .models import ServiceQuote
+from .serializers import ServiceQuoteSerializer
+
+
+def get_final_price(quote):
+    try:
+        if quote.counter_price and Decimal(str(quote.counter_price)) > 0:
+            return Decimal(str(quote.counter_price))
+
+        if quote.requested_price and Decimal(str(quote.requested_price)) > 0:
+            return Decimal(str(quote.requested_price))
+    except Exception:
+        pass
+
+    return Decimal("0.00")
 
 
 class ServiceQuoteActionView(generics.UpdateAPIView):
@@ -1627,68 +1643,62 @@ class ServiceQuoteActionView(generics.UpdateAPIView):
             return Response({"error": "Not allowed"}, status=403)
 
         action = request.data.get("action")
+        job = None
 
-        job = None  # 👈 important
-
-        # -------------------------
+        # =========================
         # ACCEPT FLOW
-        # -------------------------
+        # =========================
         if action == "accept":
 
             if quote.status == ServiceQuote.Status.CONVERTED:
                 return Response({"error": "Already converted"}, status=400)
 
+            final_price = get_final_price(quote)
+
+            quote.final_price = final_price
             quote.status = ServiceQuote.Status.ACCEPTED
-
-            # safe pricing
-            if quote.counter_price is not None:
-                quote.final_price = Decimal(str(quote.counter_price))
-            elif quote.requested_price is not None:
-                quote.final_price = Decimal(str(quote.requested_price))
-            else:
-                quote.final_price = Decimal("0.00")
-
             quote.save()
 
-            # -------------------------
-            # CREATE JOB (AUTO)
-            # -------------------------
+            # CREATE JOB
             job = Job.objects.create(
                 client=quote.client,
                 landscaper=quote.landscaper,
                 job_property=quote.property,
                 scheduled_date=quote.scheduled_date,
                 scheduled_time=quote.scheduled_time,
-                total_price=quote.final_price,
+                total_price=final_price,
                 status=Job.Status.UPCOMING,
             )
 
-            # mark quote converted
+            # CREATE JOB ITEM
+            if quote.service:
+                JobItem.objects.create(
+                    job=job,
+                    item_type=JobItem.ItemType.STANDARD_SERVICE,
+                    service=quote.service,
+                    name=quote.service.name,
+                    price=final_price,
+                )
+
+            # mark converted
             quote.status = ServiceQuote.Status.CONVERTED
             quote.save()
 
-        # -------------------------
+        # =========================
         # REJECT FLOW
-        # -------------------------
+        # =========================
         elif action == "reject":
-
             quote.status = ServiceQuote.Status.REJECTED
             quote.save()
 
         else:
             return Response({"error": "Invalid action"}, status=400)
 
-        # -------------------------
-        # RESPONSE
-        # -------------------------
         return Response({
             "message": f"Quote {action}ed successfully",
             "quote_id": quote.id,
             "job_id": job.id if job else None
         })
-  
-
-
 
 from rest_framework import generics, permissions
 from rest_framework.exceptions import PermissionDenied
