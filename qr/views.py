@@ -34,58 +34,6 @@ from .models import LandscaperQRCode
 from django.shortcuts import get_object_or_404
 
 
-
-
-
-# class ScanLandscaperQRCodeView(APIView):
-#     """
-#     Client scans QR → sees landscaper public profile
-#     """
-#     permission_classes = [IsAuthenticated]
-
-#     def get(self, request, qr_id):
-#         # Only clients can scan
-#         if request.user.role != "client":
-#             return Response(
-#                 {"detail": "Only clients can scan landscaper QR codes"},
-#                 status=status.HTTP_403_FORBIDDEN
-#             )
-
-#         qr = get_object_or_404(LandscaperQRCode, id=qr_id)
-#         landscaper = qr.landscaper
-
-#         serializer = PublicLandscaperSerializer(
-#             landscaper,
-#             context={"request": request}
-#         )
-
-#         return Response({
-#             "scanned": True,
-#             "landscaper": serializer.data
-#         }, status=status.HTTP_200_OK)
-
-
-# class ScanLandscaperQRCodeView(APIView):
-#     """
-#     Client scans QR → sees landscaper public profile
-#     Anyone can scan.
-#     """
-#     permission_classes = [AllowAny]  # anyone can access
-
-#     def get(self, request, qr_id):
-#         qr = get_object_or_404(LandscaperQRCode, id=qr_id)
-#         landscaper = qr.landscaper
-
-#         serializer = PublicLandscaperSerializer(
-#             landscaper,
-#             context={"request": request}
-#         )
-
-#         return Response({
-#             "scanned": True,
-#             "landscaper": serializer.data
-#         }, status=200)
-
         
 
 # Use this dev tunnel URL in development
@@ -131,7 +79,6 @@ class GenerateQRCodeAPIView(APIView):
 # qr/views.py
 
 
-# Import inside function to avoid circular imports
 class ScanLandscaperQRCodeView(APIView):
     permission_classes = [AllowAny]
 

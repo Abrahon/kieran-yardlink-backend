@@ -59,14 +59,6 @@ class LandscaperProfilies(models.Model):
     calendar_sync = models.BooleanField(default=False)
     job_reminder= models.BooleanField(default=False)
 
-# landscapers/models.py
-# class BusinessProfile(models.Model):
-#     user = models.OneToOneField(
-#         User,
-#         on_delete=models.CASCADE,
-#         related_name="landscaper_profile_extra"  # give a unique reverse name
-#     )
-
 
 # client
 class ClientProfile(models.Model):

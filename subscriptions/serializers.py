@@ -189,6 +189,8 @@ class SubscriptionUpgradeSerializer(serializers.ModelSerializer):
         model = Subscription
         fields = ["id", "user", "plan_name", "plan_price", "start_date", "end_date", "status", "auto_renew"]
 
+        
+
 # admin subscriptions 
 
 # subscriptions/serializers.py

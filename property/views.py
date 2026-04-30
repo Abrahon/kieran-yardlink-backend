@@ -10,6 +10,10 @@ from decimal import Decimal
 from django.shortcuts import get_object_or_404
 from rest_framework import generics
 from .serializers import PropertySerializer
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
 
 
 from .models import Property
@@ -70,19 +74,26 @@ class PropertyMultipleImageUploadView(APIView):
             status=200
         )
 
+
+
 class PropertyListCreateView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = PropertySerializer  # ✅ simplify
 
     def get_queryset(self):
-        return Property.objects.filter(owner=self.request.user)
-
-    def get_serializer_class(self):
-        if self.request.method == "GET":
-            return PropertySerializer
-        return PropertySerializer
+        return Property.objects.filter(
+            owner=self.request.user,
+            is_active=True   # ✅ ONLY active properties (important if you added boolean)
+        )
 
     def perform_create(self, serializer):
-        serializer.save(owner=self.request.user)
+        serializer.save(
+            owner=self.request.user,
+            is_active=True   # ✅ ensure default consistency
+        )
+
+
+
 
 
 
@@ -95,4 +106,41 @@ class PropertyDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_queryset(self):
         return Property.objects.filter(owner=self.request.user)
+
+    # -----------------------------
+    # OVERRIDE UPDATE (PATCH/PUT)
+    # -----------------------------
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+
+        # handle is_active safely if sent
+        is_active = request.data.get("is_active", None)
+
+        if is_active is not None:
+            instance.is_active = is_active
+            instance.save(update_fields=["is_active"])
+
+        # normal update for other fields
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+
+        return Response(serializer.data)
+
+    # -----------------------------
+    # SOFT DELETE (recommended)
+    # -----------------------------
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+
+        # ❌ Instead of hard delete
+        instance.is_active = False
+        instance.save(update_fields=["is_active"])
+
+        return Response({
+            "message": "Property deactivated successfully"
+        })
+
+
+
 

@@ -16,7 +16,18 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from profiles.serializers import ClientProfileSerializer, LandscaperProfileSerializer
 from common.permissions import IsClient, IsLandscaper
+from django.utils import timezone
+from django.db.models import Q
+from rest_framework.views import APIView
 
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+
+from profiles.serializers import ClientProfileSerializer, LandscaperProfileSerializer
+from profiles.models import LandscaperProfilies, ClientProfile
+from reviews.models import LandscaperReview
+from subscriptions.models import Subscription
+from property.models import Property
 from accounts.models import User
 from connections.models import ConnectionRequest
 from connections.serializers import (
@@ -35,12 +46,12 @@ from landscapers.serializers import (
 from profiles.models import ClientProfile, LandscaperProfilies
 from services.models import ClientService
 from profiles.serializers import ClientProfileSerializer
-
+from django.db import transaction
+from django.shortcuts import get_object_or_404
 from jobs.models import Job
 from subscriptions.models import Subscription, SubscriptionStatus
 from django.db import transaction
-from django.db.models import Q
-from django.shortcuts import get_object_or_404
+
 from django.utils import timezone
 
 from rest_framework import status
@@ -51,6 +62,8 @@ from rest_framework.views import APIView
 from connections.models import ConnectionRequest
 
 User = get_user_model()
+
+
 
 
 
@@ -198,13 +211,6 @@ class SentConnectionRequestAPIView(APIView):
                 context={"request": request}
             ).data
         )
-from django.db import transaction
-from django.shortcuts import get_object_or_404
-from django.db.models import Q
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
 
 
 class RespondConnectionRequestAPIView(APIView):
@@ -298,7 +304,7 @@ class RespondConnectionRequestAPIView(APIView):
             is_active=True,
             status__in=[
                 SubscriptionStatus.ACTIVE,
-                SubscriptionStatus.TRIALING   # ✅ THIS IS THE KEY FIX
+                SubscriptionStatus.TRIALING  
             ]
         ).select_related("plan").order_by("-end_date").first()
 
@@ -373,6 +379,9 @@ class RespondConnectionRequestAPIView(APIView):
 
         }, status=status.HTTP_200_OK)
 
+
+
+
 class CancelConnectionRequestAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -396,366 +405,7 @@ class CancelConnectionRequestAPIView(APIView):
         )
 
 
-# class AcceptedConnectionsAPIView(APIView):
-#     permission_classes = [IsAuthenticated]
 
-#     def get(self, request):
-#         user = request.user
-#         current_time = timezone.now()
-
-#         connections = ConnectionRequest.objects.filter(
-#             Q(sender=user) | Q(receiver=user),
-#             is_accepted=True
-#         ).select_related(
-#             "sender", "receiver", "schedule"
-#         ).order_by("-created_at")
-
-#         response_data = []
-
-#         for conn in connections:
-#             other_user = conn.receiver if conn.sender == user else conn.sender
-
-#             diff = current_time - conn.created_at
-#             if diff.days > 0:
-#                 connected_since = f"{diff.days} days ago"
-#             elif diff.seconds >= 3600:
-#                 connected_since = f"{diff.seconds // 3600} hours ago"
-#             elif diff.seconds >= 60:
-#                 connected_since = f"{diff.seconds // 60} minutes ago"
-#             else:
-#                 connected_since = "Just now"
-
-#             business_profile = getattr(other_user, "landscaper_profile", None)
-#             client_profile = getattr(other_user, "client_profile", None)
-
-#             if business_profile:
-#                 role = "landscaper"
-#                 profile_data = LandscaperProfileSerializer(
-#                     business_profile,
-#                     context={"request": request}
-#                 ).data
-#             elif client_profile:
-#                 role = "client"
-#                 profile_data = ClientProfileSerializer(
-#                     client_profile,
-#                     context={"request": request}
-#                 ).data
-#             else:
-#                 continue
-
-#             upcoming_job = None
-#             if conn.schedule:
-#                 upcoming_job = {
-#                     "job_id": conn.schedule.id,
-#                     "service_name": getattr(conn.schedule.service, "name", None),
-#                     "date": conn.schedule.scheduled_date,
-#                     "time": conn.schedule.scheduled_time,
-#                     "price": float(getattr(conn.schedule.service, "price", 0) or 0),
-#                     "payment_status": conn.schedule.payment_status,
-#                 }
-
-#             response_data.append({
-#                 "connection_id": conn.id,
-#                 "connected_user": {
-#                     "id": other_user.id,
-#                     "name": getattr(other_user, "name", ""),
-#                     "email": other_user.email,
-#                     "role": role,
-#                 },
-#                 "profile": profile_data,
-#                 "connected_at": conn.created_at,
-#                 "connected_since": connected_since,
-#                 "upcoming_job": upcoming_job,
-#             })
-
-#         total_connections = len(response_data)
-
-#         first_day_this_month = current_time.replace(day=1)
-#         first_day_last_month = (first_day_this_month - timedelta(days=1)).replace(day=1)
-#         last_day_last_month = first_day_this_month - timedelta(days=1)
-
-#         active_users_this_month = ConnectionRequest.objects.filter(
-#             is_accepted=True,
-#             created_at__gte=first_day_this_month
-#         ).values_list("receiver", "sender")
-
-#         active_users_last_month = ConnectionRequest.objects.filter(
-#             is_accepted=True,
-#             created_at__gte=first_day_last_month,
-#             created_at__lte=last_day_last_month
-#         ).values_list("receiver", "sender")
-
-#         active_this = set(u for pair in active_users_this_month for u in pair)
-#         active_last = set(u for pair in active_users_last_month for u in pair)
-
-#         total_users = User.objects.filter(is_active=True).count()
-
-#         active_percentage = (len(active_this) / total_users * 100) if total_users > 0 else 0
-#         previous_month_percentage = (len(active_last) / total_users * 100) if total_users > 0 else 0
-
-#         change_value = active_percentage - previous_month_percentage
-#         if change_value > 0:
-#             change_vs_last_month = f"+{change_value:.1f}"
-#         elif change_value < 0:
-#             change_vs_last_month = f"{change_value:.1f}"
-#         else:
-#             change_vs_last_month = "0.0"
-
-#         connection_limits = None
-#         landscaper_business_self = getattr(user, "landscaper_profile", None)
-#         landscaper_basic_self = getattr(user, "landscaperprofilies", None)
-
-#         if landscaper_business_self:
-#             subscription = Subscription.objects.filter(
-#                 user=user,
-#                 is_active=True,
-#                 status=SubscriptionStatus.ACTIVE
-#             ).select_related("plan").first()
-
-#             if subscription and subscription.plan:
-#                 plan_name = subscription.plan.name.upper()
-#             elif landscaper_basic_self and landscaper_basic_self.plan:
-#                 plan_name = landscaper_basic_self.plan.name.upper()
-#             else:
-#                 plan_name = "BASIC"
-
-#             accepted_count = ConnectionRequest.objects.filter(
-#                 is_accepted=True
-#             ).filter(
-#                 Q(sender=user) | Q(receiver=user)
-#             ).count()
-
-#             if plan_name == "BASIC":
-#                 connection_limits = {
-#                     "plan": "BASIC",
-#                     "accepted_connections": accepted_count,
-#                     "max_connections": 10,
-#                     "remaining_slots": max(0, 10 - accepted_count),
-#                 }
-#             else:
-#                 connection_limits = {
-#                     "plan": plan_name,
-#                     "accepted_connections": accepted_count,
-#                     "max_connections": None,
-#                     "remaining_slots": None,
-#                 }
-
-#         return Response(
-#             {
-#                 "count": total_connections,
-#                 "connections": response_data,
-#                 "active_percentage": round(active_percentage, 1),
-#                 "previous_month_percentage": round(previous_month_percentage, 1),
-#                 "change_vs_last_month": change_vs_last_month,
-#                 "connection_limits": connection_limits,
-#             },
-#             status=status.HTTP_200_OK
-#         )
-
-
-
-from django.utils import timezone
-from datetime import timedelta
-from django.db.models import Q
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
-
-# class AcceptedConnectionsAPIView(APIView):
-#     permission_classes = [IsAuthenticated]
-
-#     # -----------------------------
-#     # PROFILE RESOLVER
-#     # -----------------------------
-#     def get_profile_data(self, user, request):
-
-#         business_profile = getattr(user, "landscaper_profile", None)
-#         basic_profile = getattr(user, "landscaperprofilies", None)
-#         client_profile = getattr(user, "client_profile", None)
-
-#         if business_profile:
-#             data = BusinessLandscaperProfileSerializer(
-#                 business_profile,
-#                 context={"request": request}
-#             ).data
-#             data.update({
-#                 "user_id": user.id,
-#                 "email": user.email,
-#                 "type": "landscaper_business"
-#             })
-#             return data
-
-#         if basic_profile:
-#             return {
-#                 "user_id": user.id,
-#                 "name": getattr(basic_profile, "name", ""),
-#                 "phone": getattr(basic_profile, "phone", ""),
-#                 "image": getattr(basic_profile.image, "url", None) if basic_profile.image else None,
-#                 "type": "landscaper_basic",
-#             }
-
-#         if client_profile:
-#             data = ClientProfileSerializer(
-#                 client_profile,
-#                 context={"request": request}
-#             ).data
-#             data.update({
-#                 "user_id": user.id,
-#                 "email": user.email,
-#                 "type": "client"
-#             })
-#             return data
-
-#         return {
-#             "user_id": user.id,
-#             "name": getattr(user, "name", ""),
-#             "email": user.email,
-#             "type": "unknown",
-#         }
-
-#     # -----------------------------
-#     # FIXED: TIME AGO FUNCTION (MISSING ERROR FIX)
-#     # -----------------------------
-#     def get_connected_since(self, created_at):
-#         try:
-#             diff = timezone.now() - created_at
-
-#             if diff.days > 0:
-#                 return f"{diff.days} day{'s' if diff.days != 1 else ''} ago"
-
-#             hours = diff.seconds // 3600
-#             if hours > 0:
-#                 return f"{hours} hour{'s' if hours != 1 else ''} ago"
-
-#             minutes = diff.seconds // 60
-#             if minutes > 0:
-#                 return f"{minutes} minute{'s' if minutes != 1 else ''} ago"
-
-#             return "just now"
-
-#         except Exception:
-#             return "unknown"
-
-#     # -----------------------------
-#     # UPCOMING JOB (FIXED - NO service direct)
-#     # -----------------------------
-#     def get_upcoming_job(self, conn):
-#         try:
-#             job = getattr(conn, "schedule", None)
-#             if not job:
-#                 return None
-
-#             booking = getattr(job, "booking", None)
-#             service = getattr(booking, "service", None) if booking else None
-
-#             return {
-#                 "job_id": job.id,
-#                 "service_name": getattr(service, "name", None),
-#                 "date": getattr(job, "scheduled_date", None),
-#                 "time": getattr(job, "scheduled_time", None),
-#                 "price": float(getattr(service, "price", 0) or 0),
-#                 "payment_status": getattr(job, "payment_status", None),
-#                 "is_completed": getattr(job, "is_completed", False),
-#             }
-
-#         except Exception:
-#             return None
-
-#     # -----------------------------
-#     # CONNECTION LIMITS (FIXED PLAN PRIORITY)
-#     # -----------------------------
-#     def get_connection_limits(self, user, accepted_count):
-
-#         subscription = Subscription.objects.filter(
-#             user=user,
-#             is_active=True
-#         ).select_related("plan").order_by("-end_date").first()
-
-#         plan_name = subscription.plan.name.lower() if subscription and subscription.plan else "basic"
-
-#         # ---------------- PRO PLAN ----------------
-#         if plan_name in ["pro", "premium", "trialing"]:
-#             return {
-#                 "plan": "pro",
-#                 "accepted_connections": accepted_count,
-#                 "max_connections": "unlimited",
-#                 "remaining_slots": "unlimited",
-#             }
-
-#         # ---------------- BASIC PLAN ----------------
-#         max_connections = 10
-#         remaining = max(0, max_connections - accepted_count)
-
-#         return {
-#             "plan": "basic",
-#             "accepted_connections": accepted_count,
-#             "max_connections": max_connections,
-#             "remaining_slots": remaining,
-#         }
-        
-#     # -----------------------------
-#     # MAIN API
-#     # -----------------------------
-#     def get(self, request):
-
-#         try:
-#             user = request.user
-
-#             connections_qs = ConnectionRequest.objects.filter(
-#                 Q(sender=user) | Q(receiver=user),
-#                 is_accepted=True
-#             ).select_related(
-#                 "sender",
-#                 "receiver",
-#                 "schedule"
-#             ).order_by("-created_at")
-
-#             connections_data = []
-
-#             for conn in connections_qs:
-
-#                 other_user = conn.receiver if conn.sender == user else conn.sender
-
-#                 connections_data.append({
-#                     "connection_request_id": conn.id,
-#                     "connected_user": {
-#                         "id": other_user.id,
-#                         "name": getattr(other_user, "name", ""),
-#                         "email": other_user.email,
-#                         "role": getattr(other_user, "role", ""),
-#                     },
-#                     "profile": self.get_profile_data(other_user, request),
-#                     "connected_at": conn.created_at,
-#                     "connected_since": self.get_connected_since(conn.created_at),
-#                     "upcoming_job": self.get_upcoming_job(conn),
-#                 })
-
-#             count = connections_qs.count()
-
-#             return Response({
-#                 "count": count,
-#                 "connections": connections_data,
-#                 "connection_limits": self.get_connection_limits(user, count),
-#             }, status=status.HTTP_200_OK)
-
-#         except Exception as e:
-#             return Response({
-#                 "error": "Failed to fetch connections",
-#                 "detail": str(e)
-#             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-from django.utils import timezone
-from django.db.models import Q
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
-
-from profiles.serializers import ClientProfileSerializer, LandscaperProfileSerializer
-from profiles.models import LandscaperProfilies, ClientProfile
-from reviews.models import LandscaperReview
-from subscriptions.models import Subscription
 
 
 class AcceptedConnectionsAPIView(APIView):
@@ -780,11 +430,12 @@ class AcceptedConnectionsAPIView(APIView):
                 return f"{minutes} minute{'s' if minutes != 1 else ''} ago"
 
             return "just now"
+
         except Exception:
             return "unknown"
 
     # -----------------------------
-    # RATING
+    # RATING (SAFE)
     # -----------------------------
     def get_rating(self, user):
         try:
@@ -796,56 +447,124 @@ class AcceptedConnectionsAPIView(APIView):
             return 0
 
     # -----------------------------
-    # PROFILE (USING SERIALIZERS - FIXED)
+    # PROFILE RESOLVER (FIXED - NO MODEL CRASH)
     # -----------------------------
     def get_profile_data(self, user, request):
 
-        # ---------------- LANDSCAPER ----------------
-        if hasattr(user, "landscaperprofilies"):
-            profile = user.landscaperprofilies
+        # ---------------- LANDSCAPER BUSINESS ----------------
+        business = BusinessProfile.objects.filter(user=user).first()
 
-            data = LandscaperProfileSerializer(
-                profile,
-                context={"request": request}
-            ).data
-
-            data.update({
+        if business:
+            return {
+                "user_id": user.id,
+                "name": user.name,
+                "email": user.email,
+                "role": user.role,
                 "type": "landscaper",
-                "profile_image": profile.image.url if profile.image else None,
+
+                "business_name": business.business_name,
+                "business_email": business.business_email,
+                "business_phone": business.business_phone,
+
+                # ONLY business location here
+                "business_address": {
+                    "latitude": business.latitude,
+                    "longitude": business.longitude,
+                },
+
+                # USER ADDRESS (from accounts.User)
+                "user_address": {
+                    "address": user.address,
+                    "latitude": user.latitude,
+                    "longitude": user.longitude,
+                },
+
+                "profile_image": getattr(business.profile_image, "url", None),
                 "rating": self.get_rating(user),
-            })
+            }
 
-            return data
+        # ---------------- LANDSCAPER BASIC PROFILE ----------------
+        landscaper_basic = getattr(user, "landscaperprofilies", None)
 
-        # ---------------- CLIENT ----------------
-        if hasattr(user, "clientprofile"):
-            profile = user.clientprofile
+        if landscaper_basic:
+            return {
+                "user_id": user.id,
+                "name": landscaper_basic.name,
+                "email": user.email,
+                "role": user.role,
+                "type": "landscaper",
 
-            data = ClientProfileSerializer(
-                profile,
-                context={"request": request}
-            ).data
+                # USER ADDRESS ONLY
+                "user_address": {
+                    "address": user.address,
+                    "latitude": user.latitude,
+                    "longitude": user.longitude,
+                },
 
-            data.update({
+                "profile_image": getattr(landscaper_basic.image, "url", None),
+                "rating": self.get_rating(user),
+            }
+
+        # ---------------- CLIENT PROFILE ----------------
+
+        client = getattr(user, "clientprofile", None)
+
+        if client:
+            properties = Property.objects.filter(owner=user)
+
+            return {
+                "user_id": user.id,
+                "name": client.name,
+                "email": user.email,
+                "role": user.role,
                 "type": "client",
-                "profile_image": profile.image.url if profile.image else None,
+
+                # USER ADDRESS ONLY
+                "user_address": {
+                    "address": user.address,
+                    "latitude": user.latitude,
+                    "longitude": user.longitude,
+                },
+
+                "profile_image": getattr(client.image, "url", None),
                 "rating": self.get_rating(user),
-            })
 
-            return data
-
+                # ✅ ACTIVE PROPERTIES
+                "properties": [
+                    {
+                        "id": p.id,
+                        "address": p.address,
+                        "latitude": p.latitude,
+                        "longitude": p.longitude,
+                        "property_size": p.property_size,
+                        "cut_height_inches": p.cut_height_inches,
+                        "grass_types": p.grass_types,
+                        "notes": p.notes,
+                        "images": p.images,
+                    }
+                    for p in properties
+                ]
+            }
         # ---------------- FALLBACK ----------------
         return {
             "user_id": user.id,
             "name": getattr(user, "name", ""),
             "email": user.email,
+            "role": getattr(user, "role", None),
             "type": "unknown",
+
+            "user_address": {
+                "address": user.address,
+                "latitude": user.latitude,
+                "longitude": user.longitude,
+            },
+
             "profile_image": None,
             "rating": self.get_rating(user),
         }
 
     # -----------------------------
-    # CONNECTION LIMITS
+    # CONNECTION LIMITS (UNCHANGED)
     # -----------------------------
     def get_connection_limits(self, user, count):
 
@@ -874,7 +593,7 @@ class AcceptedConnectionsAPIView(APIView):
         }
 
     # -----------------------------
-    # MAIN API
+    # MAIN API (NO RESPONSE CHANGE)
     # -----------------------------
     def get(self, request):
 
@@ -902,7 +621,7 @@ class AcceptedConnectionsAPIView(APIView):
                 "profile": self.get_profile_data(other_user, request),
                 "connected_at": conn.created_at,
                 "connected_since": self.get_connected_since(conn.created_at),
-                "upcoming_job": None,  # keep same structure
+                "upcoming_job": None,
             })
 
         return Response({
@@ -910,6 +629,8 @@ class AcceptedConnectionsAPIView(APIView):
             "connections": connections_data,
             "connection_limits": self.get_connection_limits(user, connections_qs.count()),
         }, status=status.HTTP_200_OK)
+
+
 
 class RemoveConnectionAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -928,6 +649,9 @@ class RemoveConnectionAPIView(APIView):
             {"message": "Connection removed"},
             status=status.HTTP_200_OK
         )
+
+
+        
 
 class ConnectedClientListAPIView(APIView):
     permission_classes = [IsAuthenticated, IsLandscaper]

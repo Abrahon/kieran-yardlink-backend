@@ -3,7 +3,6 @@ from .views import (
     PropertyListCreateView,
     PropertyDetailView,
     PropertyMultipleImageUploadView,
-    # PropertyDetailAPIView
 )
 
 urlpatterns = [
@@ -29,5 +28,6 @@ urlpatterns = [
         PropertyMultipleImageUploadView.as_view(),
         name="property-image-upload"
     ),
-    #  path("property/<int:property_id>/", PropertyDetailAPIView.as_view(), name="property-detail"),
+
+
 ]

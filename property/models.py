@@ -23,6 +23,7 @@ class Property(models.Model):
     grass_types = models.JSONField(default=list)
 
     notes = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
 
     # ✅ Images stored here
     images = models.JSONField(default=list, blank=True)

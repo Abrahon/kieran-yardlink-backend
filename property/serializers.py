@@ -18,6 +18,7 @@ class PropertySerializer(serializers.ModelSerializer):
             "cut_height_inches",
             "grass_types",
             "notes",
+            "is_active", 
             "image",   # first image
             "images",  # full array
             "created_at",
