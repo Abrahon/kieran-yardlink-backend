@@ -16,6 +16,7 @@ from subscriptions.models import Subscription, SubscriptionStatus
 from django.db.models import Sum, DecimalField
 from django.db.models.functions import Coalesce
 from accounts .models import User
+from payments.enums import PaymentStatus
 
 
 
@@ -760,7 +761,7 @@ class AdminJobsCompletedAnalyticsView(APIView):
     def get(self, request):
         now = timezone.now()
 
-        qs = Job.objects.filter(is_completed=True)
+        qs = Job.objects.filter(status=Job.Status.COMPLETED)
 
         total_completed_jobs = qs.count()
 
@@ -1284,6 +1285,21 @@ class AdminSubscriptionRevenueAnalyticsView(APIView):
     
 
 # stripe 2 percentage fees
+from decimal import Decimal
+from django.db.models import Sum, DecimalField
+from django.db.models.functions import Coalesce
+from django.utils import timezone
+from datetime import timedelta
+
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAdminUser
+from rest_framework.response import Response
+from rest_framework import status
+
+from jobs.models import Job
+from payments.enums import PaymentStatus
+
+
 class AdminStripeFeeRevenueAnalyticsView(APIView):
     permission_classes = [IsAdminUser]
 
@@ -1293,30 +1309,56 @@ class AdminStripeFeeRevenueAnalyticsView(APIView):
             scheduled_date__gte=start_date.date(),
             scheduled_date__lt=end_date.date()
         ).aggregate(
-            total=Coalesce(Sum("service__price", output_field=DecimalField(max_digits=12, decimal_places=2)), Decimal("0.00"))
+            total=Coalesce(
+                Sum("total_price"),  # ✅ FIXED HERE
+                Decimal("0.00")
+            )
         )["total"] or Decimal("0.00")
 
         return float(total_job_amount * Decimal("0.02"))
 
     def get(self, request):
         now = timezone.now()
+
+        # ------------------ MONTHS ------------------
+        def start_of_month(dt):
+            return dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+        def add_months(source_date, months):
+            month = source_date.month - 1 + months
+            year = source_date.year + month // 12
+            month = month % 12 + 1
+            return source_date.replace(year=year, month=month, day=1)
+
         current_month_start = start_of_month(now)
         next_month_start = add_months(current_month_start, 1)
         last_month_start = add_months(current_month_start, -1)
 
+        # ------------------ TOTAL ------------------
         total_job_amount = Job.objects.filter(
             payment_status=PaymentStatus.PAID
         ).aggregate(
-            total=Coalesce(Sum("service__price", output_field=DecimalField(max_digits=12, decimal_places=2)), Decimal("0.00"))
+            total=Coalesce(
+                Sum("total_price"),  # ✅ FIXED HERE
+                Decimal("0.00")
+            )
         )["total"] or Decimal("0.00")
 
         total_fee_revenue = float(total_job_amount * Decimal("0.02"))
 
+        # ------------------ CURRENT / PREVIOUS ------------------
         current_value = self._period_fee_revenue(current_month_start, next_month_start)
         previous_value = self._period_fee_revenue(last_month_start, current_month_start)
 
+        def percentage_change(current, previous):
+            if previous == 0:
+                return 100.0, "up"
+            change = ((current - previous) / previous) * 100
+            return round(change, 2), "up" if change >= 0 else "down"
+
         total_change_pct, total_change_direction = percentage_change(current_value, previous_value)
 
+        # ------------------ TREND ------------------
         trend = []
         for i in range(5, -1, -1):
             month_start = add_months(current_month_start, -i)
@@ -1331,6 +1373,7 @@ class AdminStripeFeeRevenueAnalyticsView(APIView):
                 "stripe_fee_revenue": round(fee_revenue, 2)
             })
 
+        # ------------------ WEEK ------------------
         weekday = now.weekday()
         this_week_start = (now - timedelta(days=weekday)).replace(
             hour=0, minute=0, second=0, microsecond=0
@@ -1342,6 +1385,7 @@ class AdminStripeFeeRevenueAnalyticsView(APIView):
         prev_week_value = self._period_fee_revenue(prev_week_start, this_week_start)
         this_week_pct, this_week_direction = percentage_change(this_week_value, prev_week_value)
 
+        # ------------------ MONTH ------------------
         this_month_value = current_value
         last_month_value = previous_value
         this_month_pct, this_month_direction = percentage_change(this_month_value, last_month_value)
@@ -1350,6 +1394,7 @@ class AdminStripeFeeRevenueAnalyticsView(APIView):
         month_before_last_value = self._period_fee_revenue(month_before_last_start, last_month_start)
         last_month_pct, last_month_direction = percentage_change(last_month_value, month_before_last_value)
 
+        # ------------------ QUARTER ------------------
         current_quarter = ((now.month - 1) // 3) + 1
         current_quarter_start_month = (current_quarter - 1) * 3 + 1
 
@@ -1369,6 +1414,7 @@ class AdminStripeFeeRevenueAnalyticsView(APIView):
         prev_quarter_value = self._period_fee_revenue(prev_quarter_start, last_quarter_start)
         last_quarter_pct, last_quarter_direction = percentage_change(last_quarter_value, prev_quarter_value)
 
+        # ------------------ RESPONSE ------------------
         return Response({
             "status": "success",
             "metric": "stripe_fee_revenue",

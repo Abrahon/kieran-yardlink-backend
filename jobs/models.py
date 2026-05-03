@@ -16,6 +16,7 @@ from bookings.models import BookingRequest
 from landscapers.models import Service, Addon, BusinessProfile
 from profiles.models import ClientProfile
 from property.models import Property
+from payments.enums import PaymentStatus
 
 
 
@@ -37,9 +38,6 @@ class Job(TimeStampedModel):
         MISSED = "missed", "Missed"        # ✅ NEW
         SKIPPED = "skipped", "Skipped"     # ✅ NEW
 
-    class PaymentStatus(models.TextChoices):
-        PENDING = "pending", "Pending"
-        PAID = "paid", "Paid"
 
     booking = models.OneToOneField(
         BookingRequest,

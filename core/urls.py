@@ -21,7 +21,7 @@ from invitations.views import accept_invite_page
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/', include('accounts.urls')),
+    path('api/',include('accounts.urls')),
     path('api/',include('profiles.urls')),
     path('api/', include('chat.urls')),
     path('api/', include('message.urls')),

@@ -1,51 +1,82 @@
-# notifications/utils.py
-from notifications.models import Notification, NotificationSettings
-from django.core.mail import send_mail
+
 from firebase_admin import messaging
+from notifications.models import Notification, Device
 
-def send_email_notification(user, title, message):
-    send_mail(
-        title,
-        message,
-        "no-reply@yourapp.com",
-        [user.email],
-        fail_silently=False
-    )
 
-def send_push_notification(user, title, message, notification_type="job", send_email=False):
+def send_push_notification(
+    user,
+    title,
+    message,
+    notification_type="job",
+    data=None
+):
     """
-    Sends notification respecting user settings.
+    Production-ready Firebase push notification service
     """
-    # Check user settings
+
+    # -----------------------------
+    # 1. Check user notification settings
+    # -----------------------------
     settings = getattr(user, "notification_settings", None)
+
     if settings:
         if notification_type == "job" and not settings.job_alert:
-            return
+            return None
         if notification_type == "payment" and not settings.payment_alert:
-            return
+            return None
         if notification_type == "weather" and not settings.weather_alert:
-            return
+            return None
 
-    # Create notification record
-    Notification.objects.create(
+    # -----------------------------
+    # 2. Save notification in DB
+    # -----------------------------
+    notification = Notification.objects.create(
         user=user,
-        notification_type=notification_type,
         title=title,
-        message=message
+        message=message,
+        notification_type=notification_type
     )
 
-    # Optional email
-    if send_email:
-        send_email_notification(user, title, message)
+    # -----------------------------
+    # 3. Get active devices
+    # -----------------------------
+    devices = list(Device.objects.filter(user=user, is_active=True))
 
-    # Optional FCM push
-    if hasattr(user, "fcm_token") and user.fcm_token:
-        messaging.send(
-            messaging.Message(
-                notification=messaging.Notification(
-                    title=title,
-                    body=message
-                ),
-                token=user.fcm_token
-            )
-        )
+    if not devices:
+        print("❌ No active devices found")
+        return notification
+
+    device_map = {d.token: d for d in devices}
+    tokens = list(device_map.keys())
+
+    print("✅ Sending to tokens:", tokens)
+
+    # -----------------------------
+    # 4. Prepare FCM message
+    # -----------------------------
+    message_obj = messaging.MulticastMessage(
+        notification=messaging.Notification(
+            title=title,
+            body=message,
+        ),
+        tokens=tokens,
+        data={k: str(v) for k, v in (data or {}).items()}
+    )
+
+    response = messaging.send_multicast(message_obj)
+
+    print("FCM Response:", response.success_count, "success")
+
+    # -----------------------------
+    # 5. Handle invalid tokens safely
+    # -----------------------------
+    for idx, resp in enumerate(response.responses):
+        token = tokens[idx]
+
+        if not resp.success:
+            device = device_map.get(token)
+            if device:
+                device.is_active = False
+                device.save(update_fields=["is_active"])
+
+    return notification

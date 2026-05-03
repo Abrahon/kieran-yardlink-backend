@@ -888,7 +888,7 @@ def parse_date_range(start_str=None, end_str=None):
 from decimal import Decimal
 from datetime import timedelta
 from django.utils import timezone
-from django.db.models import Sum
+from django.db.models import Sum, Q
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
@@ -897,131 +897,293 @@ from invoice.models import Invoice
 from subscriptions.models import Subscription
 
 
-def get_month_range(dt):
-    start = dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+# def get_month_range(dt):
+#     start = dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-    if start.month == 12:
-        next_month = start.replace(year=start.year + 1, month=1)
-    else:
-        next_month = start.replace(month=start.month + 1)
+#     if start.month == 12:
+#         next_month = start.replace(year=start.year + 1, month=1)
+#     else:
+#         next_month = start.replace(month=start.month + 1)
 
-    return start, next_month
+#     return start, next_month
 
 
-def percent_change(current, previous):
-    if previous == 0:
-        return 100 if current > 0 else 0
-    return ((current - previous) / previous) * 100
+# def percent_change(current, previous):
+#     current = Decimal(current)
+#     previous = Decimal(previous)
 
+#     if previous == 0:
+#         return float(100 if current > 0 else 0)
+
+#     return float(((current - previous) / previous) * 100)
+
+
+# @api_view(["GET"])
+# @permission_classes([IsAdminUser])
+# def admin_dashboard_stats(request):
+#     now = timezone.now()
+
+#     # =========================
+#     # DATE RANGES
+#     # =========================
+#     current_start, current_end = get_month_range(now)
+
+#     last_anchor = current_start - timedelta(days=1)
+#     last_start, last_end = get_month_range(last_anchor)
+
+#     prev_anchor = last_start - timedelta(days=1)
+#     prev_start, prev_end = get_month_range(prev_anchor)
+
+#     # =========================
+#     # INVOICE DATA (FIXED)
+#     # =========================
+#     def get_invoice_data(start, end):
+#         qs = (
+#             Invoice.objects
+#             .filter(
+#                 created_at__gte=start,
+#                 created_at__lt=end,
+#             )
+#             .filter(
+#                 Q(status="paid") | Q(status="sent")   # ✅ IMPORTANT FIX
+#             )
+#             .exclude(stripe_session_id__isnull=True)
+#             .exclude(stripe_session_id="")
+#         )
+
+#         total = qs.aggregate(total=Sum("total"))["total"] or Decimal("0.00")
+#         fee = qs.aggregate(total=Sum("service_fee_amount"))["total"] or Decimal("0.00")
+#         count = qs.count()
+
+#         return total, fee, count
+
+#     # =========================
+#     # SUBSCRIPTION DATA
+#     # =========================
+#     def get_subscription_data(start, end):
+#         qs = (
+#             Subscription.objects
+#             .filter(
+#                 created_at__gte=start,
+#                 created_at__lt=end,
+#             )
+#             .exclude(stripe_subscription_id__isnull=True)
+#             .exclude(stripe_subscription_id="")
+#             .select_related("plan")
+#         )
+
+#         total = Decimal("0.00")
+
+#         for sub in qs:
+#             price = Decimal(str(sub.plan.price or 0))
+
+#             if hasattr(sub, "discount_override") and sub.discount_override:
+#                 price -= price * Decimal(str(sub.discount_override)) / Decimal("100")
+
+#             total += price
+
+#         count = qs.count()
+
+#         return total, count
+
+#     # =========================
+#     # CURRENT MONTH
+#     # =========================
+#     cur_invoice_total, cur_fee, cur_invoice_count = get_invoice_data(current_start, current_end)
+#     cur_sub_total, cur_sub_count = get_subscription_data(current_start, current_end)
+
+#     cur_total_revenue = Decimal(cur_invoice_total) + Decimal(cur_sub_total)
+#     cur_total_transactions = cur_invoice_count + cur_sub_count
+
+#     # =========================
+#     # LAST MONTH
+#     # =========================
+#     last_invoice_total, last_fee, last_invoice_count = get_invoice_data(last_start, last_end)
+#     last_sub_total, last_sub_count = get_subscription_data(last_start, last_end)
+
+#     last_total_revenue = Decimal(last_invoice_total) + Decimal(last_sub_total)
+#     last_total_transactions = last_invoice_count + last_sub_count
+
+#     # =========================
+#     # PREVIOUS MONTH
+#     # =========================
+#     prev_invoice_total, prev_fee, prev_invoice_count = get_invoice_data(prev_start, prev_end)
+#     prev_sub_total, prev_sub_count = get_subscription_data(prev_start, prev_end)
+
+#     prev_total_revenue = Decimal(prev_invoice_total) + Decimal(prev_sub_total)
+#     prev_total_transactions = prev_invoice_count + prev_sub_count
+
+#     # =========================
+#     # PERCENT CALCULATIONS
+#     # =========================
+#     revenue_change = percent_change(last_total_revenue, prev_total_revenue)
+#     fee_change = percent_change(last_fee, prev_fee)
+#     transaction_change = percent_change(last_total_transactions, prev_total_transactions)
+
+#     # =========================
+#     # FINAL RESPONSE (UNCHANGED)
+#     # =========================
+#     return Response({
+#         "total_transaction_revenue": {
+#             "value": round(float(cur_total_revenue), 2),
+#             "change_percent": round(revenue_change, 2),
+#             "label": f"{round(revenue_change, 2)}% vs last month"
+#         },
+#         "total_platform_fees": {
+#             "value": round(float(cur_fee), 2),
+#             "change_percent": round(fee_change, 2),
+#             "label": f"{round(fee_change, 2)}% vs last month"
+#         },
+#         "total_transactions": {
+#             "value": cur_total_transactions,
+#             "change_percent": round(transaction_change, 2),
+#             "label": f"{round(transaction_change, 2)}% vs last month"
+#         }
+#     })
 
 @api_view(["GET"])
 @permission_classes([IsAdminUser])
 def admin_dashboard_stats(request):
-    now = timezone.now()
+    latest_paid_invoice = Invoice.objects.filter(
+        status=Invoice.Status.PAID
+    ).order_by("-created_at").first()
 
-    # Current month
+    if latest_paid_invoice:
+        now = latest_paid_invoice.created_at
+    else:
+        now = timezone.now()
+
+    # -------------------------
+    # Month ranges
+    # -------------------------
+    def get_month_range(dt):
+        start = dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+        if start.month == 12:
+            end = start.replace(year=start.year + 1, month=1)
+        else:
+            end = start.replace(month=start.month + 1)
+
+        return start, end
+
     current_start, current_end = get_month_range(now)
 
-    # Last month
     last_anchor = current_start - timedelta(days=1)
     last_start, last_end = get_month_range(last_anchor)
 
-    # Previous month
     prev_anchor = last_start - timedelta(days=1)
     prev_start, prev_end = get_month_range(prev_anchor)
 
-    # =========================
-    # SERVICE (INVOICE)
-    # =========================
+    # -------------------------
+    # INVOICE DATA (FIXED)
+    # -------------------------
+    from django.db.models import Sum, DecimalField, Value, Q
+    from django.db.models.functions import Coalesce
+    from decimal import Decimal
+
     def get_invoice_data(start, end):
-        qs = (
-            Invoice.objects
-            .filter(
-                created_at__gte=start,
-                created_at__lt=end,
-            )
-            .exclude(stripe_session_id__isnull=True)
-            .exclude(stripe_session_id="")
+        qs = Invoice.objects.filter(
+            status=Invoice.Status.PAID
         )
 
-        total = qs.aggregate(total=Sum("total"))["total"] or Decimal("0.00")
-        fee = qs.aggregate(total=Sum("service_fee_amount"))["total"] or Decimal("0.00")
+        # ✅ HANDLE BOTH paid_at AND created_at
+        if start and end:
+            qs = qs.filter(
+                Q(paid_at__gte=start, paid_at__lt=end) |
+                Q(paid_at__isnull=True, created_at__gte=start, created_at__lt=end)
+            )
+
+        total = qs.aggregate(
+            total=Coalesce(
+                Sum("total"),
+                Value(Decimal("0.00")),
+                output_field=DecimalField()
+            )
+        )["total"]
+
+        fee = qs.aggregate(
+            total=Coalesce(
+                Sum("service_fee_amount"),
+                Value(Decimal("0.00")),
+                output_field=DecimalField()
+            )
+        )["total"]
+
         count = qs.count()
 
-        return total, fee, count
+        return float(total), float(fee), count
 
-    # =========================
-    # SUBSCRIPTIONS
-    # =========================
+    # -------------------------
+    # SUBSCRIPTION DATA (FIXED)
+    # -------------------------
     def get_subscription_data(start, end):
-        qs = (
-            Subscription.objects
-            .filter(
-                created_at__gte=start,
-                created_at__lt=end,
-            )
-            .exclude(stripe_subscription_id__isnull=True)
-            .exclude(stripe_subscription_id="")
-            .select_related("plan")
-        )
+        qs = Subscription.objects.filter(
+            created_at__gte=start,
+            created_at__lt=end,
+        ).select_related("plan")
 
-        total = Decimal("0.00")
+        total = 0.0
 
         for sub in qs:
-            price = Decimal(str(sub.plan.price or 0))
-            if hasattr(sub, "discount_override") and sub.discount_override:
-                price -= price * Decimal(str(sub.discount_override)) / Decimal("100")
+            price = float(sub.plan.price or 0)
+
+            if getattr(sub, "discount_override", None):
+                price -= price * float(sub.discount_override) / 100
+
             total += price
 
-        count = qs.count()
+        return total, qs.count()
 
-        return total, count
-
-    # =========================
-    # CURRENT MONTH
-    # =========================
+    # -------------------------
+    # CURRENT
+    # -------------------------
     cur_invoice_total, cur_fee, cur_invoice_count = get_invoice_data(current_start, current_end)
     cur_sub_total, cur_sub_count = get_subscription_data(current_start, current_end)
 
     cur_total_revenue = cur_invoice_total + cur_sub_total
     cur_total_transactions = cur_invoice_count + cur_sub_count
 
-    # =========================
-    # LAST MONTH
-    # =========================
+    # -------------------------
+    # LAST
+    # -------------------------
     last_invoice_total, last_fee, last_invoice_count = get_invoice_data(last_start, last_end)
     last_sub_total, last_sub_count = get_subscription_data(last_start, last_end)
 
     last_total_revenue = last_invoice_total + last_sub_total
     last_total_transactions = last_invoice_count + last_sub_count
 
-    # =========================
-    # PREVIOUS MONTH
-    # =========================
+    # -------------------------
+    # PREVIOUS
+    # -------------------------
     prev_invoice_total, prev_fee, prev_invoice_count = get_invoice_data(prev_start, prev_end)
     prev_sub_total, prev_sub_count = get_subscription_data(prev_start, prev_end)
 
     prev_total_revenue = prev_invoice_total + prev_sub_total
     prev_total_transactions = prev_invoice_count + prev_sub_count
 
-    # =========================
-    # CALCULATE %
-    # =========================
-    revenue_change = percent_change(last_total_revenue, prev_total_revenue)
-    fee_change = percent_change(last_fee, prev_fee)
-    transaction_change = percent_change(last_total_transactions, prev_total_transactions)
+    # -------------------------
+    # % CHANGE
+    # -------------------------
+    def percent_change(current, previous):
+        if previous == 0:
+            return 100 if current > 0 else 0
+        return ((current - previous) / previous) * 100
 
-    # =========================
-    # FINAL RESPONSE (UI READY)
-    # =========================
+    revenue_change = percent_change(cur_total_revenue, last_total_revenue)
+    fee_change = percent_change(cur_fee, last_fee)
+    transaction_change = percent_change(cur_total_transactions, last_total_transactions)
+
+    # -------------------------
+    # FINAL RESPONSE (UNCHANGED)
+    # -------------------------
     return Response({
         "total_transaction_revenue": {
-            "value": round(float(cur_total_revenue), 2),
+            "value": round(cur_total_revenue, 2),
             "change_percent": round(revenue_change, 2),
             "label": f"{round(revenue_change, 2)}% vs last month"
         },
         "total_platform_fees": {
-            "value": round(float(cur_fee), 2),
+            "value": round(cur_fee, 2),
             "change_percent": round(fee_change, 2),
             "label": f"{round(fee_change, 2)}% vs last month"
         },
@@ -1031,7 +1193,6 @@ def admin_dashboard_stats(request):
             "label": f"{round(transaction_change, 2)}% vs last month"
         }
     })
-
 
 @api_view(["GET"])
 @permission_classes([IsAdminUser])

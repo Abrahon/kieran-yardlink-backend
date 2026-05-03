@@ -17,6 +17,8 @@ class Plan(models.Model):
     duration = models.CharField(max_length=20, choices=SubscriptionDuration.choices,default=SubscriptionDuration.MONTHLY)                        
     stripe_product_id = models.CharField(max_length=255, blank=True, null=True)
     stripe_price_id = models.CharField(max_length=255, blank=True, null=True)
+    trial_notified_days = models.JSONField(default=list, blank=True)
+    last_day_notified = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -45,63 +47,6 @@ class Plan(models.Model):
         return f"{self.name} ({self.duration})"
 
 
-# # subscription model
-# class Subscription(models.Model):
-#     user = models.ForeignKey(User, on_delete=models.CASCADE)
-#     plan = models.ForeignKey(Plan, on_delete=models.CASCADE)
-
-#     stripe_customer_id = models.CharField(
-#         max_length=255,
-#         blank=True,
-#         null=True
-#     )
-
-#     stripe_subscription_id = models.CharField(
-#         max_length=255,
-#         blank=True,
-#         null=True
-#     )
-
-#     status = models.CharField(
-#         max_length=20,
-#         choices=SubscriptionStatus.choices,
-#         default=SubscriptionStatus.ACTIVE
-#     )
-#     # NEW FIELD: Track free trial
-#     is_trial = models.BooleanField(default=False)  
-
-#     start_date = models.DateTimeField()
-#     end_date = models.DateTimeField()
-
-#     # 🔹 New field to track auto-renew toggle
-#     auto_renew = models.BooleanField(default=True)
-    
-#     cancelled_at = models.DateTimeField(null=True, blank=True)
-
-#     is_active = models.BooleanField(default=True)
-#     created_at = models.DateTimeField(auto_now_add=True)
-#     updated_at = models.DateTimeField(auto_now=True)
-
-
-#     def __str__(self):
-#         return f"{self.user.email} - {self.plan.name} ({self.status})"
-
-#     # 🔹 Only paid subscriptions can auto-renew
-#     def check_auto_renew(self):
-#         now = timezone.now()
-#         if self.is_trial:
-#             # Trial subscriptions never auto-renew
-#             return False
-
-#         if self.auto_renew and self.status in [SubscriptionStatus.ACTIVE, SubscriptionStatus.EXPIRED] and self.end_date <= now:
-#             # Extend subscription by plan duration
-#             duration_days = self.plan.duration_days
-#             self.start_date = now
-#             self.end_date = now + timedelta(days=duration_days)
-#             self.status = SubscriptionStatus.ACTIVE
-#             self.save(update_fields=["start_date", "end_date", "status"])
-#             return True
-#         return False
 
 class Subscription(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="subscriptions")

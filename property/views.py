@@ -81,9 +81,9 @@ class PropertyListCreateView(generics.ListCreateAPIView):
     serializer_class = PropertySerializer  # ✅ simplify
 
     def get_queryset(self):
+        # ✅ FIX: removed is_active filter
         return Property.objects.filter(
-            owner=self.request.user,
-            is_active=True   # ✅ ONLY active properties (important if you added boolean)
+            owner=self.request.user
         )
 
     def perform_create(self, serializer):
@@ -91,9 +91,6 @@ class PropertyListCreateView(generics.ListCreateAPIView):
             owner=self.request.user,
             is_active=True   # ✅ ensure default consistency
         )
-
-
-
 
 
 

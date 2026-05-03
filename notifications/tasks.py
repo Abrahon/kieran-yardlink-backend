@@ -5,6 +5,7 @@ from datetime import timedelta
 from jobs.models import Job
 from profiles.models import LandscaperProfilies, ClientProfile
 from notifications.utils import send_push_notification
+from subscriptions.models import Subscription
 
 # ------------------------
 # Test Task
@@ -79,3 +80,58 @@ def send_completed_service_notifications():
             title = "Job Completed"
             message = f"Job '{job.service.name}' was completed at {job.completed_at}."
             send_push_notification(job.landscaper, title, message, notification_type="job")
+
+
+
+
+# subscription notifications alerting users about trial ending
+@shared_task
+def send_trial_notifications():
+    now = timezone.now()
+
+    subs = Subscription.objects.filter(
+        is_trial=True,
+        is_active=True
+    )
+
+    for sub in subs:
+        # days_left = (sub.trial_end_date - now).days
+        days_left = max(       
+            0,
+            int((sub.trial_end_date - now).total_seconds() // 86400)
+        )
+
+
+        # ❌ expired trial → handle here
+        if days_left < 0 and sub.is_active:
+            sub.is_active = False
+            sub.status = "expired"
+            sub.save(update_fields=["is_active", "status"])
+            continue
+
+        # 🔔 5–1 day notifications
+        if 1 <= days_left <= 5:
+            if days_left not in sub.trial_notified_days:
+
+                send_push_notification(
+                    user=sub.user,
+                    title="Trial Ending Soon",
+                    message=f"{days_left} day(s) left in your trial",
+                    notification_type="payment",
+                )
+
+                sub.trial_notified_days.append(days_left)
+                sub.save(update_fields=["trial_notified_days"])
+
+        # ⚠️ last day
+        if days_left == 0 and not sub.last_day_notified:
+
+            send_push_notification(
+                user=sub.user,
+                title="Trial Ends Today",
+                message="Your trial expires today.",
+                notification_type="payment",
+            )
+
+            sub.last_day_notified = True
+            sub.save(update_fields=["last_day_notified"])

@@ -361,6 +361,7 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
     completed_jobs = serializers.IntegerField(read_only=True)
     pending_jobs = serializers.IntegerField(read_only=True)
     total_clients = serializers.IntegerField(read_only=True)
+    total_landscapers = serializers.IntegerField(read_only=True)
 
     average_rating = serializers.SerializerMethodField()
     review_count = serializers.SerializerMethodField()
@@ -392,6 +393,7 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
             "completed_jobs",
             "pending_jobs",
             "total_clients",
+            "total_landscapers",
             "average_rating",
             "review_count",
 

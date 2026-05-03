@@ -34,6 +34,17 @@ from reports.models import AdminInternalNote
 from payments.enums import PaymentStatus
 from jobs.models import Job
 
+from django.utils import timezone
+from datetime import datetime, timedelta, time
+
+from django.db.models import Sum, Count, Value, FloatField
+from django.db.models.functions import Coalesce, TruncDate
+from django.http import HttpResponse
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+
+import csv
 
 
 
@@ -277,6 +288,11 @@ class TrackVisitAPIView(APIView):
 
 
 
+# ✅ FIX: missing helper causing NameError
+def start_of_month(dt):
+    return dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+
 class AdminDashboardReportsView(APIView):
     permission_classes = [IsAdminUser]
 
@@ -352,29 +368,9 @@ class AdminDashboardReportsView(APIView):
         if error:
             return error
 
-        # -----------------------------------------
-        # Shared filtered querysets
-        # -----------------------------------------
-        visits_qs = self.apply_date_filter(
-            SiteVisit.objects.all(),
-            "created_at",
-            start_dt,
-            end_dt
-        )
-
-        users_qs = self.apply_date_filter(
-            User.objects.exclude(role="admin"),
-            "date_joined",
-            start_dt,
-            end_dt
-        )
-
-        subscriptions_qs = self.apply_date_filter(
-            Subscription.objects.all(),
-            "created_at",
-            start_dt,
-            end_dt
-        )
+        visits_qs = self.apply_date_filter(SiteVisit.objects.all(), "created_at", start_dt, end_dt)
+        users_qs = self.apply_date_filter(User.objects.exclude(role="admin"), "date_joined", start_dt, end_dt)
+        subscriptions_qs = self.apply_date_filter(Subscription.objects.all(), "created_at", start_dt, end_dt)
 
         revenue_qs = self.apply_date_filter(
             Job.objects.filter(payment_status=PaymentStatus.PAID),
@@ -383,15 +379,10 @@ class AdminDashboardReportsView(APIView):
             end_dt
         )
 
-        # -----------------------------------------
-        # 1) Acquisition Funnel
-        # -----------------------------------------
         total_visitors = visits_qs.count()
         total_signups = users_qs.count()
 
-        trial_signup_users = subscriptions_qs.filter(
-            is_trial=True
-        ).values_list("user_id", flat=True).distinct()
+        trial_signup_users = subscriptions_qs.filter(is_trial=True).values_list("user_id", flat=True).distinct()
         trial_signups = len(set(trial_signup_users))
 
         paid_after_trial_users = subscriptions_qs.filter(
@@ -403,6 +394,7 @@ class AdminDashboardReportsView(APIView):
                 SubscriptionStatus.CANCELLED
             ]
         ).values_list("user_id", flat=True).distinct()
+
         trial_to_paid = len(set(paid_after_trial_users))
 
         active_subscribers = subscriptions_qs.filter(
@@ -410,11 +402,9 @@ class AdminDashboardReportsView(APIView):
             is_active=True
         ).values("user_id").distinct().count()
 
-        # -----------------------------------------
-        # 2) Conversion Metrics
-        # -----------------------------------------
         quote_requested_count = 0
         quote_accepted_count = 0
+
         quote_conversion = self.get_percentage(quote_accepted_count, quote_requested_count)
 
         trial_signup_count = trial_signups
@@ -423,8 +413,7 @@ class AdminDashboardReportsView(APIView):
         paid_after_trial_count = len(set(paid_after_trial_users))
         trial_to_paid_conversion = self.get_percentage(paid_after_trial_count, trial_signup_count)
 
-        all_subscriber_user_ids = subscriptions_qs.values_list("user_id", flat=True).distinct()
-        total_subscribers_ever = len(set(all_subscriber_user_ids))
+        total_subscribers_ever = len(set(subscriptions_qs.values_list("user_id", flat=True).distinct()))
 
         active_subscriber_count = subscriptions_qs.filter(
             status=SubscriptionStatus.ACTIVE,
@@ -433,12 +422,8 @@ class AdminDashboardReportsView(APIView):
 
         subscription_retention = self.get_percentage(active_subscriber_count, total_subscribers_ever)
 
-        # -----------------------------------------
-        # 3) User Concentration by Region
-        # -----------------------------------------
         region_data = (
-            users_qs
-            .values("address")
+            users_qs.values("address")
             .annotate(user_count=Count("id"))
             .order_by("-user_count")[:10]
         )
@@ -450,12 +435,8 @@ class AdminDashboardReportsView(APIView):
             region_labels.append(item["address"] or "Unknown")
             region_values.append(item["user_count"])
 
-        # -----------------------------------------
-        # 4) User Growth (Line Chart)
-        # -----------------------------------------
         growth_qs = (
-            users_qs
-            .annotate(day=TruncDate("date_joined"))
+            users_qs.annotate(day=TruncDate("date_joined"))
             .values("day")
             .annotate(total_users=Count("id"))
             .order_by("day")
@@ -468,14 +449,19 @@ class AdminDashboardReportsView(APIView):
             growth_labels.append(row["day"].strftime("%Y-%m-%d"))
             growth_values.append(row["total_users"])
 
-        # -----------------------------------------
-        # 5) Revenue (Bar Chart)
-        # -----------------------------------------
+        # ✅ FIXED: service__price → total_price
+        from django.db.models import DecimalField
+
         revenue_grouped_qs = (
             revenue_qs
             .annotate(day=TruncDate("created_at"))
             .values("day")
-            .annotate(total=Coalesce(Sum("service__price", output_field=FloatField()), Value(0.0)))
+            .annotate(
+                total=Coalesce(
+                    Sum("total_price"),
+                    Value(0, output_field=DecimalField())
+                )
+            )
             .order_by("day")
         )
 
@@ -496,26 +482,11 @@ class AdminDashboardReportsView(APIView):
                 "end_date": request.query_params.get("end_date"),
             },
             "acquisition_funnel": {
-                "total_visitors": {
-                    "count": total_visitors,
-                    "percentage": self.get_percentage(total_visitors, total_visitors)
-                },
-                "total_signups": {
-                    "count": total_signups,
-                    "percentage": self.get_percentage(total_signups, total_visitors)
-                },
-                "trial_signups": {
-                    "count": trial_signups,
-                    "percentage": self.get_percentage(trial_signups, total_visitors)
-                },
-                "trial_to_paid": {
-                    "count": trial_to_paid,
-                    "percentage": self.get_percentage(trial_to_paid, total_visitors)
-                },
-                "active_subscribers": {
-                    "count": active_subscribers,
-                    "percentage": self.get_percentage(active_subscribers, total_visitors)
-                }
+                "total_visitors": {"count": total_visitors, "percentage": self.get_percentage(total_visitors, total_visitors)},
+                "total_signups": {"count": total_signups, "percentage": self.get_percentage(total_signups, total_visitors)},
+                "trial_signups": {"count": trial_signups, "percentage": self.get_percentage(trial_signups, total_visitors)},
+                "trial_to_paid": {"count": trial_to_paid, "percentage": self.get_percentage(trial_to_paid, total_visitors)},
+                "active_subscribers": {"count": active_subscribers, "percentage": self.get_percentage(active_subscribers, total_visitors)},
             },
             "conversion_metrics": {
                 "quote_conversion": {
@@ -523,92 +494,45 @@ class AdminDashboardReportsView(APIView):
                     "value": quote_conversion,
                     "unit": "%",
                     "label": "Quote Requested → Accepted",
-                    "requested_count": quote_requested_count,
-                    "accepted_count": quote_accepted_count
                 },
                 "visitor_to_trial_signup": {
                     "title": "Visitor → Trial Signup",
                     "value": visitor_to_trial_signup,
                     "unit": "%",
-                    "label": "Visitor → Trial Signup",
-                    "visitor_count": total_visitors,
-                    "trial_signup_count": trial_signup_count
                 },
                 "trial_to_paid_conversion": {
                     "title": "Trial → Paid Conversion",
                     "value": trial_to_paid_conversion,
                     "unit": "%",
-                    "label": "Trial → Paid Conversion",
-                    "trial_signup_count": trial_signup_count,
-                    "paid_after_trial_count": paid_after_trial_count
                 },
                 "subscription_retention": {
                     "title": "Subscription Retention",
                     "value": subscription_retention,
                     "unit": "%",
-                    "label": "Subscription Retention",
-                    "active_subscribers": active_subscriber_count,
-                    "total_subscribers_ever": total_subscribers_ever
-                }
+                },
             },
             "user_concentration_by_region": {
                 "title": "User Concentration by Region",
                 "type": "bar",
                 "labels": region_labels,
-                "data": region_values
+                "data": region_values,
             },
             "user_growth": {
                 "title": "User Growth",
                 "type": "line",
                 "labels": growth_labels,
                 "data": growth_values,
-                "total_users": users_qs.count()
             },
             "revenue": {
                 "title": "Revenue",
                 "type": "bar",
                 "labels": revenue_labels,
                 "data": revenue_values,
-                "summary": {
-                    "total_revenue": round(total_revenue, 2)
-                }
-            }
+                "summary": {"total_revenue": round(total_revenue, 2)},
+            },
         }
 
-        if self.should_export_csv(request):
-            rows = [
-                ["section", "metric", "value"],
-                ["acquisition_funnel", "total_visitors", total_visitors],
-                ["acquisition_funnel", "total_signups", total_signups],
-                ["acquisition_funnel", "trial_signups", trial_signups],
-                ["acquisition_funnel", "trial_to_paid", trial_to_paid],
-                ["acquisition_funnel", "active_subscribers", active_subscribers],
-                ["conversion_metrics", "quote_conversion", quote_conversion],
-                ["conversion_metrics", "visitor_to_trial_signup", visitor_to_trial_signup],
-                ["conversion_metrics", "trial_to_paid_conversion", trial_to_paid_conversion],
-                ["conversion_metrics", "subscription_retention", subscription_retention],
-                ["revenue", "total_revenue", round(total_revenue, 2)],
-            ]
-
-            for label, value in zip(growth_labels, growth_values):
-                rows.append(["user_growth", label, value])
-
-            for label, value in zip(region_labels, region_values):
-                rows.append(["user_concentration_by_region", label, value])
-
-            for label, value in zip(revenue_labels, revenue_values):
-                rows.append(["revenue_chart", label, value])
-
-            return self.export_csv_response(
-                "admin_dashboard_analytics.csv",
-                ["section", "metric", "value"],
-                rows[1:]
-            )
-
         return Response(response_data, status=status.HTTP_200_OK)
-
-
-
 
 class AdminInternalNoteView(APIView):
     permission_classes = [IsAdminUser]

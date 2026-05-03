@@ -434,22 +434,27 @@ class ServiceOverviewAPIView(APIView):
         # PROPERTY INFO
         # -------------------------
         property_obj = (
-            jobs.filter(job_property__isnull=False)
+            jobs.filter(
+                job_property__isnull=False,
+                job_property__is_active=True   
+            )
             .select_related("job_property")
             .order_by("-created_at")
             .first()
         )
 
         property_data = None
+
         if property_obj and property_obj.job_property:
             prop = property_obj.job_property
+
             property_data = {
                 "id": prop.id,
                 "address": getattr(prop, "address", None),
                 "property_size": getattr(prop, "property_size", None),
                 "latitude": getattr(prop, "latitude", None),
                 "longitude": getattr(prop, "longitude", None),
-                "is_active": getattr(prop, "is_active", True),
+                "is_active": prop.is_active,  
             }
         # -------------------------
         # SERVICE SUMMARY

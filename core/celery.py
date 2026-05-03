@@ -31,5 +31,13 @@ app.conf.beat_schedule = {
     },
 }
 
+app.conf.beat_schedule.update({
+    "trial-notifications-daily": {
+        "task": "notifications.tasks.send_trial_notifications",
+        "schedule": crontab(hour=9, minute=0),  # once per day
+    },
+    
+})
+
 # Optional: make the app accessible via import
 __all__ = ("app",)

@@ -176,3 +176,19 @@ def save_fcm_token(request):
     )
 
     return Response({"message": "Token saved"})
+
+
+
+from notifications.utils import send_push_notification
+
+class TestNotificationAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        send_push_notification(
+            user=request.user,
+            title="Test Notification",
+            message="This is a test push 🔥",
+            notification_type="job"
+        )
+        return Response({"message": "Notification sent"})
