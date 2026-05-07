@@ -19,10 +19,12 @@ from profiles.models import ClientProfile
 from .models import ClientCustomService
 from property.models import Property
 from cloudinary.models import CloudinaryField
-# from profiles.serializers import ClientProfileSerializer
-# from landscapers.serializers import WorkingHoursSerializer
-
+from rest_framework import serializers
+from .models import ServiceQuote
 from property.serializers import PropertySerializer
+
+
+
 
 class BusinessLandscaperProfileSerializer(serializers.ModelSerializer):
     profile_image = serializers.ImageField(required=False, allow_null=True)
@@ -134,77 +136,6 @@ class BusinessLandscaperProfileSerializer(serializers.ModelSerializer):
         return instance
 
 
-# class ServiceSerializer(serializers.ModelSerializer):
-#     business = serializers.ReadOnlyField(source="business.id")
-
-#     class Meta:
-#         model = Service
-#         fields = [
-#             "id", "business", "name", "description",
-#             "base_price", "pricing_type", "min_price",
-#             "latitude", "longitude", "is_active", "is_pinned",
-#             "created_at", "updated_at",
-#         ]
-#         read_only_fields = ["id", "business", "created_at", "updated_at", "is_pinned"]
-#     def validate_name(self, value):
-#         request = self.context.get("request")
-#         if not request:
-#             raise serializers.ValidationError("Request context is missing.")
-
-#         user = getattr(request, "user", None)
-#         if not user or not user.is_authenticated:
-#             raise serializers.ValidationError("Authentication required.")
-
-#         # Correct way to get business
-#         business = getattr(user, "landscaper_profile", None)
-#         if not business:
-#             raise serializers.ValidationError(
-#                 "You must have a business profile to create services."
-#             )
-
-#         # Skip check if unchanged (PATCH safe)
-#         if self.instance and self.instance.name == value:
-#             return value
-
-#         if Service.objects.filter(
-#             business=business,
-#             name=value
-#         ).exclude(
-#             id=getattr(self.instance, "id", None)
-#         ).exists():
-#             raise serializers.ValidationError(
-#                 "A service with this name already exists for your business."
-#             )
-
-#         return value
-        
-#     def validate(self, attrs):
-#         # Pricing rules
-#         pricing_type = attrs.get("pricing_type", getattr(self.instance, 'pricing_type', None))
-#         base_price = attrs.get("base_price", getattr(self.instance, 'base_price', None))
-
-#         if pricing_type == "fixed" and base_price is None:
-#             raise serializers.ValidationError("Fixed pricing requires base_price.")
-
-#         if pricing_type == "request" and base_price is not None:
-#             raise serializers.ValidationError("Request pricing should not include base_price.")
-
-#         # Latitude/Longitude rules
-#         lat = attrs.get("latitude", getattr(self.instance, 'latitude', None))
-#         lon = attrs.get("longitude", getattr(self.instance, 'longitude', None))
-
-#         if lat is None or lon is None:
-#             raise serializers.ValidationError(
-#                 "Service location (latitude and longitude) is required."
-#             )
-
-#         if not (-90 <= lat <= 90):
-#             raise serializers.ValidationError({"latitude": "Latitude must be between -90 and 90."})
-
-#         if not (-180 <= lon <= 180):
-#             raise serializers.ValidationError({"longitude": "Longitude must be between -180 and 180."})
-
-#         return attrs  
 
 class ServiceSerializer(serializers.ModelSerializer):
     business = serializers.ReadOnlyField(source="business.id")
@@ -280,83 +211,6 @@ class ServiceSerializer(serializers.ModelSerializer):
 
 # -------------------------
 # CLIENT (FULL PROFILE)
-# -------------------------
-# class ClientProfileMiniSerializer(serializers.ModelSerializer):
-#     name = serializers.CharField(source="user.name", read_only=True)
-#     email = serializers.CharField(source="user.email", read_only=True)
-
-#     class Meta:
-#         model = ClientProfile
-#         fields = ["id", "name", "email"]
-
-# class ClientCustomServiceSerializer(serializers.ModelSerializer):
-#     client = ClientProfileMiniSerializer(read_only=True)
-#     property = PropertyMiniSerializer(read_only=True)
-
-#     booking_id = serializers.ReadOnlyField(source="booking.id")
-
-#     class Meta:
-#         model = ClientCustomService
-#         fields = [
-#             "id", "client", "landscaper", "property", "name", "description", "note",
-#             "price", "status", "is_active",
-
-#             # ✅ allow these fields
-#             "preferred_date", "preferred_time",
-
-#             "recurring_type", "recurring_day_of_week",
-#             "booking_id",
-#             "created_at", "updated_at"
-#         ]
-
-#         read_only_fields = [
-#             "id", "client",
-#             "booking_id",
-#             "created_at", "updated_at",
-#         ]
-#     def validate(self, attrs):
-#         recurring_type = attrs.get("recurring_type")
-#         recurring_day_of_week = attrs.get("recurring_day_of_week")
-
-#         preferred_date = attrs.get("preferred_date")
-#         preferred_time = attrs.get("preferred_time")
-
-#         # -------------------------
-#         # ONE-TIME SERVICE
-#         # -------------------------
-#         if not recurring_type:
-#             if recurring_day_of_week:
-#                 raise serializers.ValidationError(
-#                     "One-time service cannot have day of week."
-#                 )
-
-#             if preferred_time and not preferred_date:
-#                 raise serializers.ValidationError(
-#                     "Preferred time requires a preferred date."
-#                 )
-
-#         # -------------------------
-#         # RECURRING SERVICE
-#         # -------------------------
-#         else:
-#             if recurring_type not in ["weekly", "biweekly"]:
-#                 raise serializers.ValidationError("Invalid recurring type.")
-
-#             if not recurring_day_of_week:
-#                 raise serializers.ValidationError(
-#                     "Recurring service must include day of week."
-#                 )
-
-#             if not preferred_date:
-#                 raise serializers.ValidationError(
-#                     "Recurring service must include a start date (preferred_date)."
-#                 )
-
-#             # ✅ DO NOTHING HERE (IMPORTANT)
-#             # allow preferred_time to pass through
-
-#         return attrs
-
 
 
 class ClientProfileMiniSerializer(serializers.ModelSerializer):
@@ -488,6 +342,8 @@ class ClientCustomServiceSerializer(serializers.ModelSerializer):
 
         return attrs
 
+
+
 class AddonSerializer(serializers.ModelSerializer):
     business = serializers.ReadOnlyField(source="business.id")
     applicable_services = serializers.PrimaryKeyRelatedField(
@@ -520,7 +376,7 @@ class AddonSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Request context not available.")
 
         try:
-            business = request.user.landscaper_profile  # ✅ Correct related name
+            business = request.user.landscaper_profile  
         except BusinessProfile.DoesNotExist:
             raise serializers.ValidationError("Landscaper profile not found.")
 
@@ -627,8 +483,6 @@ class StandardServiceSerializer(serializers.ModelSerializer):
 
 
 # serializers.py
-from rest_framework import serializers
-from .models import ServiceQuote
 
 class ServiceQuoteSerializer(serializers.ModelSerializer):
     client = ClientProfileMiniSerializer(read_only=True)

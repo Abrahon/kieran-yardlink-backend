@@ -33,7 +33,8 @@ from .views import (
     ServiceQuoteCounterView,
     ServiceQuoteActionView,
     ServiceQuoteListForLandscaper,
-    ClientCounterOfferListView
+    ClientCounterOfferListView,
+    get_landscaper_availability
 
 )
 
@@ -103,6 +104,10 @@ urlpatterns = [
     path(
         "client/<int:landscaper_id>/available-slots/",
         get_landscaper_available_slots
+    ),
+    path(
+        "landscapers/<int:landscaper_id>/availability/",
+        get_landscaper_availability
     ),
 
     path("services/stats/", ServiceStatsAPIView.as_view(), name="service-stats"),

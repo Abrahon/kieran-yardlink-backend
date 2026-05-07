@@ -194,6 +194,7 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
     business_name = serializers.SerializerMethodField()
     business_email = serializers.SerializerMethodField()
     business_phone = serializers.SerializerMethodField()
+    is_connected = serializers.SerializerMethodField()
 
 
     class Meta:
@@ -216,6 +217,7 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
             "services",
             "worker_count",
             "already_sent",
+            "is_connected",
             "connection_request_id",
             "average_rating",
             "total_reviews",
@@ -275,15 +277,35 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
             status=InvitationStatus.ACCEPTED
         ).count()
 
+    # def get_already_sent(self, obj):
+    #     request = self.context.get("request")
+    #     if not request or not request.user.is_authenticated:
+    #         return False
+
+    #     return ConnectionRequest.objects.filter(
+    #         sender=request.user,
+    #         receiver=obj.user,
+    #         is_accepted=False
+    #     ).exists()
+
     def get_already_sent(self, obj):
         request = self.context.get("request")
         if not request or not request.user.is_authenticated:
             return False
 
         return ConnectionRequest.objects.filter(
-            sender=request.user,
-            receiver=obj.user,
-            is_accepted=False
+            Q(sender=request.user, receiver=obj.user) |
+            Q(sender=obj.user, receiver=request.user)
+        ).exists()
+    def get_is_connected(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            return False
+
+        return ConnectionRequest.objects.filter(
+            Q(sender=request.user, receiver=obj.user) |
+            Q(sender=obj.user, receiver=request.user),
+            is_accepted=True
         ).exists()
 
     def get_business_name(self, obj):
@@ -307,9 +329,8 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
             return None
 
         connection = ConnectionRequest.objects.filter(
-            sender=request.user,
-            receiver=obj.user,
-            is_accepted=False
+            Q(sender=request.user, receiver=obj.user) |
+            Q(sender=obj.user, receiver=request.user)
         ).first()
 
         return connection.id if connection else None
@@ -330,6 +351,18 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
             landscaper=obj.user
         ).select_related("client").order_by("-created_at")
         return LandscaperReviewSerializer(reviews, many=True).data
+    def update(self, instance, validated_data):
+        user_data = validated_data.pop("user", None)
+
+        # ✅ update user model
+        if user_data:
+            name = user_data.get("name")
+            if name is not None:
+                instance.user.name = name
+                instance.user.save()
+
+        # ✅ update client profile fields (like image)
+        return super().update(instance, validated_data)
 
     def get_address(self, obj):
         try:
@@ -348,32 +381,136 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
 
 
 
-# serializers.py for client
+# # serializers.py for client
+# class ClientProfileSerializer(serializers.ModelSerializer):
+#     id = serializers.IntegerField(read_only=True)
+#     user_id = serializers.IntegerField(source="user.id", read_only=True)
+#     name = serializers.CharField(source="user.name")
+#     email = serializers.EmailField(source="user.email", read_only=True)
+#     phone = serializers.CharField(source="user.phone", read_only=True)
+#     image = serializers.ImageField(required=False, allow_null=True)
+#     latitude = serializers.DecimalField(source="user.latitude", max_digits=20, decimal_places=14, read_only=True)
+#     longitude = serializers.DecimalField(source="user.longitude", max_digits=20, decimal_places=14, read_only=True)
+#     address = serializers.SerializerMethodField()
+
+
+#     # services = serializers.SerializerMethodField()
+#     properties = serializers.SerializerMethodField()
+#     # total_service_price = serializers.SerializerMethodField()
+#     already_sent = serializers.SerializerMethodField()  
+#     connection_request_id = serializers.SerializerMethodField()
+  
+#     class Meta:
+#         model = ClientProfile
+#         fields = [   # ✅ MUST be inside Meta
+#             "id",
+#             "user_id",
+#             "email",
+#             "name",
+#             "phone",
+#             "latitude",
+#             "longitude",
+#             "address",
+#             "image",
+#             "properties",
+#             "already_sent",
+#             "connection_request_id",
+#         ]
+
+
+#     def get_address(self, obj):
+#         # Get address from related User model
+#         return getattr(obj.user, "address", None)
+
+
+
+#     def get_properties(self, obj):
+#         properties = Property.objects.filter(owner=obj.user)
+#         return [
+#             {
+#                 "address": p.address,
+#                 "latitude": p.latitude,
+#                 "longitude": p.longitude,
+#                 "property_size": p.property_size,
+#                 "cut_height_inches": p.cut_height_inches,
+#                 "grass_types": p.grass_types,
+#                 "notes": p.notes,
+#                 "images": p.images,
+#             }
+#             for p in properties
+#         ]
+
+#     def get_already_sent(self, obj):
+#             """
+#             Returns True if a connection request already exists
+#             between logged-in user and this client
+#             """
+#             request = self.context.get("request")
+#             if not request or not request.user.is_authenticated:
+#                 return False
+
+#             return ConnectionRequest.objects.filter(
+#                 Q(sender=request.user, receiver=obj.user) |
+#                 Q(sender=obj.user, receiver=request.user)
+#             ).exists()
+    
+
+#     def get_connection_request_id(self, obj):
+            
+#         request = self.context.get("request")
+#         if not request or not request.user.is_authenticated:
+#             return None
+
+#         connection = ConnectionRequest.objects.filter(
+#             Q(sender=request.user, receiver=obj.user) |
+#             Q(sender=obj.user, receiver=request.user),
+#             is_accepted__isnull=True
+#         ).first()
+
+#         return connection.id if connection else None
+
+
+
+
 class ClientProfileSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(read_only=True)
     user_id = serializers.IntegerField(source="user.id", read_only=True)
-    name = serializers.CharField(source="user.name", read_only=True)
+
+    # ✅ WRITE FIELD (used for update)
+    name = serializers.CharField(required=False)
+
     email = serializers.EmailField(source="user.email", read_only=True)
     phone = serializers.CharField(source="user.phone", read_only=True)
+
     image = serializers.ImageField(required=False, allow_null=True)
-    latitude = serializers.DecimalField(source="user.latitude", max_digits=20, decimal_places=14, read_only=True)
-    longitude = serializers.DecimalField(source="user.longitude", max_digits=20, decimal_places=14, read_only=True)
+
+    latitude = serializers.DecimalField(
+        source="user.latitude",
+        max_digits=20,
+        decimal_places=14,
+        read_only=True
+    )
+    longitude = serializers.DecimalField(
+        source="user.longitude",
+        max_digits=20,
+        decimal_places=14,
+        read_only=True
+    )
+
     address = serializers.SerializerMethodField()
-
-
-    # services = serializers.SerializerMethodField()
     properties = serializers.SerializerMethodField()
-    # total_service_price = serializers.SerializerMethodField()
-    already_sent = serializers.SerializerMethodField()  
+
+    already_sent = serializers.SerializerMethodField()
     connection_request_id = serializers.SerializerMethodField()
-  
+    is_connected = serializers.SerializerMethodField()
+
     class Meta:
         model = ClientProfile
-        fields = [   # ✅ MUST be inside Meta
+        fields = [
             "id",
             "user_id",
             "email",
-            "name",
+            "name",   # ✅ single name field
             "phone",
             "latitude",
             "longitude",
@@ -381,20 +518,48 @@ class ClientProfileSerializer(serializers.ModelSerializer):
             "image",
             "properties",
             "already_sent",
+            "is_connected",
             "connection_request_id",
         ]
 
+    # =========================
+    # ✅ UPDATE FIX
+    # =========================
+    def update(self, instance, validated_data):
+        name = validated_data.pop("name", None)
 
+        if name is not None:
+            instance.user.name = name
+            instance.user.save()
+
+        return super().update(instance, validated_data)
+
+    # =========================
+    # ✅ OUTPUT FIX (VERY IMPORTANT)
+    # =========================
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+
+        # 🔥 override name in response
+        data["name"] = instance.user.name
+
+        return data
+
+    # =========================
+    # ADDRESS
+    # =========================
     def get_address(self, obj):
-        # Get address from related User model
         return getattr(obj.user, "address", None)
 
-
-
+    # =========================
+    # PROPERTIES
+    # =========================
     def get_properties(self, obj):
         properties = Property.objects.filter(owner=obj.user)
+
         return [
             {
+                "id": p.id,
                 "address": p.address,
                 "latitude": p.latitude,
                 "longitude": p.longitude,
@@ -407,34 +572,29 @@ class ClientProfileSerializer(serializers.ModelSerializer):
             for p in properties
         ]
 
-    def get_already_sent(self, obj):
-            """
-            Returns True if a connection request already exists
-            between logged-in user and this client
-            """
-            request = self.context.get("request")
-            if not request or not request.user.is_authenticated:
-                return False
-
-            return ConnectionRequest.objects.filter(
-                Q(sender=request.user, receiver=obj.user) |
-                Q(sender=obj.user, receiver=request.user)
-            ).exists()
-
-    def get_connection_request_id(self, obj):
-            
+    # =========================
+    # CONNECTION HELPERS
+    # =========================
+    def _get_connection(self, obj):
         request = self.context.get("request")
         if not request or not request.user.is_authenticated:
             return None
 
-        connection = ConnectionRequest.objects.filter(
+        return ConnectionRequest.objects.filter(
             Q(sender=request.user, receiver=obj.user) |
-            Q(sender=obj.user, receiver=request.user),
-            is_accepted__isnull=True
+            Q(sender=obj.user, receiver=request.user)
         ).first()
 
+    def get_already_sent(self, obj):
+        return self._get_connection(obj) is not None
+
+    def get_connection_request_id(self, obj):
+        connection = self._get_connection(obj)
         return connection.id if connection else None
 
+    def get_is_connected(self, obj):
+        connection = self._get_connection(obj)
+        return connection.is_accepted is True if connection else False
 
 
 class ChangePasswordSerializer(serializers.Serializer):

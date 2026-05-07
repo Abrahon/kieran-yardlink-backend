@@ -73,8 +73,6 @@ class CompletedServiceSerializer(serializers.ModelSerializer):
 
 
 
-
-
 # service overview
 class ServiceOverviewSerializer(serializers.Serializer):
     frequency = serializers.CharField()

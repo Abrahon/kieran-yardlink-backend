@@ -19,6 +19,16 @@ from django.dispatch import receiver
 from notifications.services import send_push_notification
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
+from django.utils.timezone import now
+from rest_framework import generics, permissions
+from jobs.models import Job
+from jobs.serializers import JobSerializer
+from rest_framework import generics, permissions
+from rest_framework.exceptions import NotFound
+from django.db.models import Q
+from payments.enums import PaymentStatus
+
+
 
 
 @receiver(post_save, sender=Job)
@@ -39,10 +49,7 @@ def job_created(sender, instance, created, **kwargs):
 
 
 
-from django.utils.timezone import now
-from rest_framework import generics, permissions
-from jobs.models import Job
-from jobs.serializers import JobSerializer
+
 
 
 class UpcomingJobsListView(generics.ListAPIView):
@@ -680,9 +687,6 @@ class CompletedJobDetailView(generics.RetrieveAPIView):
         })
 
 
-from rest_framework import generics, permissions
-from rest_framework.exceptions import NotFound
-from django.db.models import Q
 
 class ClientUnpaidCompletedJobView(generics.RetrieveAPIView):
     serializer_class = ClientJobDetailSerializer
@@ -700,7 +704,7 @@ class ClientUnpaidCompletedJobView(generics.RetrieveAPIView):
             status=Job.Status.COMPLETED
         ).filter(
             # 🔥 FIX: handle both invoice + job payment status
-            Q(payment_status=Job.PaymentStatus.PENDING) |
+            Q(payment_status=PaymentStatus.PENDING) |
             Q(invoice__status__in=["pending", "sent", "draft"]) |
             Q(invoice__isnull=True)
         ).select_related(

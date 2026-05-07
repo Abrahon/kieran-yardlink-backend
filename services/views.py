@@ -8,10 +8,8 @@ from django.shortcuts import get_object_or_404
 from rest_framework.exceptions import NotFound
 from common.permissions import IsClient, IsAdmin, IsLandscaper
 from rest_framework.exceptions import ValidationError
-from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.exceptions import NotFound
 from landscapers.models import WorkingHours, BusinessProfile, Service
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from django.utils import timezone
@@ -30,12 +28,13 @@ from .serializers import (
 
 )
 from profiles.models import ClientProfile
-
-
-# add ons
-# services/views.py
 from rest_framework.views import APIView
-from rest_framework.response import Response
+from django.db.models import Q
+from jobs.models import Job, JobImage
+from django.db.models import F
+from django.utils import timezone
+from payments.enums import PaymentStatus
+# add ons
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework import status
 from django.shortcuts import get_object_or_404
@@ -82,6 +81,8 @@ class LandscaperUpdateAddOnsAPIView(APIView):
             }, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
 
 
 # -------------------- Client Services --------------------
@@ -286,8 +287,7 @@ class ClientPreferenceNoteUpdateAPIView(APIView):
 #             return "Occasional"
 
 
-# -------------------- Job / Schedule --------------------
-# this is optional for job updated
+
 
 class LandscaperCompleteJobAPIView(APIView):
     permission_classes = [IsLandscaper]
@@ -385,12 +385,6 @@ class RescheduleServiceAPIView(APIView):
 
 
 # property overview 
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from django.db.models import Q
-from jobs.models import Job, JobImage
-
-
 class ServiceOverviewAPIView(APIView):
     permission_classes = [IsClient]
 
@@ -559,11 +553,7 @@ class ServiceOverviewAPIView(APIView):
 
 
 
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from django.db.models import F
-from django.utils import timezone
+
 
 class RecentActivityAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -600,7 +590,7 @@ class RecentActivityAPIView(APIView):
         # 1. RECENT PAYMENTS
         # ------------------------------
         payments_qs = jobs.filter(
-            payment_status=Job.PaymentStatus.PAID
+            payment_status=PaymentStatus.PAID
         ).order_by("-updated_at")[:limit]
 
         payments_data = [

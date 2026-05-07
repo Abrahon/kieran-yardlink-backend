@@ -45,7 +45,10 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAdminUser
-
+from django.db.models import (
+    Count, Sum, Avg, Q, Value, FloatField, IntegerField, Subquery,
+    OuterRef, Case, When   # ✅ FIXED: added Case, When
+)
 from django.db.models import Sum, Value, FloatField, Avg
 from django.db.models.functions import Coalesce
 from django.db.models import (
@@ -914,9 +917,6 @@ class UserListView(APIView):
                 output_field=IntegerField()
             ),
 
-            # =========================
-            # LANDSCAPER CLIENT COUNT (ONLY FOR LANDSCAPER)
-            # =========================
         # =========================
         # CLIENT / LANDSCAPER COUNT (ROLE BASED)
         # =========================
@@ -1020,6 +1020,15 @@ class UserListView(APIView):
                 output_field=FloatField()
             )
         )["avg_rating"]
+        basic_subscriptions = Subscription.objects.filter(
+        status=SubscriptionStatus.ACTIVE,
+        plan__name__iexact="basic"
+    ).count()
+
+        pro_subscriptions = Subscription.objects.filter(
+            status=SubscriptionStatus.ACTIVE,
+            plan__name__iexact="pro"
+        ).count()
 
         # --------------------------
         # PAGINATION (UNCHANGED)
@@ -1044,6 +1053,8 @@ class UserListView(APIView):
                 "active_subscriptions": active_subscriptions,
                 "cancelled_subscriptions": cancelled_subscriptions,
                 "expired_subscriptions": expired_subscriptions,
+                "basic_subscriptions": basic_subscriptions,
+                 "pro_subscriptions": pro_subscriptions,
                 "churn_rate": churn_rate,
                 "platform_fee_collected": platform_fee_collected,
                 "average_rating": round(overall_average_rating, 2) if overall_average_rating else 0.0

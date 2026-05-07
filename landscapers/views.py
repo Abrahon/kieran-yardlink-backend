@@ -91,17 +91,24 @@ from .serializers import PublicServiceSerializer, PublicAddonSerializer
 from django.db import transaction
 from django.db import transaction
 from rest_framework.decorators import api_view, permission_classes
+from django.utils.dateparse import parse_date, parse_time
 
-
-from bookings.models import BookingRequest
-from profiles.models import ClientProfile
-from .models import ClientCustomService
-from .serializers import ClientCustomServiceSerializer
+from decimal import Decimal
+from django.db import transaction
+from rest_framework.response import Response
 from rest_framework import generics, permissions
-from .models import ClientCustomService
-from .serializers import ClientCustomServiceSerializer
 
-from profiles.serializers import ClientProfileSerializer
+from jobs.models import Job, JobItem
+from .models import ServiceQuote
+from .serializers import ServiceQuoteSerializer
+
+from rest_framework import generics, permissions
+from rest_framework.exceptions import PermissionDenied
+from .models import ServiceQuote
+from .serializers import ServiceQuoteSerializer
+
+
+
 
 
 
@@ -133,8 +140,6 @@ class CompleteLandscaperProfileView(generics.CreateAPIView):
 # UPDATE BUSINESS PROFILE
 # =========================
 
-
-
 class UpdateBusinessProfileView(generics.UpdateAPIView):
     serializer_class = BusinessLandscaperProfileSerializer
     permission_classes = [IsAuthenticated, IsLandscaper]
@@ -149,11 +154,10 @@ class UpdateBusinessProfileView(generics.UpdateAPIView):
         return profile
 
 
+
+
 # =========================
 # GET BUSINESS PROFILE
-from rest_framework.exceptions import ValidationError
-from rest_framework.permissions import IsAuthenticated
-
 
 class GetBusinessProfileView(generics.RetrieveAPIView):
     serializer_class = BusinessLandscaperProfileSerializer
@@ -320,6 +324,8 @@ class ClientCustomServiceListCreateView(generics.ListCreateAPIView):
             price=None
         )
 
+
+
 class ClientCustomServiceRetrieveDestroyView(generics.RetrieveDestroyAPIView):
     """
     GET    -> client retrieves one of their own service requests
@@ -381,6 +387,7 @@ class ClientAcceptedServiceListView(generics.ListAPIView):
         )
 
 
+
 @api_view(["PATCH"])
 @permission_classes([permissions.IsAuthenticated])
 def client_confirm_service(request, pk):
@@ -425,52 +432,6 @@ def client_confirm_service(request, pk):
             {"error": "Landscaper has not set schedule yet."},
             status=400
         )
-
-    # with transaction.atomic():
-    #     service = ClientCustomService.objects.select_for_update().get(
-    #         pk=pk,
-    #         client=client,
-    #         is_active=True
-    #     )
-
-    #     if not service.landscaper:
-    #         return Response(
-    #             {"error": "No landscaper assigned to this service."},
-    #             status=400
-    #         )
-
-    #     # ✅ FIXED: booking_type logic
-    #     if service.recurring_type == "weekly":
-    #         booking_type = BookingRequest.BookingType.WEEKLY
-    #     elif service.recurring_type == "biweekly":
-    #         booking_type = BookingRequest.BookingType.BIWEEKLY
-    #     elif service.recurring_type:
-    #         booking_type = BookingRequest.BookingType.CUSTOM
-    #     else:
-    #         booking_type = BookingRequest.BookingType.ONE_TIME
-
-    #     booking = BookingRequest.objects.create(
-    #         client=service.client,
-    #         landscaper=service.landscaper,
-    #         property=service.property,
-    #         service=None,
-    #         description=f"{service.name}\n\n{service.description or ''}".strip(),
-
-    #         booking_type=booking_type,
-
-    #         recurring_day_of_week=service.recurring_day_of_week,
-    #         scheduled_date=service.preferred_date,
-    #         scheduled_time=service.preferred_time,
-
-    #         price=service.price,
-    #         note=service.note,
-    #         status=BookingRequest.Status.PENDING,
-    #         is_active=True
-    #     )
-
-    #     service.status = "confirmed"
-    #     service.booking = booking
-    #     service.save(update_fields=["status", "booking", "updated_at"])
 
     with transaction.atomic():
         service = ClientCustomService.objects.select_for_update().get(
@@ -589,10 +550,6 @@ class LandscaperCustomServicePendingListView(generics.ListAPIView):
             )
             .order_by("-created_at")
         )
-
-
-from django.utils.dateparse import parse_date, parse_time
-
 
 
 
@@ -1212,7 +1169,133 @@ def get_landscaper_available_slots(request, landscaper_id):
         "available_slots": available_slots
     })
 
+# landscaper availability for client booking
+from datetime import date, timedelta
+from collections import defaultdict
 
+from django.db.models import Q
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
+from landscapers.models import BusinessProfile, WorkingHours
+from jobs.models import Job
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_landscaper_availability(request, landscaper_id):
+
+    # ==========================================
+    # GET LANDSCAPER
+    # ==========================================
+    try:
+        landscaper = BusinessProfile.objects.get(id=landscaper_id)
+    except BusinessProfile.DoesNotExist:
+        return Response(
+            {"error": "Landscaper not found"},
+            status=404
+        )
+
+    # ==========================================
+    # GET ACTIVE WORKING HOURS
+    # ==========================================
+    working_hours = WorkingHours.objects.filter(
+        landscaper=landscaper,
+        is_active=True
+    ).order_by("day", "start_time")
+
+    if not working_hours.exists():
+        return Response({
+            "landscaper_id": landscaper.id,
+            "availability": []
+        })
+
+    # ==========================================
+    # GROUP WORKING HOURS BY DAY
+    # ==========================================
+    working_map = defaultdict(list)
+
+    for wh in working_hours:
+        working_map[wh.day].append({
+            "start_time": wh.start_time,
+            "end_time": wh.end_time,
+        })
+
+    # ==========================================
+    # GET BOOKED JOBS
+    # ==========================================
+    booked_jobs = Job.objects.filter(
+        landscaper=landscaper,
+        scheduled_date__gte=date.today(),
+        is_active=True,
+        status__in=["upcoming", "in_progress"]
+    )
+
+    # ==========================================
+    # GROUP BOOKED TIMES BY DATE
+    # ==========================================
+    booked_map = defaultdict(list)
+
+    for job in booked_jobs:
+        booked_map[job.scheduled_date].append(job.scheduled_time)
+
+    # ==========================================
+    # GENERATE 30 DAYS AVAILABILITY
+    # ==========================================
+    availability = []
+
+    today = date.today()
+
+    MAX_JOBS_PER_DAY = 5
+
+    for i in range(30):
+
+        check_date = today + timedelta(days=i)
+
+        weekday = check_date.strftime("%A").upper()
+
+        # skip non-working day
+        if weekday not in working_map:
+            continue
+
+        # today's booked slots
+        booked_slots = booked_map.get(check_date, [])
+
+        # max daily limit
+        if len(booked_slots) >= MAX_JOBS_PER_DAY:
+            continue
+
+        available_slots = []
+
+        for slot in working_map[weekday]:
+
+            # skip booked slot
+            if slot["start_time"] in booked_slots:
+                continue
+
+            available_slots.append({
+                "start_time": slot["start_time"],
+                "end_time": slot["end_time"],
+            })
+
+        # skip empty dates
+        if not available_slots:
+            continue
+
+        availability.append({
+            "date": check_date,
+            "slots": available_slots
+        })
+
+    # ==========================================
+    # RESPONSE
+    # ==========================================
+    return Response({
+        "landscaper_id": landscaper.id,
+        "availability": availability
+    })
+    
 # views.py
 
 @api_view(["GET"])
@@ -1519,14 +1602,7 @@ class ClientCounterOfferListView(generics.ListAPIView):
 
 
 
-from decimal import Decimal
-from django.db import transaction
-from rest_framework.response import Response
-from rest_framework import generics, permissions
 
-from jobs.models import Job, JobItem
-from .models import ServiceQuote
-from .serializers import ServiceQuoteSerializer
 
 
 def get_final_price(quote):
@@ -1614,10 +1690,7 @@ class ServiceQuoteActionView(generics.UpdateAPIView):
             "job_id": job.id if job else None
         })
 
-from rest_framework import generics, permissions
-from rest_framework.exceptions import PermissionDenied
-from .models import ServiceQuote
-from .serializers import ServiceQuoteSerializer
+
 
 
 class ServiceQuoteListForLandscaper(generics.ListAPIView):

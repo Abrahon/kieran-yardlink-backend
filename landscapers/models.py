@@ -11,6 +11,8 @@ from django.contrib.postgres.fields import ArrayField, JSONField  # PostgreSQL
 User = get_user_model()
 from django.core.exceptions import ValidationError
 
+from django.core.exceptions import ValidationError
+
 
 
 # Landscaper Profile (business info)
@@ -354,77 +356,6 @@ class ServiceQuote(models.Model):
 #         return f"{self.name} ({self.client.user.email})"
 
 
-# class ClientCustomService(models.Model):
-#     class RecurringType(models.TextChoices):
-#         WEEKLY = "weekly", "Weekly"
-#         BIWEEKLY = "biweekly", "Biweekly"
-
-#     client = models.ForeignKey("profiles.ClientProfile", on_delete=models.CASCADE)
-#     landscaper = models.ForeignKey(BusinessProfile, on_delete=models.CASCADE)
-#     property = models.ForeignKey("property.Property",on_delete=models.CASCADE,related_name="custom_services")
-#     booking = models.OneToOneField(
-#         "bookings.BookingRequest",  # string instead of import
-#         null=True,
-#         blank=True,
-#         on_delete=models.SET_NULL
-#     )
-
-#     name = models.CharField(max_length=150)
-#     description = models.TextField(blank=True, null=True)
-#     note = models.TextField(blank=True, null=True)
-#     price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-#     is_active = models.BooleanField(default=True)
-
-#     # One-time date/time
-#     preferred_date = models.DateField(null=True, blank=True)
-#     preferred_time = models.TimeField(null=True, blank=True)
-
-#     # Only for recurring services
-#     recurring_type = models.CharField(
-#         max_length=10,
-#         choices=RecurringType.choices,
-#         null=True,
-#         blank=True,
-#         help_text="Set only for recurring services"
-#     )
-#     recurring_day_of_week = models.CharField(
-#         max_length=10,
-#         choices=[
-#             ("MONDAY", "Monday"), ("TUESDAY", "Tuesday"), ("WEDNESDAY", "Wednesday"),
-#             ("THURSDAY", "Thursday"), ("FRIDAY", "Friday"), ("SATURDAY", "Saturday"),
-#             ("SUNDAY", "Sunday")
-#         ],
-#         null=True,
-#         blank=True
-#     )
-
-#     STATUS_CHOICES = [
-#         ("pending", "Pending"),
-#         ("accepted", "Accepted"),
-#         ("confirmed", "Confirmed"),
-#         ("declined", "Declined"),
-#         ("completed", "Completed"),
-#     ]
-#     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="pending")
-#     created_at = models.DateTimeField(auto_now_add=True)
-#     updated_at = models.DateTimeField(auto_now=True)
-
-#     def clean(self):
-#         # If recurring_type is empty → one-time service
-#         if not self.recurring_type:
-#             if not self.preferred_date or not self.preferred_time:
-#                 raise ValidationError("One-time service requires date and time.")
-#             self.recurring_day_of_week = None  # enforce no day for one-time
-#         else:
-#             # recurring service
-#             if not self.recurring_day_of_week:
-#                 raise ValidationError("Recurring service must have a day of week.")
-#             if not self.preferred_date:
-#                 raise ValidationError("Recurring service must have start date.")
-#             self.preferred_time = None  # one-time time not required for recurring
-
-from django.core.exceptions import ValidationError
-
 class ClientCustomService(models.Model):
 
     class RecurringType(models.TextChoices):
@@ -553,16 +484,6 @@ class ClientCustomService(models.Model):
                     "Recurring service must have a start date."
                 )
 
-            # ❌ OLD (REMOVED)
-            # self.preferred_time = None
-
-            # ✅ NEW BEHAVIOR:
-            # Allow preferred_time for recurring
-            # (e.g., every Monday at 10 AM)
-
-            # Optional: if you WANT to enforce time:
-            # if not self.preferred_time:
-            #     raise ValidationError("Recurring service should include time.")
 
 # add on
 class Addon(models.Model):
