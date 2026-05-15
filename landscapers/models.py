@@ -533,7 +533,53 @@ class Addon(models.Model):
 
 
 
-# working_hours/models.py
+# # working_hours/models.py
+# DAYS_OF_WEEK = [
+#     ('SUNDAY', 'Sunday'),
+#     ('MONDAY', 'Monday'),
+#     ('TUESDAY', 'Tuesday'),
+#     ('WEDNESDAY', 'Wednesday'),
+#     ('THURSDAY', 'Thursday'),
+#     ('FRIDAY', 'Friday'),
+#     ('SATURDAY', 'Saturday'),
+# ]
+
+# class WorkingHours(models.Model):
+#     landscaper = models.ForeignKey(
+#         "landscapers.BusinessProfile",
+#         on_delete=models.CASCADE,
+#         related_name="working_hours"
+#     )
+
+#     day = models.CharField(max_length=10, choices=DAYS_OF_WEEK)
+
+#     start_time = models.TimeField()
+#     end_time = models.TimeField()
+
+#     # allow landscaper to disable a shift/day
+#     is_active = models.BooleanField(default=True)
+
+#     created_at = models.DateTimeField(auto_now_add=True)
+#     updated_at = models.DateTimeField(auto_now=True)
+
+#     class Meta:
+#         ordering = ["day", "start_time"]
+#         indexes = [
+#             models.Index(fields=["landscaper", "day"]),
+#         ]
+
+#     def clean(self):
+#         # Validate time range
+#         if self.start_time >= self.end_time:
+#             raise ValidationError("End time must be greater than start time.")
+
+#     def __str__(self):
+#         return f"{self.landscaper.business_name} - {self.day} ({self.start_time}-{self.end_time})"
+
+from django.db import models
+from django.core.exceptions import ValidationError
+
+
 DAYS_OF_WEEK = [
     ('SUNDAY', 'Sunday'),
     ('MONDAY', 'Monday'),
@@ -544,6 +590,7 @@ DAYS_OF_WEEK = [
     ('SATURDAY', 'Saturday'),
 ]
 
+
 class WorkingHours(models.Model):
     landscaper = models.ForeignKey(
         "landscapers.BusinessProfile",
@@ -551,12 +598,14 @@ class WorkingHours(models.Model):
         related_name="working_hours"
     )
 
-    day = models.CharField(max_length=10, choices=DAYS_OF_WEEK)
+    day = models.CharField(
+        max_length=10,
+        choices=DAYS_OF_WEEK
+    )
 
     start_time = models.TimeField()
     end_time = models.TimeField()
 
-    # allow landscaper to disable a shift/day
     is_active = models.BooleanField(default=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -564,14 +613,40 @@ class WorkingHours(models.Model):
 
     class Meta:
         ordering = ["day", "start_time"]
+
         indexes = [
             models.Index(fields=["landscaper", "day"]),
         ]
 
     def clean(self):
-        # Validate time range
+
+        # End must be greater
         if self.start_time >= self.end_time:
-            raise ValidationError("End time must be greater than start time.")
+            raise ValidationError(
+                "End time must be greater than start time."
+            )
+
+        # Prevent overlapping shifts
+        overlapping = WorkingHours.objects.filter(
+            landscaper=self.landscaper,
+            day=self.day,
+            is_active=True,
+            start_time__lt=self.end_time,
+            end_time__gt=self.start_time
+        )
+
+        # exclude current instance during update
+        if self.pk:
+            overlapping = overlapping.exclude(pk=self.pk)
+
+        if overlapping.exists():
+            raise ValidationError(
+                "This time range overlaps with another shift."
+            )
 
     def __str__(self):
-        return f"{self.landscaper.business_name} - {self.day} ({self.start_time}-{self.end_time})"
+        return (
+            f"{self.landscaper.business_name} - "
+            f"{self.day} "
+            f"({self.start_time} - {self.end_time})"
+        )

@@ -830,13 +830,110 @@ class LandscaperFind(generics.ListAPIView):
         return queryset.distinct()
 
 
-# set working hours for landscapers
+# # set working hours for landscapers
+# class WorkingHoursListCreateView(generics.ListCreateAPIView):
+#     serializer_class = WorkingHoursSerializer
+#     permission_classes = [permissions.IsAuthenticated, IsLandscaper]
+
+#     def get_queryset(self):
+#         profile = BusinessProfile.objects.filter(user=self.request.user).first()
+#         if not profile:
+#             return WorkingHours.objects.none()
+
+#         return WorkingHours.objects.filter(
+#             landscaper=profile
+#         ).order_by("day", "start_time")
+
+#     def create(self, request, *args, **kwargs):
+
+#         try:
+#             profile = BusinessProfile.objects.get(user=request.user)
+#         except BusinessProfile.DoesNotExist:
+#             return Response(
+#                 {"detail": "Business profile not found."},
+#                 status=status.HTTP_404_NOT_FOUND
+#             )
+
+#         data = request.data
+
+#         days = data.get("days")
+#         start_time = data.get("start_time")
+#         end_time = data.get("end_time")
+
+#         if not days:
+#             return Response(
+#                 {"error": "days field is required."},
+#                 status=status.HTTP_400_BAD_REQUEST
+#             )
+
+#         if isinstance(days, str):
+#             days = [days]
+
+#         VALID_DAYS = [d[0] for d in DAYS_OF_WEEK]
+
+#         created_slots = []
+#         errors = []
+
+#         for day in days:
+
+#             if day not in VALID_DAYS:
+#                 errors.append({
+#                     "day": day,
+#                     "detail": "Invalid day"
+#                 })
+#                 continue
+
+#             # check time overlap
+#             overlapping = WorkingHours.objects.filter(
+#                 landscaper=profile,
+#                 day=day,
+#                 start_time__lt=end_time,
+#                 end_time__gt=start_time
+#             )
+
+#             if overlapping.exists():
+#                 errors.append({
+#                     "day": day,
+#                     "detail": "Slot overlaps existing slot"
+#                 })
+#                 continue
+
+#             slot = WorkingHours.objects.create(
+#                 landscaper=profile,
+#                 day=day,
+#                 start_time=start_time,
+#                 end_time=end_time
+#             )
+
+#             created_slots.append(slot)
+
+#         serializer = self.get_serializer(created_slots, many=True)
+
+#         return Response(
+#             {
+#                 "created_slots": serializer.data,
+#                 "errors": errors
+#             },
+#             status=status.HTTP_201_CREATED
+#         )
+
+from django.db import transaction
+from rest_framework import generics, permissions, status
+
+
 class WorkingHoursListCreateView(generics.ListCreateAPIView):
     serializer_class = WorkingHoursSerializer
-    permission_classes = [permissions.IsAuthenticated, IsLandscaper]
+    permission_classes = [
+        permissions.IsAuthenticated,
+        IsLandscaper
+    ]
 
     def get_queryset(self):
-        profile = BusinessProfile.objects.filter(user=self.request.user).first()
+
+        profile = BusinessProfile.objects.filter(
+            user=self.request.user
+        ).first()
+
         if not profile:
             return WorkingHours.objects.none()
 
@@ -844,10 +941,14 @@ class WorkingHoursListCreateView(generics.ListCreateAPIView):
             landscaper=profile
         ).order_by("day", "start_time")
 
+    @transaction.atomic
     def create(self, request, *args, **kwargs):
 
         try:
-            profile = BusinessProfile.objects.get(user=request.user)
+            profile = BusinessProfile.objects.get(
+                user=request.user
+            )
+
         except BusinessProfile.DoesNotExist:
             return Response(
                 {"detail": "Business profile not found."},
@@ -860,22 +961,56 @@ class WorkingHoursListCreateView(generics.ListCreateAPIView):
         start_time = data.get("start_time")
         end_time = data.get("end_time")
 
+        # validate days
         if not days:
             return Response(
                 {"error": "days field is required."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        # convert single string to list
         if isinstance(days, str):
             days = [days]
 
         VALID_DAYS = [d[0] for d in DAYS_OF_WEEK]
+
+        # validate time format
+        try:
+            start_time_obj = datetime.strptime(
+                start_time,
+                "%H:%M"
+            ).time()
+
+            end_time_obj = datetime.strptime(
+                end_time,
+                "%H:%M"
+            ).time()
+
+        except Exception:
+            return Response(
+                {
+                    "error":
+                    "Invalid time format. Use HH:MM"
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # validate range
+        if start_time_obj >= end_time_obj:
+            return Response(
+                {
+                    "error":
+                    "End time must be greater than start time."
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         created_slots = []
         errors = []
 
         for day in days:
 
+            # validate day
             if day not in VALID_DAYS:
                 errors.append({
                     "day": day,
@@ -883,12 +1018,13 @@ class WorkingHoursListCreateView(generics.ListCreateAPIView):
                 })
                 continue
 
-            # check time overlap
+            # overlap check
             overlapping = WorkingHours.objects.filter(
                 landscaper=profile,
                 day=day,
-                start_time__lt=end_time,
-                end_time__gt=start_time
+                is_active=True,
+                start_time__lt=end_time_obj,
+                end_time__gt=start_time_obj
             )
 
             if overlapping.exists():
@@ -898,16 +1034,20 @@ class WorkingHoursListCreateView(generics.ListCreateAPIView):
                 })
                 continue
 
+            # create slot
             slot = WorkingHours.objects.create(
                 landscaper=profile,
                 day=day,
-                start_time=start_time,
-                end_time=end_time
+                start_time=start_time_obj,
+                end_time=end_time_obj
             )
 
             created_slots.append(slot)
 
-        serializer = self.get_serializer(created_slots, many=True)
+        serializer = self.get_serializer(
+            created_slots,
+            many=True
+        )
 
         return Response(
             {
@@ -918,28 +1058,49 @@ class WorkingHoursListCreateView(generics.ListCreateAPIView):
         )
 
 # update
+
+
 class WorkingHoursUpdateView(generics.UpdateAPIView):
     serializer_class = WorkingHoursSerializer
     permission_classes = [permissions.IsAuthenticated, IsLandscaper]
 
     def get_queryset(self):
-        profile = BusinessProfile.objects.filter(user=self.request.user).first()
+        profile = BusinessProfile.objects.filter(
+            user=self.request.user
+        ).first()
+
         if not profile:
             return WorkingHours.objects.none()
 
-        return WorkingHours.objects.filter(landscaper=profile)
+        return WorkingHours.objects.filter(
+            landscaper=profile
+        )
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
 
+        # parse safely
         day = request.data.get("day", instance.day)
-        start_time = request.data.get("start_time", instance.start_time)
-        end_time = request.data.get("end_time", instance.end_time)
+        start_time = parse_time(
+            request.data.get("start_time")
+        ) or instance.start_time
 
-        # check overlap
+        end_time = parse_time(
+            request.data.get("end_time")
+        ) or instance.end_time
+
+        # validate time range
+        if start_time >= end_time:
+            return Response(
+                {"error": "End time must be greater than start time"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # overlap check (only active)
         overlap = WorkingHours.objects.filter(
             landscaper=instance.landscaper,
             day=day,
+            is_active=True,
             start_time__lt=end_time,
             end_time__gt=start_time
         ).exclude(id=instance.id)
@@ -947,7 +1108,7 @@ class WorkingHoursUpdateView(generics.UpdateAPIView):
         if overlap.exists():
             return Response(
                 {"error": "Slot overlaps with existing slot"},
-                status=400
+                status=status.HTTP_400_BAD_REQUEST
             )
 
         instance.day = day
@@ -956,8 +1117,11 @@ class WorkingHoursUpdateView(generics.UpdateAPIView):
         instance.save()
 
         serializer = self.get_serializer(instance)
-        return Response(serializer.data)
 
+        return Response({
+            "message": "Working hours updated successfully",
+            "data": serializer.data
+        })
 # deleet
 class WorkingHoursDeleteView(generics.DestroyAPIView):
     serializer_class = WorkingHoursSerializer

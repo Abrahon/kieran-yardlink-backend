@@ -12,6 +12,7 @@ from rest_framework import serializers
 from profiles.serializers import ClientProfileSerializer,LandscaperProfileSerializer
 from landscapers.serializers import BusinessLandscaperProfileSerializer
 
+
 class JobItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = JobItem

@@ -213,11 +213,8 @@ class AdminTagConversationAPIView(APIView):
             "thread_id": thread.id,
             "tag": thread.tag
         })
-        
-
+    
 # admin
-
-
 class AdminConversationListAPIView(APIView):
     permission_classes = [IsAuthenticated]
 

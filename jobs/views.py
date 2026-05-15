@@ -28,6 +28,8 @@ from rest_framework.exceptions import NotFound
 from django.db.models import Q
 from payments.enums import PaymentStatus
 
+from rest_framework import generics, permissions
+from rest_framework.exceptions import NotFound
 
 
 
@@ -49,40 +51,54 @@ def job_created(sender, instance, created, **kwargs):
 
 
 
-
-
-
 class UpcomingJobsListView(generics.ListAPIView):
     serializer_class = JobSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        landscaper_profile = getattr(self.request.user, "landscaper_profile", None)
+        landscaper_profile = getattr(
+            self.request.user,
+            "landscaper_profile",
+            None
+        )
 
         if not landscaper_profile:
             return Job.objects.none()
 
+        today = now().date()
+
+        # ✅ AUTO MARK PAST JOBS AS MISSED
+        Job.objects.filter(
+            landscaper=landscaper_profile,
+            status=Job.Status.UPCOMING,
+            scheduled_date__lt=today
+        ).update(status=Job.Status.MISSED)
+
         queryset = Job.objects.filter(
             landscaper=landscaper_profile,
             status=Job.Status.UPCOMING,
-            is_active=True
+            is_active=True,
+            scheduled_date__gte=today
         )
 
-        # 🔹 get query params
+        # filters
         selected_date = self.request.query_params.get("date")
         today_flag = self.request.query_params.get("today")
 
-        # ✅ PRIORITY 1: specific date (calendar click)
         if selected_date:
-            queryset = queryset.filter(scheduled_date=selected_date)
+            queryset = queryset.filter(
+                scheduled_date=selected_date
+            )
 
-        # ✅ PRIORITY 2: today shortcut
         elif today_flag == "true":
-            queryset = queryset.filter(scheduled_date=now().date())
+            queryset = queryset.filter(
+                scheduled_date=today
+            )
 
-        return queryset.order_by("scheduled_date", "scheduled_time")
-
-
+        return queryset.order_by(
+            "scheduled_date",
+            "scheduled_time"
+        )
 
 
 class ClientUpcomingJobsListView(generics.ListAPIView):
@@ -116,6 +132,55 @@ class ClientUpcomingJobsListView(generics.ListAPIView):
         return queryset.order_by("scheduled_date", "scheduled_time")
 
 
+
+
+
+
+
+class ClientUpcomingServiceDetailView(generics.RetrieveAPIView):
+    serializer_class = JobSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = "id"
+
+    def get_queryset(self):
+        client_profile = getattr(
+            self.request.user,
+            "clientprofile",
+            None
+        )
+
+        if not client_profile:
+            return Job.objects.none()
+
+        today = now().date()
+
+        # ✅ AUTO MARK EXPIRED UPCOMING JOBS AS MISSED
+        Job.objects.filter(
+            client=client_profile,
+            status=Job.Status.UPCOMING,
+            scheduled_date__lt=today
+        ).update(status=Job.Status.MISSED)
+
+        # ✅ ONLY FUTURE/TODAY UPCOMING JOBS
+        return Job.objects.filter(
+            client=client_profile,
+            status=Job.Status.UPCOMING,
+            is_active=True,
+            scheduled_date__gte=today
+        )
+
+    def get_object(self):
+        queryset = self.get_queryset()
+
+        job_id = self.kwargs.get("id")
+
+        try:
+            return queryset.get(id=job_id)
+
+        except Job.DoesNotExist:
+            raise NotFound(
+                detail="Upcoming service not found."
+            )
 # --- Job Detail ---
 class JobDetailView(generics.RetrieveAPIView):
     serializer_class = JobSerializer
@@ -166,8 +231,6 @@ class InProgressJobsListView(generics.ListAPIView):
         # NO PROFILE
         # -------------------------
         return Job.objects.none()
-
-
 
 
 

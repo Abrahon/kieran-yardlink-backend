@@ -93,6 +93,12 @@ class PropertyListCreateView(generics.ListCreateAPIView):
         )
 
 
+from rest_framework import generics, status
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
+from .models import Property
+from .serializers import PropertySerializer
 
 
 class PropertyDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -102,42 +108,34 @@ class PropertyDetailView(generics.RetrieveUpdateDestroyAPIView):
     lookup_url_kwarg = "pk"
 
     def get_queryset(self):
-        return Property.objects.filter(owner=self.request.user)
+        return Property.objects.filter(
+            owner=self.request.user
+        )
 
-    # -----------------------------
-    # OVERRIDE UPDATE (PATCH/PUT)
-    # -----------------------------
+    # UPDATE / ACTIVATE / DEACTIVATE
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
 
-        # handle is_active safely if sent
-        is_active = request.data.get("is_active", None)
+        serializer = self.get_serializer(
+            instance,
+            data=request.data,
+            partial=True
+        )
 
-        if is_active is not None:
-            instance.is_active = is_active
-            instance.save(update_fields=["is_active"])
-
-        # normal update for other fields
-        serializer = self.get_serializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        self.perform_update(serializer)
+        serializer.save()
 
-        return Response(serializer.data)
+        return Response({
+            "message": "Property updated successfully",
+            "data": serializer.data
+        })
 
-    # -----------------------------
-    # SOFT DELETE (recommended)
-    # -----------------------------
+    # PERMANENT DELETE
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
 
-        # ❌ Instead of hard delete
-        instance.is_active = False
-        instance.save(update_fields=["is_active"])
+        instance.delete()
 
         return Response({
-            "message": "Property deactivated successfully"
-        })
-
-
-
-
+            "message": "Property deleted successfully"
+        }, status=status.HTTP_200_OK)
