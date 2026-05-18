@@ -136,45 +136,80 @@ class BusinessLandscaperProfileSerializer(serializers.ModelSerializer):
         return instance
 
 
+# models.py
+
+# serializers.py
+
+from rest_framework import serializers
+
 
 class ServiceSerializer(serializers.ModelSerializer):
-    business = serializers.ReadOnlyField(source="business.id")
+
+    business = serializers.ReadOnlyField(
+        source="business.id"
+    )
 
     class Meta:
         model = Service
+
         fields = [
-            "id", "business", "name", "description",
-            "base_price", "pricing_type", "min_price",
-            "latitude", "longitude", "is_active", "is_pinned",
-            "created_at", "updated_at",
+            "id",
+            "business",
+            "name",
+            "description",
+            "base_price",
+            "pricing_type",
+            "min_price",
+            "is_active",
+            "is_pinned",
+            "created_at",
+            "updated_at",
         ]
-        read_only_fields = ["id", "business", "created_at", "updated_at", "is_pinned"]
+
+        read_only_fields = [
+            "id",
+            "business",
+            "created_at",
+            "updated_at",
+            "is_pinned",
+        ]
 
     def validate_name(self, value):
-        request = self.context.get("request")
-        if not request:
-            raise serializers.ValidationError("Request context is missing.")
 
-        user = getattr(request, "user", None)
-        if not user or not user.is_authenticated:
-            raise serializers.ValidationError("Authentication required.")
+        request = self.context.get("request")
+
+        if not request:
+            raise serializers.ValidationError(
+                "Request context is missing."
+            )
+
+        user = request.user
+
+        if not user.is_authenticated:
+            raise serializers.ValidationError(
+                "Authentication required."
+            )
 
         try:
             business = BusinessProfile.objects.get(user=user)
+
         except BusinessProfile.DoesNotExist:
             raise serializers.ValidationError(
                 "You must have a business profile to create services."
             )
 
+        # allow same name on update
         if self.instance and self.instance.name == value:
             return value
 
-        if Service.objects.filter(
+        exists = Service.objects.filter(
             business=business,
             name=value
         ).exclude(
             id=getattr(self.instance, "id", None)
-        ).exists():
+        ).exists()
+
+        if exists:
             raise serializers.ValidationError(
                 "A service with this name already exists for your business."
             )
@@ -182,32 +217,52 @@ class ServiceSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
-        pricing_type = attrs.get("pricing_type", getattr(self.instance, "pricing_type", None))
-        base_price = attrs.get("base_price", getattr(self.instance, "base_price", None))
 
-        if pricing_type == "fixed" and base_price is None:
-            raise serializers.ValidationError("Fixed pricing requires base_price.")
+        pricing_type = attrs.get(
+            "pricing_type",
+            getattr(self.instance, "pricing_type", None)
+        )
 
-        if pricing_type == "request" and base_price is not None:
-            raise serializers.ValidationError("Request pricing should not include base_price.")
+        base_price = attrs.get(
+            "base_price",
+            getattr(self.instance, "base_price", None)
+        )
 
-        lat = attrs.get("latitude", getattr(self.instance, "latitude", None))
-        lon = attrs.get("longitude", getattr(self.instance, "longitude", None))
+        min_price = attrs.get(
+            "min_price",
+            getattr(self.instance, "min_price", None)
+        )
 
-        if lat is None or lon is None:
-            raise serializers.ValidationError(
-                "Service location (latitude and longitude) is required."
-            )
+        # FIXED pricing validation
+        if pricing_type == Service.PricingType.FIXED:
 
-        if not (-90 <= lat <= 90):
-            raise serializers.ValidationError({"latitude": "Latitude must be between -90 and 90."})
+            if base_price is None:
+                raise serializers.ValidationError(
+                    {
+                        "base_price": "Fixed pricing requires base_price."
+                    }
+                )
 
-        if not (-180 <= lon <= 180):
-            raise serializers.ValidationError({"longitude": "Longitude must be between -180 and 180."})
+            attrs["min_price"] = None
+
+        # REQUEST pricing validation
+        if pricing_type == Service.PricingType.REQUEST:
+
+            if base_price is not None:
+                raise serializers.ValidationError(
+                    {
+                        "base_price": "Request pricing should not include base_price."
+                    }
+                )
+
+            if min_price is None:
+                raise serializers.ValidationError(
+                    {
+                        "min_price": "Request pricing requires min_price."
+                    }
+                )
 
         return attrs
-
-
 
 # -------------------------
 # CLIENT (FULL PROFILE)
@@ -482,35 +537,47 @@ class StandardServiceSerializer(serializers.ModelSerializer):
 
 
 
-# serializers.py
 
 class ServiceQuoteSerializer(serializers.ModelSerializer):
+
     client = ClientProfileMiniSerializer(read_only=True)
     landscaper = serializers.SerializerMethodField()
-    # property = PropertySerializer(read_only=True)
 
     class Meta:
         model = ServiceQuote
-        fields = "__all__"
-        read_only_fields = [
+
+        fields = [
+            "id",
+            "service",
             "client",
             "landscaper",
+            "property",
+            "message",
+            "preferred_date",
+            "preferred_time",
+            "scheduled_date",
+            "scheduled_time",
+            "price",
             "status",
-            "counter_price",
-            "final_price"
+            "created_at",
+            "updated_at",
+        ]
+
+        read_only_fields = [
+            "id",
+            "client",
+            "landscaper",
+            "created_at",
+            "updated_at",
         ]
 
     def get_landscaper(self, obj):
-        """
-        FIX: This method was missing (causing crash)
-        """
         landscaper = obj.landscaper
 
         if not landscaper:
             return None
 
         profile = getattr(landscaper, "landscaperprofilies", None)
-
         return {
             "id": landscaper.id,
             "name": getattr(profile, "name", None),
@@ -519,6 +586,7 @@ class ServiceQuoteSerializer(serializers.ModelSerializer):
             "address": getattr(profile, "address", None),
             "profile_image": getattr(profile, "profile_image", None),
         }
+
 
     def validate(self, data):
 
@@ -529,9 +597,19 @@ class ServiceQuoteSerializer(serializers.ModelSerializer):
                 "service": "Service is required."
             })
 
-        if service.pricing_type == "fixed":
-            raise serializers.ValidationError({
-                "error": "Fixed price service cannot request quote."
-            })
-
         return data
+
+    def create(self, validated_data):
+        request = self.context["request"]
+
+        client = getattr(request.user, "client_profile", None)
+
+        if not client:
+            raise serializers.ValidationError("Client profile not found")
+
+        service = validated_data["service"]
+
+        validated_data["client"] = client
+        validated_data["landscaper"] = service.business
+
+        return super().create(validated_data)

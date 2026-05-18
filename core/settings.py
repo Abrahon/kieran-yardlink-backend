@@ -47,7 +47,11 @@ ALLOWED_HOSTS = config(
 CSRF_TRUSTED_ORIGINS = [
     "https://api.yardlinkapp.com",
 ]
+SESSION_COOKIE_SAMESITE = "None"
+SESSION_COOKIE_SECURE = False   # localhost only
 
+CSRF_COOKIE_SAMESITE = "None"
+CSRF_COOKIE_SECURE = False
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 # ------------------------------------------------------------------------------

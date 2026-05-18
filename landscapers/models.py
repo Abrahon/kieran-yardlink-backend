@@ -98,22 +98,28 @@ class BusinessProfile(models.Model):
 
 
 # standard service
+# models.py
+
+
+
 class Service(models.Model):
+
     class PricingType(models.TextChoices):
         FIXED = "fixed", "Fixed Price"
         REQUEST = "request", "Priced Upon Request"
 
-    # FK to BusinessProfile
     business = models.ForeignKey(
         BusinessProfile,
         on_delete=models.CASCADE,
-        related_name="services",
-        null=False,   # non-nullable
-        blank=False
+        related_name="services"
     )
 
     name = models.CharField(max_length=150)
-    description = models.TextField(blank=True, null=True)
+
+    description = models.TextField(
+        blank=True,
+        null=True
+    )
 
     # Pricing
     base_price = models.DecimalField(
@@ -123,11 +129,13 @@ class Service(models.Model):
         blank=True,
         null=True
     )
+
     pricing_type = models.CharField(
         max_length=10,
         choices=PricingType.choices,
         default=PricingType.FIXED
     )
+
     min_price = models.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -136,35 +144,25 @@ class Service(models.Model):
         null=True
     )
 
-    # Location (optional)
-    latitude = models.DecimalField(
-        max_digits=20,
-        decimal_places=18,
-        null=True,
-        blank=True
-    )
-    longitude = models.DecimalField(
-        max_digits=20,
-        decimal_places=18,
-        null=True,
-        blank=True
-    )
-
-    # Status & pinning
+    # Status
     is_active = models.BooleanField(default=True)
+
     is_pinned = models.BooleanField(default=False)
 
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
+
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["-created_at"]
+
         indexes = [
             models.Index(fields=["business", "is_active"]),
             models.Index(fields=["pricing_type"]),
             models.Index(fields=["is_pinned"]),
         ]
+
         constraints = [
             models.UniqueConstraint(
                 fields=["business", "name"],
@@ -174,23 +172,35 @@ class Service(models.Model):
 
     def clean(self):
 
+        # FIXED pricing
         if self.pricing_type == self.PricingType.FIXED:
-            if self.base_price is None:
-                raise ValidationError("Fixed pricing requires base_price.")
 
+            if self.base_price is None:
+                raise ValidationError(
+                    "Fixed pricing requires base_price."
+                )
+
+            # optional cleanup
+            self.min_price = None
+
+        # REQUEST pricing
         if self.pricing_type == self.PricingType.REQUEST:
+
             if self.base_price is not None:
-                raise ValidationError("Request pricing should not have base_price.")
+                raise ValidationError(
+                    "Request pricing should not have base_price."
+                )
 
             if self.min_price is None:
                 raise ValidationError(
-                    "Priced upon request services should have a minimum price."
+                    "Request pricing requires min_price."
                 )
 
     def __str__(self):
         return f"{self.name} ({self.business.business_name})"
 
 # qute model
+
 class ServiceQuote(models.Model):
 
     class Status(models.TextChoices):
@@ -227,31 +237,21 @@ class ServiceQuote(models.Model):
 
     message = models.TextField(blank=True, null=True)
 
-    # client request
-    requested_price = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        null=True,
-        blank=True
-    )
+    # CLIENT preferred schedule (optional)
+    preferred_date = models.DateField(null=True, blank=True)
+    preferred_time = models.TimeField(null=True, blank=True)
 
-    # landscaper response
-    counter_price = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        null=True,
-        blank=True
-    )
-
-    final_price = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        null=True,
-        blank=True
-    )
-
+    # LANDSCAPER confirmed schedule
     scheduled_date = models.DateField(null=True, blank=True)
     scheduled_time = models.TimeField(null=True, blank=True)
+
+    # PRICE (only landscaper controls)
+    price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True
+    )
 
     status = models.CharField(
         max_length=20,
@@ -261,9 +261,7 @@ class ServiceQuote(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-
-
-
+    
 # # custom service request
 # class ClientCustomService(models.Model):
 #     client = models.ForeignKey(

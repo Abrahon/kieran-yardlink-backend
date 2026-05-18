@@ -9,7 +9,7 @@ from django.db.models import Sum, Count, F, FloatField
 from .serializers import PaymentHistorySerializer
 from datetime import datetime
 from profiles.models import LandscaperProfilies
-
+from payments.enums import PaymentStatus
 from datetime import datetime, timedelta
 from django.db.models.functions import TruncDate
 from rest_framework.permissions import IsAdminUser
@@ -1652,7 +1652,8 @@ def delete_user_financial_data(request, user_id):
     )
 
 
-# revenue overviw for pro landscapers
+from payments.enums import PaymentStatus
+
 
 class ProLandscaperMonthlyRevenueView(APIView):
     permission_classes = [IsLandscaper]
@@ -1679,7 +1680,7 @@ class ProLandscaperMonthlyRevenueView(APIView):
         # =========================
         monthly_revenue_qs = (
             jobs.filter(
-                payment_status=Job.PaymentStatus.PAID,
+                payment_status=PaymentStatus.PAID,
                 scheduled_date__year=current_year
             )
             .annotate(month=TruncMonth("scheduled_date"))
@@ -1706,7 +1707,7 @@ class ProLandscaperMonthlyRevenueView(APIView):
         # =========================
         yearly_revenue = (
             jobs.filter(
-                payment_status=Job.PaymentStatus.PAID,
+                payment_status=PaymentStatus.PAID,
                 scheduled_date__year=current_year
             )
             .aggregate(
@@ -1722,7 +1723,7 @@ class ProLandscaperMonthlyRevenueView(APIView):
         # Total revenue (all time)
         # =========================
         total_revenue = (
-            jobs.filter(payment_status=Job.PaymentStatus.PAID)
+            jobs.filter(payment_status=PaymentStatus.PAID)
             .aggregate(
                 total=Coalesce(
                     Sum("total_price"),
@@ -1736,7 +1737,7 @@ class ProLandscaperMonthlyRevenueView(APIView):
         # Pending payments
         # =========================
         pending_amount = (
-            jobs.filter(payment_status=Job.PaymentStatus.PENDING)
+            jobs.filter(payment_status=PaymentStatus.PENDING)
             .aggregate(
                 total=Coalesce(
                     Sum("total_price"),
@@ -1749,9 +1750,17 @@ class ProLandscaperMonthlyRevenueView(APIView):
         # =========================
         # Extra useful stats
         # =========================
-        paid_jobs_count = jobs.filter(payment_status=Job.PaymentStatus.PAID).count()
-        pending_jobs_count = jobs.filter(payment_status=Job.PaymentStatus.PENDING).count()
-        completed_jobs_count = jobs.filter(status=Job.Status.COMPLETED).count()
+        paid_jobs_count = jobs.filter(
+            payment_status=PaymentStatus.PAID
+        ).count()
+
+        pending_jobs_count = jobs.filter(
+            payment_status=PaymentStatus.PENDING
+        ).count()
+
+        completed_jobs_count = jobs.filter(
+            status=Job.Status.COMPLETED
+        ).count()
 
         data = {
             "status": "success",
@@ -1770,9 +1779,6 @@ class ProLandscaperMonthlyRevenueView(APIView):
         }
 
         return Response(data, status=200)
-
-
-
 
 # stripe vs cash
 class AdminStripeVsCashDashboardAPIView(APIView):

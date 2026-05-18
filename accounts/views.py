@@ -93,8 +93,48 @@ from rest_framework.pagination import PageNumberPagination
 from accounts.models import User
 from payments.enums import PaymentStatus
 
+from django.db import transaction  
 
 
+
+# class SignupView(generics.GenericAPIView):
+#     serializer_class = SignupSerializer
+#     permission_classes = [AllowAny]
+#     parser_classes = (MultiPartParser, FormParser)
+
+#     def post(self, request):
+#         serializer = self.get_serializer(data=request.data)
+#         serializer.is_valid(raise_exception=True)
+#         data = serializer.validated_data
+#         email = data["email"]
+
+
+#         request.session["pending_user"] = {
+
+#             "email": data["email"],
+#             "name": data["name"],
+#             "password": data["password"],
+#             "phone": data.get("phone"),
+#             "address": data.get("address"),
+#             "latitude": str(data["latitude"]) if data.get("latitude") else None,
+#             "longitude": str(data["longitude"]) if data.get("longitude") else None,
+#             "role": data["role"],
+#             "allow_notification": data.get("allow_notification", False)
+#         }
+
+#         request.session.modified = True
+
+#         # OTP handling
+#         OTP.objects.filter(email=email).delete()
+#         otp_code = generate_otp()
+#         OTP.objects.create(email=email, code=otp_code)
+
+#         send_otp_email(email, otp_code, data["name"])
+
+#         return Response(
+#             {"detail": f"Verification OTP sent to {data['role']} email."},
+#             status=200
+#         )
 
 class SignupView(generics.GenericAPIView):
     serializer_class = SignupSerializer
@@ -102,31 +142,41 @@ class SignupView(generics.GenericAPIView):
     parser_classes = (MultiPartParser, FormParser)
 
     def post(self, request):
+
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
-        email = data["email"]
 
+        email = data["email"].strip().lower()
 
-        request.session["pending_user"] = {
+        with transaction.atomic():
 
-            "email": data["email"],
-            "name": data["name"],
-            "password": data["password"],
-            "phone": data.get("phone"),
-            "address": data.get("address"),
-            "latitude": str(data["latitude"]) if data.get("latitude") else None,
-            "longitude": str(data["longitude"]) if data.get("longitude") else None,
-            "role": data["role"],
-            "allow_notification": data.get("allow_notification", False)
-        }
+            # remove old unverified user if exists
+            User.objects.filter(email__iexact=email, is_active=False).delete()
 
-        request.session.modified = True
+            OTP.objects.filter(email__iexact=email).delete()
 
-        # OTP handling
-        OTP.objects.filter(email=email).delete()
-        otp_code = generate_otp()
-        OTP.objects.create(email=email, code=otp_code)
+            otp_code = generate_otp()
+
+            # ✅ CREATE USER (inactive)
+            user = User.objects.create_user(
+                email=email,
+                name=data["name"],
+                password=data["password"],
+                phone=data.get("phone"),
+                address=data.get("address"),
+                role=data["role"],
+                latitude=data.get("latitude"),
+                longitude=data.get("longitude"),
+                is_active=False
+            )
+
+            # OTP linked to user
+            OTP.objects.create(
+                user=user,
+                email=email,
+                code=otp_code
+            )
 
         send_otp_email(email, otp_code, data["name"])
 
@@ -134,7 +184,6 @@ class SignupView(generics.GenericAPIView):
             {"detail": f"Verification OTP sent to {data['role']} email."},
             status=200
         )
-
 
 def get_tokens_for_user(user):
     refresh = RefreshToken.for_user(user)
@@ -373,63 +422,79 @@ class ResendForgotOTPView(generics.GenericAPIView):
 
 
 # verify otpo for email
-
 class VerifyOTPView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        email = request.data.get("email")
-        otp = request.data.get("otp")
 
-        otp_obj = OTP.objects.filter(email=email, code=otp).first()
-        if not otp_obj:
+        email = str(request.data.get("email") or "").strip().lower()
+        otp = str(request.data.get("otp") or "").strip()
+
+        if not email or not otp:
             return Response(
-                {"detail": "Invalid or expired OTP"},
+                {"detail": "Email and OTP are required."},
                 status=400
             )
 
-        pending_user = request.session.get("pending_user")
-        if not pending_user or pending_user["email"] != email:
+        try:
+            with transaction.atomic():
+
+                # ✅ OTP CHECK
+                otp_obj = OTP.objects.filter(
+                    email__iexact=email,
+                    code=otp
+                ).first()
+
+                if not otp_obj:
+                    return Response(
+                        {"detail": "Invalid or expired OTP"},
+                        status=400
+                    )
+
+                # ✅ USER MUST EXIST (created in signup)
+                user = User.objects.filter(email__iexact=email).first()
+
+                if not user:
+                    return Response(
+                        {"detail": "User not found. Please signup again."},
+                        status=400
+                    )
+
+                # activate user
+                user.is_active = True
+                user.save(update_fields=["is_active"])
+
+                # cleanup OTP
+                OTP.objects.filter(email__iexact=email).delete()
+
+        except Exception:
             return Response(
-                {"detail": "Session expired. Please signup again."},
-                status=400
+                {"detail": "Something went wrong while verifying OTP."},
+                status=500
             )
 
-        # ✅ CREATE USER WITH LAT & LNG SAVED
-        user = User.objects.create_user(
-            email=pending_user["email"],
-            name=pending_user["name"],
-            password=pending_user["password"],
-            phone=pending_user.get("phone"),
-            address=pending_user.get("address"),
-            role=pending_user["role"],
-            latitude=pending_user.get("latitude"),     
-            longitude=pending_user.get("longitude"),
-            is_active=True
-        )
-
-        # cleanup
-        OTP.objects.filter(email=email).delete()
-        request.session.flush()
-
-        # tokens
+        # JWT
         refresh = RefreshToken.for_user(user)
 
-        return Response({
-            "access": str(refresh.access_token),
-            "refresh": str(refresh),
-            "user": {
-                "id": user.id,
-                "email": user.email,
-                "name": user.name,
-                "role": user.role,
-                "phone": user.phone,
-                "address": user.address,
-                "latitude": float(user.latitude) if user.latitude else None,
-                "longitude": float(user.longitude) if user.longitude else None,
-            }
-        }, status=201)
+        return Response(
+            {
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
 
+                "user": {
+                    "id": user.id,
+                    "email": user.email,
+                    "name": user.name,
+                    "role": user.role,
+                    "phone": user.phone,
+                    "address": user.address,
+                    "latitude": float(user.latitude) if user.latitude else None,
+                    "longitude": float(user.longitude) if user.longitude else None,
+                }
+            },
+            status=201
+        )     
+# verify email
 
 # verify otp for forget password 
 class VerifyOTPForgetView(generics.GenericAPIView):
@@ -528,249 +593,6 @@ class ResendForgotOTPView(generics.GenericAPIView):
         )
 
 from django.db.models import Case, When
-
-# class UserListView(APIView):
-#     permission_classes = [IsAdminUser]
-
-#     def get(self, request):
-
-#         role = request.query_params.get("role")
-#         plan = request.query_params.get("plan")
-#         status_param = request.query_params.get("status")
-#         location = request.query_params.get("location")
-#         search_query = request.query_params.get("search", "").strip()
-#         sort_by = request.query_params.get("sort")
-
-#         users = User.objects.all()
-
-#         # --------------------------
-#         # FILTERS
-#         # --------------------------
-#         if role:
-#             users = users.filter(role__iexact=role)
-
-#         if status_param:
-#             if status_param.lower() == "paused":
-#                 users = users.filter(is_active=False)
-#             elif status_param.lower() == "active":
-#                 users = users.filter(is_active=True)
-
-#         if location:
-#             users = users.filter(address__icontains=location)
-
-#         if plan:
-#             users = users.filter(
-#                 subscription__is_active=True,
-#                 subscription__plan__name__iexact=plan
-#             )
-
-#         # --------------------------
-#         # SEARCH
-#         # --------------------------
-#         # if search_query:
-#         #     users = users.filter(
-#         #         Q(name__icontains=search_query) |
-#         #         Q(email__icontains=search_query) |
-#         #         Q(role__icontains=search_query) |
-#         #         Q(address__icontains=search_query) |
-#         #         Q(subscription__plan__name__icontains=search_query) |
-#         #         Q(subscription__status__icontains=search_query)
-#         #     )
-#             if search_query:
-#                 users = users.filter(
-#                     Q(name__icontains=search_query) |
-#                     Q(email__icontains=search_query) |   # partial email search
-#                     Q(email__iexact=search_query) |      # exact email match (faster hit)
-#                     Q(role__icontains=search_query) |
-#                     Q(address__icontains=search_query) |
-#                     Q(subscription__plan__name__icontains=search_query)
-#                 )
-
-#         users = users.distinct()
-
-#         # ==========================================================
-#         # SUBQUERIES
-#         # ==========================================================
-
-
-
-#         # business_profile_sq = BusinessProfile.objects.filter(
-#         #     user=OuterRef("pk")
-#         # ).values("id")[:1]
-
-#         # # =========================
-#         # # Revenue
-#         # # =========================
-#         # revenue_sq = Job.objects.filter(
-#         #     landscaper_id=Subquery(business_profile_sq),
-#         #     payment_status="paid"   # 🔥 FIX: use string instead of PaymentStatus enum
-#         # ).values("landscaper_id").annotate(
-#         #     total=Sum("total_price", output_field=FloatField())
-#         # ).values("total")[:1]
-
-
-
-#         # ==========================
-#         # BUSINESS PROFILE SUBQUERY
-#         # ==========================
-#         business_profile_sq = BusinessProfile.objects.filter(
-#             user_id=OuterRef("pk")
-#         ).values("id")[:1]
-
-#         # ==========================
-#         # REVENUE
-#         # ==========================
-#         revenue_sq = Job.objects.filter(
-#             landscaper_id=Subquery(business_profile_sq),
-#             payment_status="paid"
-#         ).values("landscaper_id").annotate(
-#             total=Sum("total_price", output_field=FloatField())
-#         ).values("total")[:1]
-
-#         # ==========================
-#         # CLIENTS
-#         # ==========================
-#         clients_sq = Job.objects.filter(
-#             landscaper_id=Subquery(business_profile_sq)
-#         ).values("landscaper_id").annotate(
-#             total=Count("client_id", distinct=True)
-#         ).values("total")[:1]
-
-#         # ==========================
-#         # FIXED USER ANNOTATION
-#         # ==========================
-#         users = users.annotate(
-
-
-#             # TOTAL JOBS (NO DUPLICATION)
-#             total_jobs=Coalesce(
-#                 Count(
-#                     "landscaper_profile__jobs",
-#                     distinct=True
-#                 ),
-#                 Value(0)
-#             ),
-
-#             # COMPLETED JOBS (NO DUPLICATION)
-#             completed_jobs=Coalesce(
-#                 Count(
-#                     "landscaper_profile__jobs",
-#                     filter=Q(
-#                         landscaper_profile__jobs__status=Job.Status.COMPLETED
-#                     ),
-#                     distinct=True
-#                 ),
-#                 Value(0)
-#             ),
-#             # REVENUE
-#             total_revenue=Coalesce(
-#                 Subquery(revenue_sq, output_field=FloatField()),
-#                 Value(0.0)
-#             ),
-
-#             # CLIENTS
-#             total_clients=Coalesce(
-#                 Subquery(clients_sq),
-#                 Value(0)
-#             ),
-
-#             # RATINGS
-#             average_rating=Coalesce(
-#                 Avg("received_reviews__rating"),
-#                 Value(0.0),
-#                 output_field=FloatField()
-#             ),
-
-#             review_count=Count("received_reviews", distinct=True)
-#         )
-#         # --------------------------
-#         # SORTING
-#         # --------------------------
-#         if sort_by == "revenue":
-#             users = users.order_by("-total_revenue")
-#         elif sort_by == "clients":
-#             users = users.order_by("-total_clients")
-#         elif sort_by == "jobs":
-#             users = users.order_by("-total_jobs")
-#         elif sort_by == "rating":
-#             users = users.order_by("-average_rating")
-#         else:
-#             users = users.order_by("-date_joined")
-
-#         # ==========================================================
-#         # PLATFORM METRICS
-#         # ==========================================================
-
-#         total_users = User.objects.count()
-#         total_clients = User.objects.filter(role="client").count()
-#         total_landscapers = User.objects.filter(role="landscaper").count()
-#         paused_users = User.objects.filter(is_active=False).count()
-#         active_users = User.objects.filter(is_active=True).count()
-
-#         last_24h = timezone.now() - timedelta(hours=24)
-#         daily_active_users = User.objects.filter(last_login__gte=last_24h).count()
-
-#         one_week_ago = timezone.now() - timedelta(days=7)
-#         weekly_new_signups = User.objects.filter(date_joined__gte=one_week_ago).count()
-
-#         # ✅ FIXED: Platform Revenue
-#         total_job_amount = Job.objects.filter(
-#             payment_status=PaymentStatus.PAID
-#         ).aggregate(
-#             total=Sum("total_price", output_field=FloatField())
-#         )["total"] or 0.0
-
-#         platform_fee_collected = round(total_job_amount * 0.02, 2)
-
-#         # Subscriptions
-#         active_subscriptions = Subscription.objects.filter(status=SubscriptionStatus.ACTIVE).count()
-#         cancelled_subscriptions = Subscription.objects.filter(status=SubscriptionStatus.CANCELLED).count()
-#         expired_subscriptions = Subscription.objects.filter(status=SubscriptionStatus.EXPIRED).count()
-
-#         total_subscription_pool = active_subscriptions + cancelled_subscriptions + expired_subscriptions
-
-#         churn_rate = round(
-#             ((cancelled_subscriptions + expired_subscriptions) / total_subscription_pool) * 100,
-#             2
-#         ) if total_subscription_pool > 0 else 0.0
-
-#         overall_average_rating = users.aggregate(
-#             avg_rating=Coalesce(
-#                 Avg("received_reviews__rating"),
-#                 Value(0.0),
-#                 output_field=FloatField()
-#             )
-#         )["avg_rating"]
-
-#         # --------------------------
-#         # PAGINATION
-#         # --------------------------
-#         paginator = PageNumberPagination()
-#         paginator.page_size = 20
-
-#         page = paginator.paginate_queryset(users, request)
-
-#         serializer = AdminUserDetailSerializer(page, many=True, context={"request": request})
-
-#         return paginator.get_paginated_response({
-#             "status": "success",
-#             "summary": {
-#                 "total_users": total_users,
-#                 "total_clients": total_clients,
-#                 "total_landscapers": total_landscapers,
-#                 "active_users": active_users,
-#                 "paused_users": paused_users,
-#                 "daily_active_users": daily_active_users,
-#                 "weekly_new_signups": weekly_new_signups,
-#                 "active_subscriptions": active_subscriptions,
-#                 "cancelled_subscriptions": cancelled_subscriptions,
-#                 "expired_subscriptions": expired_subscriptions,
-#                 "churn_rate": churn_rate,
-#                 "platform_fee_collected": platform_fee_collected,
-#                 "average_rating": round(overall_average_rating, 2) if overall_average_rating else 0.0
-#             },
-#             "data": serializer.data
-#         })
 
 class UserListView(APIView):
     permission_classes = [IsAdminUser]
