@@ -55,43 +55,48 @@
         </form>
         <div class="message" id="message"></div>
     </div>
+<script>
+    const token = "{{ token }}";
 
-    <script>
-        const token = "{{ token }}"; // Passed from Django view
+    const form = document.getElementById('accept-invite-form');
+    const messageDiv = document.getElementById('message');
 
-        const form = document.getElementById('accept-invite-form');
-        const messageDiv = document.getElementById('message');
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
 
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
+        const name = document.getElementById('name').value;
+        const password = document.getElementById('password').value;
 
-            const name = document.getElementById('name').value;
-            const password = document.getElementById('password').value;
+        try {
+            const response = await fetch(`${window.location.origin}/api/accept-invite-api/${token}/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: JSON.stringify({ name, password })
+            });
 
-            try {
-                const response = await fetch(`/api/accept-invite-api/${token}/`, { // <- fixed URL
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': '{{ csrf_token }}' // Optional if CSRF is enabled
-                    },
-                    body: JSON.stringify({ name, password })
-                });
+            const data = await response.json();
 
-                const data = await response.json();
+            if (response.ok) {
+                messageDiv.style.color = 'green';
+                messageDiv.textContent = data.detail;
 
-                if (response.ok) {
-                    messageDiv.style.color = 'green';
-                    messageDiv.textContent = data.detail;
-                } else {
-                    messageDiv.style.color = 'red';
-                    messageDiv.textContent = data.detail || 'Something went wrong';
-                }
-            } catch (error) {
+                setTimeout(() => {
+                    window.location.href = "/login";  // optional redirect
+                }, 1500);
+
+            } else {
                 messageDiv.style.color = 'red';
-                messageDiv.textContent = 'Network error';
+                messageDiv.textContent = data.detail || 'Something went wrong';
             }
-        });
-    </script>
+
+        } catch (error) {
+            messageDiv.style.color = 'red';
+            messageDiv.textContent = 'Network error';
+        }
+    });
+</script>
 </body>
 </html>

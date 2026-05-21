@@ -57,6 +57,7 @@ from .views import (
     DeleteInvitationView,
     WorkerBlockToggleView,
     AcceptedInvitationListView,
+    BlockedWorkerListView
 )
 from .views import accept_invite_page
 
@@ -67,12 +68,9 @@ urlpatterns = [
     path("cancel/<int:invitation_id>/", CancelInvitationView.as_view(), name="cancel-invitation"),
     path("delete/<int:invitation_id>/", DeleteInvitationView.as_view(), name="delete-invitation"),
     # invitations/urls.py
-    path(
-        "accept-invite/<uuid:token>/",
-        AcceptInvitationView.as_view(),
-        name="accept-invite-api"
-    ),
+    path("accept-invite/<uuid:token>/",AcceptInvitationView.as_view(),name="accept-invite-api"),
 
     path("workers/<int:worker_id>/block-toggle/", WorkerBlockToggleView.as_view(), name="worker-block-toggle"),
     path("invitations/accepted/", AcceptedInvitationListView.as_view(), name="accepted-invitations"),
+    path("blocked-list/", BlockedWorkerListView.as_view(), name="blocked-workers"),
 ]

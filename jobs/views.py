@@ -51,55 +51,133 @@ def job_created(sender, instance, created, **kwargs):
 
 
 
+# class UpcomingJobsListView(generics.ListAPIView):
+#     serializer_class = JobSerializer
+#     permission_classes = [permissions.IsAuthenticated]
+
+#     def get_queryset(self):
+#         landscaper_profile = getattr(
+#             self.request.user,
+#             "landscaper_profile",
+#             None
+#         )
+
+#         if not landscaper_profile:
+#             return Job.objects.none()
+
+#         today = now().date()
+
+#         # ✅ AUTO MARK PAST JOBS AS MISSED
+#         Job.objects.filter(
+#             landscaper=landscaper_profile,
+#             status=Job.Status.UPCOMING,
+#             scheduled_date__lt=today
+#         ).update(status=Job.Status.MISSED)
+
+#         queryset = Job.objects.filter(
+#             landscaper=landscaper_profile,
+#             status=Job.Status.UPCOMING,
+#             is_active=True,
+#             scheduled_date__gte=today
+#         )
+
+#         # filters
+#         selected_date = self.request.query_params.get("date")
+#         today_flag = self.request.query_params.get("today")
+
+#         if selected_date:
+#             queryset = queryset.filter(
+#                 scheduled_date=selected_date
+#             )
+
+#         elif today_flag == "true":
+#             queryset = queryset.filter(
+#                 scheduled_date=today
+#             )
+
+#         return queryset.order_by(
+#             "scheduled_date",
+#             "scheduled_time"
+#         )
+
+#     def get_queryset(self):
+#         landscaper_profile = getattr(
+#             self.request.user,
+#             "landscaper_profile",
+#             None
+#         )
+
+#         if not landscaper_profile:
+#             return Job.objects.none()
+
+#         today = now().date()
+
+#         # 1. UPDATE ALL JOB STATUSES FIRST (must run BEFORE filtering)
+#         jobs = Job.objects.filter(
+#             landscaper=landscaper_profile,
+#             is_active=True
+#         ).prefetch_related("items", "images")
+
+#         for job in jobs:
+#             job.update_status_from_items(save=True)
+
+#         # 2. MARK MISSED JOBS
+#         Job.objects.filter(
+#             landscaper=landscaper_profile,
+#             status=Job.Status.UPCOMING,
+#             scheduled_date__lt=today
+#         ).update(status=Job.Status.MISSED)
+
+#         # 3. NOW BUILD FINAL QUERYSET
+#         queryset = Job.objects.filter(
+#             landscaper=landscaper_profile,
+#             status=Job.Status.IN_PROGRESS,
+#             is_active=True
+#         )
+
+#         # filters
+#         selected_date = self.request.query_params.get("date")
+#         today_flag = self.request.query_params.get("today")
+
+#         if selected_date:
+#             queryset = queryset.filter(scheduled_date=selected_date)
+
+#         elif today_flag == "true":
+#             queryset = queryset.filter(scheduled_date=today)
+
+#         return queryset.order_by("scheduled_date", "scheduled_time")
+
 class UpcomingJobsListView(generics.ListAPIView):
     serializer_class = JobSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        landscaper_profile = getattr(
-            self.request.user,
-            "landscaper_profile",
-            None
-        )
-
-        if not landscaper_profile:
+        landscaper = getattr(self.request.user, "landscaper_profile", None)
+        if not landscaper:
             return Job.objects.none()
 
         today = now().date()
 
-        # ✅ AUTO MARK PAST JOBS AS MISSED
-        Job.objects.filter(
-            landscaper=landscaper_profile,
-            status=Job.Status.UPCOMING,
-            scheduled_date__lt=today
-        ).update(status=Job.Status.MISSED)
+        jobs = Job.objects.filter(
+            landscaper=landscaper,
+            is_active=True
+        ).prefetch_related("items", "images")
 
+        for job in jobs:
+            job.sync_status(save=True)
+
+        # now filter UPCOMING ONLY
         queryset = Job.objects.filter(
-            landscaper=landscaper_profile,
+            landscaper=landscaper,
             status=Job.Status.UPCOMING,
-            is_active=True,
-            scheduled_date__gte=today
+            is_active=True
         )
 
-        # filters
-        selected_date = self.request.query_params.get("date")
-        today_flag = self.request.query_params.get("today")
+        date = self.request.query_params.get("date")
+        if date:
+            queryset = queryset.filter(scheduled_date=date)
 
-        if selected_date:
-            queryset = queryset.filter(
-                scheduled_date=selected_date
-            )
-
-        elif today_flag == "true":
-            queryset = queryset.filter(
-                scheduled_date=today
-            )
-
-        return queryset.order_by(
-            "scheduled_date",
-            "scheduled_time"
-        )
-
+        return queryset.order_by("scheduled_date", "scheduled_time")
 
 class ClientUpcomingJobsListView(generics.ListAPIView):
     serializer_class = JobSerializer
@@ -197,6 +275,8 @@ class JobDetailView(generics.RetrieveAPIView):
 
 
 # --- In Progress Job List ---
+from django.db.models import Q
+
 class InProgressJobsListView(generics.ListAPIView):
     serializer_class = JobSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -207,33 +287,35 @@ class InProgressJobsListView(generics.ListAPIView):
         landscaper = getattr(user, "landscaper_profile", None)
         client = getattr(user, "clientprofile", None)
 
-        # -------------------------
-        # LANDSCAPER VIEW
-        # -------------------------
+        qs = Job.objects.filter(
+            is_active=True
+        ).select_related(
+            "client",
+            "landscaper",
+            "booking"
+        ).prefetch_related(
+            "items",
+            "images",
+            "reschedules"
+        )
+
+        # filter by role
         if landscaper:
-            return Job.objects.filter(
-                landscaper=landscaper,
-                status=Job.Status.IN_PROGRESS,
-                is_active=True
-            ).order_by("scheduled_date", "scheduled_time")
+            qs = qs.filter(landscaper=landscaper)
+        elif client:
+            qs = qs.filter(client=client)
+        else:
+            return Job.objects.none()
 
-        # -------------------------
-        # CLIENT VIEW
-        # -------------------------
-        if client:
-            return Job.objects.filter(
-                client=client,
-                status=Job.Status.IN_PROGRESS,
-                is_active=True
-            ).order_by("scheduled_date", "scheduled_time")
+        # ✅ IMPORTANT: ensure status is up to date
+        for job in qs:
+            job.sync_status(save=True)
 
-        # -------------------------
-        # NO PROFILE
-        # -------------------------
-        return Job.objects.none()
-
-
-
+        # now return ONLY in_progress
+        return qs.filter(status=Job.Status.IN_PROGRESS).order_by(
+            "-scheduled_date",
+            "-scheduled_time"
+        )
 # --- In Progress Job Detail ---
 class InProgressJobDetailView(generics.RetrieveAPIView):
     serializer_class = JobSerializer
@@ -255,22 +337,6 @@ class InProgressJobDetailView(generics.RetrieveAPIView):
 
 
 
-
-# completd jobs list
-# class CompletedJobsListView(generics.ListAPIView):
-#     serializer_class = CompletedJobSerializer
-#     permission_classes = [permissions.IsAuthenticated]
-
-#     def get_queryset(self):
-#         landscaper = getattr(self.request.user, "landscaper_profile", None)
-#         if not landscaper:
-#             return Job.objects.none()
-
-#         return Job.objects.filter(
-#             landscaper=landscaper,
-#             status=Job.Status.COMPLETED,
-#             is_active=True
-#         ).order_by("-completed_at", "-updated_at")
 
 
 
@@ -384,6 +450,50 @@ def toggle_job_item_completion(request, item_id):
 #         serializer.save(uploaded_by=self.request.user)
 
 
+# class JobImageCreateView(generics.CreateAPIView):
+#     serializer_class = JobImageSerializer
+#     permission_classes = [permissions.IsAuthenticated]
+#     parser_classes = [MultiPartParser, FormParser]
+
+#     def perform_create(self, serializer):
+
+#         landscaper = getattr(self.request.user, "landscaper_profile", None)
+
+#         if not landscaper:
+#             raise serializers.ValidationError({
+#                 "error": "Landscaper profile not found."
+#             })
+
+#         # ✅ FIX: get job from request.data (NOT serializer)
+#         job_id = self.request.data.get("job")
+
+#         if not job_id:
+#             raise serializers.ValidationError({
+#                 "error": "Job is required."
+#             })
+
+#         try:
+#             job = Job.objects.get(id=job_id)
+#         except Job.DoesNotExist:
+#             raise serializers.ValidationError({
+#                 "error": "Job not found."
+#             })
+
+#         if job.landscaper != landscaper:
+#             raise serializers.ValidationError({
+#                 "error": "You cannot upload images for this job."
+#             })
+
+#         if job.status != Job.Status.COMPLETED:
+#             raise serializers.ValidationError({
+#                 "error": "Images can only be uploaded after job completion."
+#             })
+
+#         serializer.save(
+#             job=job,
+#             uploaded_by=self.request.user
+#         )
+
 class JobImageCreateView(generics.CreateAPIView):
     serializer_class = JobImageSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -398,7 +508,6 @@ class JobImageCreateView(generics.CreateAPIView):
                 "error": "Landscaper profile not found."
             })
 
-        # ✅ FIX: get job from request.data (NOT serializer)
         job_id = self.request.data.get("job")
 
         if not job_id:
@@ -418,16 +527,18 @@ class JobImageCreateView(generics.CreateAPIView):
                 "error": "You cannot upload images for this job."
             })
 
-        if job.status != Job.Status.COMPLETED:
+        # ✅ FIXED RULE (IMPORTANT)
+        # allow only after work starts
+        if job.status == Job.Status.UPCOMING:
             raise serializers.ValidationError({
-                "error": "Images can only be uploaded after job completion."
+                "error": "Images cannot be uploaded before job starts."
             })
 
         serializer.save(
             job=job,
             uploaded_by=self.request.user
         )
-
+        
 # --- Add Job Reschedule ---
 class JobRescheduleCreateView(generics.CreateAPIView):
     serializer_class = JobRescheduleSerializer
@@ -471,31 +582,82 @@ class JobRescheduleCreateView(generics.CreateAPIView):
 
 
 # --- Add or Update Note to Job ---
+# @api_view(["PATCH"])
+# @permission_classes([permissions.IsAuthenticated])
+# def add_job_note(request, job_id):
+#     landscaper = getattr(request.user, "landscaper_profile", None)
+#     if not landscaper:
+#         return Response({"error": "Landscaper profile not found."}, status=status.HTTP_403_FORBIDDEN)
+
+#     try:
+#         job = Job.objects.get(id=job_id, landscaper=landscaper)
+#     except Job.DoesNotExist:
+#         return Response({"error": "Job not found."}, status=status.HTTP_404_NOT_FOUND)
+
+#     note = request.data.get("note", None)
+#     if note is None:
+#         return Response({"error": "Note field is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+#     job.note = note
+#     job.save(update_fields=["note", "updated_at"])
+
+#     return Response({
+#         "message": "Note updated successfully.",
+#         "note": job.note
+#     }, status=status.HTTP_200_OK)
 @api_view(["PATCH"])
 @permission_classes([permissions.IsAuthenticated])
 def add_job_note(request, job_id):
-    landscaper = getattr(request.user, "landscaper_profile", None)
-    if not landscaper:
-        return Response({"error": "Landscaper profile not found."}, status=status.HTTP_403_FORBIDDEN)
+    user = request.user
+
+    landscaper = getattr(user, "landscaper_profile", None)
+    client = getattr(user, "clientprofile", None)
 
     try:
-        job = Job.objects.get(id=job_id, landscaper=landscaper)
+        job = Job.objects.get(id=job_id)
     except Job.DoesNotExist:
-        return Response({"error": "Job not found."}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"error": "Job not found"}, status=404)
 
+    # permission check
+    if landscaper and job.landscaper != landscaper:
+        return Response({"error": "Not allowed"}, status=403)
+
+    if client and job.client != client:
+        return Response({"error": "Not allowed"}, status=403)
+
+    action = request.data.get("action", None)
     note = request.data.get("note", None)
-    if note is None:
-        return Response({"error": "Note field is required."}, status=status.HTTP_400_BAD_REQUEST)
 
-    job.note = note
-    job.save(update_fields=["note", "updated_at"])
+    # =========================
+    # STATUS UPDATE (OPTIONAL)
+    # =========================
+    if action:
+        if action == "cancel":
+            job.status = Job.Status.CANCELLED
+
+        elif action == "skip":
+            job.status = Job.Status.SKIPPED
+
+        elif action == "reschedule":
+            job.status = Job.Status.RESCHEDULED
+
+        else:
+            return Response({"error": "Invalid action"}, status=400)
+
+    # =========================
+    # NOTE (ALWAYS ALLOWED)
+    # =========================
+    if note is not None:
+        job.note = note
+
+    job.save(update_fields=["status", "note", "updated_at"])
 
     return Response({
-        "message": "Note updated successfully.",
+        "message": "Job updated successfully",
+        "job_id": job.id,
+        "status": job.status,
         "note": job.note
-    }, status=status.HTTP_200_OK)
-
-
+    }, status=200)
 
 
 @api_view(["PATCH"])
@@ -556,6 +718,11 @@ def update_job_status(request, job_id):
         "job_id": job.id
     })
 
+
+from django.utils import timezone
+from django.db.models import Q
+from rest_framework import generics, permissions
+
 class ProblemJobsListView(generics.ListAPIView):
     serializer_class = JobSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -566,14 +733,17 @@ class ProblemJobsListView(generics.ListAPIView):
         landscaper = getattr(user, "landscaper_profile", None)
         client = getattr(user, "clientprofile", None)
 
-        qs = Job.objects.filter(
-            status__in=[
+        today = timezone.now().date()
+
+        base_qs = Job.objects.filter(is_active=True)
+
+        qs = base_qs.filter(
+            Q(status__in=[
                 Job.Status.CANCELLED,
-                Job.Status.SKIPPED,
-                Job.Status.MISSED
-            ],
-            is_active=True
-        )
+                Job.Status.SKIPPED
+            ]) |
+            Q(scheduled_date__lt=today)
+        ).exclude(status=Job.Status.COMPLETED)
 
         if landscaper:
             qs = qs.filter(landscaper=landscaper)
@@ -583,7 +753,6 @@ class ProblemJobsListView(generics.ListAPIView):
             return Job.objects.none()
 
         return qs.order_by("-updated_at")
-
 
 # manual job created
 class ManualOneTimeJobCreateView(generics.CreateAPIView):

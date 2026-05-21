@@ -9,6 +9,7 @@ from decimal import Decimal
 from rest_framework import serializers
 from bookings.models import BookingRequestItem
 from landscapers.models import Service, Addon
+from property.models import Property
 from property.serializers import PropertySerializer
 
 
@@ -86,6 +87,11 @@ class BookingRequestSerializer(serializers.ModelSerializer):
     booking_items = BookingRequestItemSerializer(source="items", many=True, read_only=True)
     client_name = serializers.SerializerMethodField()
     property = PropertySerializer(read_only=True)
+    property_id = serializers.PrimaryKeyRelatedField(
+        queryset=Property.objects.all(),
+        source="property",
+        write_only=True
+    )
     
 
     class Meta:
@@ -95,7 +101,7 @@ class BookingRequestSerializer(serializers.ModelSerializer):
             "client",
             "client_name", 
             "property",
-            # "property_name", 
+            "property_id", 
             "service",
             "description",
             "booking_type",

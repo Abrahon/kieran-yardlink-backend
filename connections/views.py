@@ -261,12 +261,13 @@ class RespondConnectionRequestAPIView(APIView):
         # -------------------------
         # Profiles
         # -------------------------
-        client_profile = ClientProfile.objects.filter(user=client_user).first()
+        # client_profile = ClientProfile.objects.filter(user=client_user).first()
         landscaper_business = BusinessProfile.objects.filter(user=landscaper_user).first()
         landscaper_basic = LandscaperProfilies.objects.filter(user=landscaper_user).first()
 
-        if not client_profile:
-            return Response({"detail": "Client profile missing"}, status=400)
+        client_profile, _ = ClientProfile.objects.get_or_create(
+            user=client_user
+        )
 
         if not landscaper_business:
             return Response({"detail": "Business profile missing"}, status=400)

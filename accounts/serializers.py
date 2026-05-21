@@ -366,6 +366,14 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
     average_rating = serializers.SerializerMethodField()
     review_count = serializers.SerializerMethodField()
     last_login = serializers.SerializerMethodField()
+        # ✅ NAME OVERRIDE
+    name = serializers.SerializerMethodField()
+
+    # =========================
+    # ✅ ADD THIS (PLAN INFO)
+    # =========================
+    plan_type = serializers.CharField(source="current_plan_type", read_only=True)
+    plan_expiry = serializers.DateTimeField(source="current_plan_expiry", read_only=True)
 
     # ✅ OVERRIDE NAME HERE
     name = serializers.SerializerMethodField()
@@ -387,6 +395,8 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
 
             "subscription",
             "business_profile",
+            "plan_type",        # ✅ ADD HERE
+            "plan_expiry",  
 
             "total_revenue",
             "total_jobs",

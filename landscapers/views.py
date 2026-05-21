@@ -174,6 +174,7 @@ class GetBusinessProfileView(generics.RetrieveAPIView):
 
 
 
+
 class ServiceListCreateView(generics.ListCreateAPIView):
     serializer_class = ServiceSerializer
     permission_classes = [IsLandscaper]
@@ -184,7 +185,31 @@ class ServiceListCreateView(generics.ListCreateAPIView):
         if not business:
             return Service.objects.none()
 
-        return Service.objects.filter(business=business)
+        queryset = Service.objects.filter(business=business)
+
+        # ✅ SEARCH PARAMS
+        search = self.request.query_params.get("search")
+        min_price = self.request.query_params.get("min_price")
+        max_price = self.request.query_params.get("max_price")
+
+        # =========================
+        # NAME SEARCH
+        # =========================
+        if search:
+            queryset = queryset.filter(
+                Q(name__icontains=search)
+            )
+
+        # =========================
+        # PRICE FILTER
+        # =========================
+        if min_price:
+            queryset = queryset.filter(price__gte=min_price)
+
+        if max_price:
+            queryset = queryset.filter(price__lte=max_price)
+
+        return queryset
 
     def perform_create(self, serializer):
         business = getattr(self.request.user, "landscaper_profile", None)
@@ -317,9 +342,17 @@ class ClientCustomServiceListCreateView(generics.ListCreateAPIView):
                 "property": "Property is required."
             })
 
+        landscaper_id = self.request.data.get("landscaper")
+
+        if not landscaper_id:
+            raise serializers.ValidationError({
+                "landscaper": "Landscaper is required."
+            })
+
         serializer.save(
             client=client,
             property_id=property_id,
+            landscaper_id=landscaper_id,
             status="pending",
             price=None
         )
@@ -676,43 +709,13 @@ def toggle_client_custom_service_active(request, pk):
 
 
 
-# add ons
-
-# class AddonListCreateView(generics.ListCreateAPIView):
-#     serializer_class = AddonSerializer
-#     permission_classes = [permissions.IsAuthenticated]
-
-#     def get_queryset(self):
-#         try:
-#             business = self.request.user.landscaper_profile  # ✅ matches related_name
-#             return Addon.objects.filter(business=business)
-#         except ObjectDoesNotExist:
-#             return Addon.objects.none()
-
-#     def perform_create(self, serializer):
-#         try:
-#             business = self.request.user.landscaper_profile
-#         except ObjectDoesNotExist:
-#             raise serializers.ValidationError(
-#                 {"error": "Landscaper profile not found."}
-#             )
-
-#         serializer.save(business=business)
-
-#     def create(self, request, *args, **kwargs):
-#         response = super().create(request, *args, **kwargs)
-#         return Response(
-#             {
-#                 "message": "Addon created successfully.",
-#                 "data": response.data
-#             },
-#             status=status.HTTP_201_CREATED
-#         )
 
 from rest_framework import generics, permissions, serializers
 from django.db import IntegrityError
 from landscapers.models import Addon, BusinessProfile
 from landscapers.serializers import AddonSerializer
+from django.db import transaction
+from rest_framework import generics, permissions, status
 
 class AddonListCreateView(generics.ListCreateAPIView):
     serializer_class = AddonSerializer
@@ -917,16 +920,12 @@ class LandscaperFind(generics.ListAPIView):
 #             status=status.HTTP_201_CREATED
 #         )
 
-from django.db import transaction
-from rest_framework import generics, permissions, status
+
 
 
 class WorkingHoursListCreateView(generics.ListCreateAPIView):
     serializer_class = WorkingHoursSerializer
-    permission_classes = [
-        permissions.IsAuthenticated,
-        IsLandscaper
-    ]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
 
@@ -934,11 +933,19 @@ class WorkingHoursListCreateView(generics.ListCreateAPIView):
             user=self.request.user
         ).first()
 
-        if not profile:
-            return WorkingHours.objects.none()
+        # ===========================
+        # LANDSCAPER VIEW
+        # ===========================
+        if profile:
+            return WorkingHours.objects.filter(
+                landscaper=profile
+            ).order_by("day", "start_time")
 
+        # ===========================
+        # CLIENT VIEW
+        # ===========================
         return WorkingHours.objects.filter(
-            landscaper=profile
+            is_active=True
         ).order_by("day", "start_time")
 
     @transaction.atomic
@@ -1661,42 +1668,65 @@ from .models import ServiceQuote
 from .serializers import ServiceQuoteSerializer
 
 
+# class ServiceQuoteCreateView(generics.CreateAPIView):
+#     serializer_class = ServiceQuoteSerializer
+#     permission_classes = [permissions.IsAuthenticated]
+
+#     def perform_create(self, serializer):
+
+#         client = getattr(self.request.user, "clientprofile", None)
+
+#         if not client:
+#             raise ValidationError({
+#                 "error": "Client profile not found."
+#             })
+
+#         service = serializer.validated_data.get("service")
+
+#         if not service:
+#             raise ValidationError({
+#                 "error": "Service is required."
+#             })
+
+#         serializer.save(
+#             client=client,
+#             landscaper=service.business,
+#             status=ServiceQuote.Status.PENDING
+#         )
+
+#     def create(self, request, *args, **kwargs):
+#         try:
+#             return super().create(request, *args, **kwargs)
+
+#         except ValidationError as e:
+#             return Response(
+#                 {"success": False, "errors": e.detail},
+#                 status=status.HTTP_400_BAD_REQUEST
+#             )
+
+# views.py
+
 class ServiceQuoteCreateView(generics.CreateAPIView):
     serializer_class = ServiceQuoteSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-    def perform_create(self, serializer):
+    def create(self, request, *args, **kwargs):
 
-        client = getattr(self.request.user, "clientprofile", None)
-
-        if not client:
-            raise ValidationError({
-                "error": "Client profile not found."
-            })
-
-        service = serializer.validated_data.get("service")
-
-        if not service:
-            raise ValidationError({
-                "error": "Service is required."
-            })
-
-        serializer.save(
-            client=client,
-            landscaper=service.business,
-            status=ServiceQuote.Status.PENDING
+        serializer = self.get_serializer(
+            data=request.data,
+            context={"request": request}
         )
 
-    def create(self, request, *args, **kwargs):
-        try:
-            return super().create(request, *args, **kwargs)
+        serializer.is_valid(raise_exception=True)
 
-        except ValidationError as e:
-            return Response(
-                {"success": False, "errors": e.detail},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-    
+        quote = serializer.save()
+
+        return Response(
+            ServiceQuoteSerializer(quote).data,
+            status=status.HTTP_201_CREATED
+        )
+
+
 class ServiceQuoteCounterView(generics.UpdateAPIView):
     serializer_class = ServiceQuoteSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -1705,28 +1735,48 @@ class ServiceQuoteCounterView(generics.UpdateAPIView):
     def update(self, request, *args, **kwargs):
 
         quote = self.get_object()
+
         landscaper = getattr(request.user, "landscaper_profile", None)
 
         if not landscaper:
-            return Response({"error": "Landscaper profile not found"}, status=400)
+            return Response(
+                {"error": "Landscaper profile not found"},
+                status=400
+            )
 
         if quote.landscaper != landscaper:
-            return Response({"error": "Not allowed"}, status=403)
+            return Response(
+                {"error": "Not allowed"},
+                status=403
+            )
 
         if quote.status not in [
             ServiceQuote.Status.PENDING,
             ServiceQuote.Status.COUNTERED
         ]:
-            return Response({"error": "Cannot counter this quote"}, status=400)
+            return Response(
+                {"error": "Cannot counter this quote"},
+                status=400
+            )
 
         counter_price = request.data.get("counter_price")
 
         if not counter_price:
-            return Response({"error": "counter_price is required"}, status=400)
+            return Response(
+                {"error": "counter_price is required"},
+                status=400
+            )
 
-        quote.counter_price = counter_price
+        # ✅ FIX HERE
+        quote.price = counter_price
+
         quote.status = ServiceQuote.Status.COUNTERED
-        quote.save()
+
+        quote.save(update_fields=[
+            "price",
+            "status",
+            "updated_at"
+        ])
 
         return Response({
             "message": "Quote countered successfully",
@@ -1736,37 +1786,47 @@ class ServiceQuoteCounterView(generics.UpdateAPIView):
 
 
 
-
-
 class ClientCounterOfferListView(generics.ListAPIView):
     serializer_class = ServiceQuoteSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        client = getattr(self.request.user, "clientprofile", None)
 
-        if not client:
-            return ServiceQuote.objects.none()
+        user = self.request.user
 
-        return (
-            ServiceQuote.objects.filter(
-                client=client,
+        # -------------------------
+        # CLIENT VIEW
+        # -------------------------
+        if hasattr(user, "clientprofile"):
+            return ServiceQuote.objects.filter(
+                client=user.clientprofile,
                 status__in=[
                     ServiceQuote.Status.PENDING,
                     ServiceQuote.Status.COUNTERED
                 ]
-            )
-            .select_related(
+            ).select_related(
                 "service",
                 "landscaper",
                 "property"
-            )
-            .order_by("-updated_at")
-        )
+            ).order_by("-updated_at")
 
+        # -------------------------
+        # LANDSCAPER VIEW
+        # -------------------------
+        if hasattr(user, "landscaper_profile"):
+            return ServiceQuote.objects.filter(
+                landscaper=user.landscaper_profile,
+                status__in=[
+                    ServiceQuote.Status.PENDING,
+                    ServiceQuote.Status.COUNTERED
+                ]
+            ).select_related(
+                "service",
+                "client",
+                "property"
+            ).order_by("-updated_at")
 
-
-
+        return ServiceQuote.objects.none()
 
 
 def get_final_price(quote):
@@ -1863,16 +1923,32 @@ class ServiceQuoteListForLandscaper(generics.ListAPIView):
 
     def get_queryset(self):
 
-        landscaper = getattr(self.request.user, "landscaper_profile", None)
+        user = self.request.user
 
-        if not landscaper:
-            raise PermissionDenied("Landscaper profile not found.")
+        # -------------------------
+        # CLIENT VIEW
+        # -------------------------
+        if hasattr(user, "clientprofile"):
+            return ServiceQuote.objects.filter(
+                client=user.clientprofile
+            ).select_related(
+                "client",
+                "landscaper",
+                "service",
+                "property"
+            ).order_by("-created_at")
 
-        return ServiceQuote.objects.filter(
-            landscaper=landscaper
-        ).select_related(
-            "client",
-            "landscaper",
-            "service",
-            "property"
-        ).order_by("-created_at")
+        # -------------------------
+        # LANDSCAPER VIEW
+        # -------------------------
+        if hasattr(user, "landscaper_profile"):
+            return ServiceQuote.objects.filter(
+                landscaper=user.landscaper_profile
+            ).select_related(
+                "client",
+                "landscaper",
+                "service",
+                "property"
+            ).order_by("-created_at")
+
+        raise PermissionDenied("No valid profile found.")

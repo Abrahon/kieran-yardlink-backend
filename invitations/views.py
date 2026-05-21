@@ -34,7 +34,8 @@ class SendInvitationView(CreateAPIView):
             email=email
         )
 
-        invite_link = f"https://zznkjkkp-8000.inc1.devtunnels.ms/{invitation.token}"
+                # ✅ FIXED LINK (points to HTML page)
+        invite_link = f"/invitations/accept/{invitation.token}/"
 
         send_mail(
             subject="You're invited to join a landscaper team",
@@ -161,7 +162,6 @@ from invitations.models import TeamInvitation, InvitationStatus
 from accounts.models import User
 from profiles.models import WorkerProfile 
 
-
 class WorkerBlockToggleView(APIView):
     permission_classes = [IsAuthenticated, IsProLandscaper]
 
@@ -174,32 +174,30 @@ class WorkerBlockToggleView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # 🔥 STEP 1: get invitation by ID
+        # 🔥 FIX 1: DO NOT restrict only ACCEPTED
         invitation = TeamInvitation.objects.filter(
             id=worker_id,
-            status=InvitationStatus.ACCEPTED
+            landscaper=request.user.landscaper_profile
         ).first()
 
         if not invitation:
             return Response(
-                {"detail": "Accepted invitation not found"},
+                {"detail": "Invitation not found"},
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        # 🔥 STEP 2: get user by email (IMPORTANT FIX)
         worker_user = User.objects.filter(email=invitation.email).first()
 
         if not worker_user:
             return Response(
-                {"detail": "User not found for this invitation"},
+                {"detail": "User not found"},
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        # 🔥 STEP 3: get worker profile
         worker = WorkerProfile.objects.filter(
             user=worker_user,
             pro_landscaper=request.user.landscaper_profile
-        ).select_related("user").first()
+        ).first()
 
         if not worker:
             return Response(
@@ -213,14 +211,19 @@ class WorkerBlockToggleView(APIView):
         if action == "block":
             worker.is_blocked = True
             worker.user.is_active = False
+            invitation.status = InvitationStatus.BLOCKED
             message = "Worker blocked successfully"
+
         else:
             worker.is_blocked = False
             worker.user.is_active = True
+            invitation.status = InvitationStatus.ACCEPTED
             message = "Worker unblocked successfully"
 
+        # 🔥 SAVE EVERYTHING (VERY IMPORTANT FIX)
         worker.user.save(update_fields=["is_active"])
         worker.save(update_fields=["is_blocked"])
+        invitation.save(update_fields=["status"])
 
         return Response(
             {"detail": message},
@@ -234,20 +237,10 @@ class AcceptedInvitationListView(ListAPIView):
     def get_queryset(self):
         return TeamInvitation.objects.filter(
             landscaper=self.request.user.landscaper_profile,
-            status="accepted"
+            status=InvitationStatus.ACCEPTED,
+        ).exclude(
+            email__in=WorkerProfile.objects.filter(is_blocked=True).values("user__email")
         )
-
-# # invitations/views.py
-# class AcceptedWorkerListView(ListAPIView):
-#     permission_classes = [IsAuthenticated, IsProLandscaper]
-#     serializer_class = WorkerProfileSerializer
-
-#     def get_queryset(self):
-#         return WorkerProfile.objects.filter(
-#             pro_landscaper=self.request.user.landscaper_profile
-#         ).select_related("user")
-# invitations/views.py
-
 
 def accept_invite_page(request, token):
     invitation = get_object_or_404(
@@ -259,78 +252,14 @@ def accept_invite_page(request, token):
 
 
 
-# invitations/views.py
 
-# from landscapers.models import BusinessEmployee, EmployeePermission
+class BlockedWorkerListView(ListAPIView):
+    permission_classes = [IsAuthenticated, IsProLandscaper]
+    serializer_class = InvitationListSerializer
 
-# # =========================
-# # ACCEPT INVITATION
-# # =========================
-# class AcceptInvitationView(APIView):
-#     permission_classes = [AllowAny]
+    def get_queryset(self):
+        return TeamInvitation.objects.filter(
+            landscaper=self.request.user.landscaper_profile,
+            status=InvitationStatus.BLOCKED
+        )
 
-#     def post(self, request, token):
-#         invitation = TeamInvitation.objects.filter(
-#             token=token,
-#             status="pending"
-#         ).select_related("landscaper").first()
-
-#         if not invitation or invitation.is_expired():
-#             return Response(
-#                 {"detail": "Invitation invalid or expired"},
-#                 status=status.HTTP_400_BAD_REQUEST
-#             )
-
-#         serializer = AcceptInvitationSerializer(data=request.data)
-#         serializer.is_valid(raise_exception=True)
-
-#         # 1️⃣ Create or get user
-#         user, created = User.objects.get_or_create(
-#             email=invitation.email,
-#             defaults={
-#                 "name": serializer.validated_data["name"],
-#                 "role": "worker",
-#                 "is_active": True
-#             }
-#         )
-
-#         user.set_password(serializer.validated_data["password"])
-#         user.save()
-
-#         # 2️⃣ Create / Update Worker Profile
-#         WorkerProfile.objects.update_or_create(
-#             user=user,
-#             defaults={
-#                 "name": serializer.validated_data["name"],
-#                 "pro_landscaper": invitation.landscaper,
-#             }
-#         )
-
-#         # 3️⃣ Create BusinessEmployee
-#         employee, emp_created = BusinessEmployee.objects.get_or_create(
-#             landscaper=invitation.landscaper,
-#             user=user,
-#             defaults={
-#                 "is_active": True
-#             }
-#         )
-
-#         # 4️⃣ Create Default Permissions (only if employee newly created)
-#         if emp_created:
-#             EmployeePermission.objects.create(
-#                 employee=employee,
-#                 can_access_calendar=True,
-#                 can_manage_services=False,
-#                 can_manage_business_profile=False,
-#                 can_access_messages=True
-#             )
-
-#         # 5️⃣ Mark invitation accepted
-#         invitation.status = "accepted"
-#         invitation.accepted_at = timezone.now()
-#         invitation.save()
-
-#         return Response(
-#             {"detail": "Invitation accepted successfully"},
-#             status=status.HTTP_200_OK
-        # )

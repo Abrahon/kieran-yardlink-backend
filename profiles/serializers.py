@@ -26,7 +26,7 @@ from subscriptions.enums import SubscriptionStatus
 from geopy.geocoders import Nominatim
 from django.utils import timezone
 from invitations.models import TeamInvitation, InvitationStatus
-
+from django.utils import timezone
 from rest_framework import serializers
 from django.db.models import Avg
 from geopy.geocoders import Nominatim
@@ -107,6 +107,7 @@ class LandscaperPersonalProfileSerializer(serializers.ModelSerializer):
 
     business_name = serializers.SerializerMethodField()
     address = serializers.SerializerMethodField()
+    subscription = serializers.SerializerMethodField()
 
     class Meta:
         model = LandscaperProfilies
@@ -117,9 +118,42 @@ class LandscaperPersonalProfileSerializer(serializers.ModelSerializer):
             "profile_image",
             "business_name",
             "address",
+            "subscription",
         ]
 
-    # -------------------------
+
+    def get_subscription(self, obj):
+        user = getattr(obj, "user", obj)
+
+        sub_qs = Subscription.objects.filter(user=user)
+
+        active_sub = sub_qs.filter(
+            status__in=["active", "trialing"]
+        ).order_by("-end_date").first()
+
+        if not active_sub:
+            return {
+                "plan_type": None,
+                "start_date": None,
+                "end_date": None,
+                "remaining_days": 0,
+                "is_trial": False
+            }
+
+        now = timezone.now()
+
+        remaining_days = 0
+        if active_sub.end_date:
+            remaining_days = max(0, (active_sub.end_date - now).days)
+
+        return {
+            "plan_type": active_sub.plan.name if active_sub.plan else None,
+            "start_date": active_sub.start_date,
+            "end_date": active_sub.end_date,
+            "remaining_days": remaining_days,
+            "is_trial": active_sub.status == "trialing"
+        }
+        # -------------------------
     # UPDATE
     # -------------------------
     def update(self, instance, validated_data):
@@ -131,6 +165,7 @@ class LandscaperPersonalProfileSerializer(serializers.ModelSerializer):
 
         instance.save()
         return instance
+    
 
     # -------------------------
     # IMAGE FIX
@@ -168,7 +203,6 @@ class LandscaperPersonalProfileSerializer(serializers.ModelSerializer):
             "business_latitude": bp.latitude if bp else None,
             "business_longitude": bp.longitude if bp else None,
         }
-
 
 
 

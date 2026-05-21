@@ -5,6 +5,19 @@ from accounts.models import User
 from landscapers.models import BusinessProfile
 from services.models import ClientService
 
+# updated booking request
+from django.db import models
+from django.conf import settings
+from django.core.validators import MinValueValidator
+from django.utils import timezone
+from decimal import Decimal
+from django.core.exceptions import ValidationError  # NEW
+
+# Forward references to your existing models
+from landscapers.models import Service, Addon, BusinessProfile
+from profiles.models import ClientProfile
+from property.models import Property
+
 
 class BookingStatus(models.TextChoices):
     REQUESTED = "requested", "Requested"
@@ -80,18 +93,6 @@ class ServiceBooking(models.Model):
             else:
                 self.save(update_fields=["status", "completed_at"])
 
-# updated booking request
-from django.db import models
-from django.conf import settings
-from django.core.validators import MinValueValidator
-from django.utils import timezone
-from decimal import Decimal
-from django.core.exceptions import ValidationError  # NEW
-
-# Forward references to your existing models
-from landscapers.models import Service, Addon, BusinessProfile
-from profiles.models import ClientProfile
-from property.models import Property
 
 
 class BookingRequest(models.Model):

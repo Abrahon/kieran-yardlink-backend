@@ -11,6 +11,7 @@ class InvitationStatus(models.TextChoices):
     PENDING = "pending", "Pending"
     ACCEPTED = "accepted", "Accepted"
     EXPIRED = "expired", "Expired"
+    BLOCKED = "blocked", "Blocked"
 
 
 class TeamInvitation(models.Model):

@@ -301,11 +301,17 @@ class LandscaperProfileMiniSerializer(serializers.ModelSerializer):
 # -------------------------
 # MAIN SERIALIZER
 # -------------------------
+
 class ClientCustomServiceSerializer(serializers.ModelSerializer):
 
     client = ClientProfileMiniSerializer(read_only=True)
-    landscaper = serializers.SerializerMethodField()
+
+    landscaper = serializers.PrimaryKeyRelatedField(
+        queryset=BusinessProfile.objects.all()
+    )
+
     property = PropertySerializer(read_only=True)
+
     booking_id = serializers.ReadOnlyField(source="booking.id")
 
     class Meta:
@@ -333,70 +339,6 @@ class ClientCustomServiceSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at"
         ]
-
-        read_only_fields = [
-            "id",
-            "client",
-            "booking_id",
-            "created_at",
-            "updated_at",
-        ]
-
-    def get_landscaper(self, obj):
-        try:
-            user = obj.landscaper.user
-
-            return {
-                "id": obj.landscaper.id,
-                "name": getattr(user, "name", None) or getattr(user, "email", None),
-                "email": getattr(user, "email", None),
-            }
-        except Exception:
-            return None
-    # -------------------------
-    # VALIDATION (FIXED)
-    # -------------------------
-    def validate(self, attrs):
-        recurring_type = attrs.get("recurring_type")
-        recurring_day_of_week = attrs.get("recurring_day_of_week")
-        preferred_date = attrs.get("preferred_date")
-        preferred_time = attrs.get("preferred_time")
-
-        # -------------------------
-        # ONE-TIME SERVICE
-        # -------------------------
-        if not recurring_type:
-
-            if recurring_day_of_week:
-                raise serializers.ValidationError(
-                    "One-time service cannot have day of week."
-                )
-
-            if not preferred_date or not preferred_time:
-                raise serializers.ValidationError(
-                    "One-time service requires both date and time."
-                )
-
-        # -------------------------
-        # RECURRING SERVICE
-        # -------------------------
-        else:
-
-            if recurring_type not in ["weekly", "biweekly"]:
-                raise serializers.ValidationError("Invalid recurring type.")
-
-            if not recurring_day_of_week:
-                raise serializers.ValidationError(
-                    "Recurring service must include day of week."
-                )
-
-            if not preferred_date:
-                raise serializers.ValidationError(
-                    "Recurring service must include a start date."
-                )
-
-        return attrs
-
 
 
 class AddonSerializer(serializers.ModelSerializer):
@@ -538,9 +480,123 @@ class StandardServiceSerializer(serializers.ModelSerializer):
 
 
 
+# class ServiceQuoteSerializer(serializers.ModelSerializer):
+
+#     client = ClientProfileMiniSerializer(read_only=True)
+#     landscaper = serializers.SerializerMethodField()
+#         # -------------------------
+#     # FIX: allow property input
+#     # -------------------------
+#     property_id = serializers.PrimaryKeyRelatedField(
+#         queryset=Property.objects.all(),
+#         source="property",
+#         write_only=True
+#     )
+
+#     class Meta:
+#         model = ServiceQuote
+
+#         fields = [
+#             "id",
+#             "service",
+#             "client",
+#             "landscaper",
+#             "property",
+#             "property_id",
+#             "message",
+#             "preferred_date",
+#             "preferred_time",
+#             "scheduled_date",
+#             "scheduled_time",
+#             "price",
+#             "status",
+#             "created_at",
+#             "updated_at",
+#         ]
+
+#         read_only_fields = [
+#             "id",
+#             "client",
+#             "price", 
+#             "landscaper",
+#             "created_at",
+#             "updated_at",
+#         ]
+
+#     def get_landscaper(self, obj):
+#         landscaper = obj.landscaper
+
+#         if not landscaper:
+#             return None
+
+#         profile = getattr(landscaper, "landscaperprofilies", None)
+#         return {
+#             "id": landscaper.id,
+#             "name": getattr(profile, "name", None),
+#             "email": landscaper.user.email if landscaper.user else None,
+#             "phone": getattr(profile, "phone", None),
+#             "address": getattr(profile, "address", None),
+#             "profile_image": getattr(profile, "profile_image", None),
+#         }
+
+
+#     def validate(self, data):
+
+#         service = data.get("service")
+
+#         if not service:
+#             raise serializers.ValidationError({
+#                 "service": "Service is required."
+#             })
+
+#         return data
+
+#     def create(self, validated_data):
+#         request = self.context["request"]
+
+#         # FIX THIS LINE
+#         client = getattr(request.user, "clientprofile", None)
+
+#         if not client:
+#             raise serializers.ValidationError("Client profile not found")
+
+#         service = validated_data["service"]
+
+#         validated_data["client"] = client
+#         validated_data["landscaper"] = service.business
+#         validated_data["price"] = None
+
+#         return super().create(validated_data)
+
+# serializers.py
+
+
+
+
 class ServiceQuoteSerializer(serializers.ModelSerializer):
 
     client = ClientProfileMiniSerializer(read_only=True)
+
+    # ✅ FULL SERVICE RESPONSE
+    service = ServiceSerializer(read_only=True)
+
+    # ✅ FULL PROPERTY RESPONSE
+    property = PropertySerializer(read_only=True)
+
+    # ✅ INPUT FIELD
+    property_id = serializers.PrimaryKeyRelatedField(
+        queryset=Property.objects.all(),
+        source="property",
+        write_only=True
+    )
+
+    # ✅ INPUT FIELD
+    service_id = serializers.PrimaryKeyRelatedField(
+        queryset=Service.objects.all(),
+        source="service",
+        write_only=True
+    )
+
     landscaper = serializers.SerializerMethodField()
 
     class Meta:
@@ -548,17 +604,38 @@ class ServiceQuoteSerializer(serializers.ModelSerializer):
 
         fields = [
             "id",
+
+            # SERVICE
             "service",
+            "service_id",
+
+            # CLIENT
             "client",
+
+            # LANDSCAPER
             "landscaper",
+
+            # PROPERTY
             "property",
+            "property_id",
+
+            # MESSAGE
             "message",
+
+            # CLIENT PREFERRED
             "preferred_date",
             "preferred_time",
+
+            # LANDSCAPER CONFIRMED
             "scheduled_date",
             "scheduled_time",
+
+            # PRICE
             "price",
+
+            # STATUS
             "status",
+
             "created_at",
             "updated_at",
         ]
@@ -567,17 +644,25 @@ class ServiceQuoteSerializer(serializers.ModelSerializer):
             "id",
             "client",
             "landscaper",
+            "price",
+            "status",
             "created_at",
             "updated_at",
         ]
 
+    # =====================================
+    # LANDSCAPER INFO
+    # =====================================
+
     def get_landscaper(self, obj):
+
         landscaper = obj.landscaper
 
         if not landscaper:
             return None
 
         profile = getattr(landscaper, "landscaperprofilies", None)
+
         return {
             "id": landscaper.id,
             "name": getattr(profile, "name", None),
@@ -587,6 +672,9 @@ class ServiceQuoteSerializer(serializers.ModelSerializer):
             "profile_image": getattr(profile, "profile_image", None),
         }
 
+    # =====================================
+    # VALIDATION
+    # =====================================
 
     def validate(self, data):
 
@@ -594,22 +682,36 @@ class ServiceQuoteSerializer(serializers.ModelSerializer):
 
         if not service:
             raise serializers.ValidationError({
-                "service": "Service is required."
+                "service_id": "Service is required."
+            })
+
+        if service.pricing_type != Service.PricingType.REQUEST:
+            raise serializers.ValidationError({
+                "service_id": "Quote requests allowed only for request pricing services."
             })
 
         return data
 
+    # =====================================
+    # CREATE
+    # =====================================
+
     def create(self, validated_data):
+
         request = self.context["request"]
 
-        client = getattr(request.user, "client_profile", None)
+        client = getattr(request.user, "clientprofile", None)
 
         if not client:
-            raise serializers.ValidationError("Client profile not found")
+            raise serializers.ValidationError({
+                "error": "Client profile not found."
+            })
 
         service = validated_data["service"]
 
         validated_data["client"] = client
         validated_data["landscaper"] = service.business
+        validated_data["status"] = ServiceQuote.Status.PENDING
+        validated_data["price"] = None
 
-        return super().create(validated_data)
+        return ServiceQuote.objects.create(**validated_data)

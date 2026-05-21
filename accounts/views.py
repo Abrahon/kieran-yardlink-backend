@@ -78,7 +78,6 @@ from .serializers import (
     SendOTPSerializer, VerifyOTPSerializer, ResetPasswordSerializer,VerifyOTPForgetSerializer,UserReportSerializer
 )
 
-
 from datetime import timedelta
 from django.db.models import (
     Q, Count, Sum, FloatField, Value, OuterRef, Subquery, Avg, IntegerField
@@ -214,6 +213,7 @@ from .security_utils import get_client_ip, parse_device
 from django.contrib.auth.models import update_last_login
 # your existing function
 from .views import get_tokens_for_user  
+from subscriptions.models import Subscription
 
 
 class LoginView(generics.GenericAPIView):
@@ -280,6 +280,12 @@ class LoginView(generics.GenericAPIView):
             os=device_info.get("os") or "unknown",
             browser=device_info.get("browser") or "unknown",
         )
+        subscription = Subscription.objects.filter(
+            user=user,
+            is_active=True
+        ).select_related("plan").first()
+
+        plan_type = subscription.plan.name if subscription else None
 
 
         return Response({
@@ -290,6 +296,7 @@ class LoginView(generics.GenericAPIView):
                 "email": user.email,
                 "name": user.name,
                 "role": user.role,
+                "plan_type": plan_type,
                 "phone": getattr(user, "phone", None),
                 "address": getattr(user, "address", None),
                 "last_login":user.last_login,
@@ -658,7 +665,7 @@ class UserListView(APIView):
         # ==========================================================
         revenue_sq = Job.objects.filter(
             landscaper_id=Subquery(business_profile_sq),
-            payment_status=PaymentStatus.PAID  # ✅ FIXED ENUM INSTEAD OF STRING
+            payment_status=PaymentStatus.PAID 
         ).values("landscaper_id").annotate(
             total=Sum("total_price", output_field=FloatField())
         ).values("total")[:1]
@@ -671,6 +678,11 @@ class UserListView(APIView):
         ).values("landscaper_id").annotate(
             total=Count("client_id", distinct=True)
         ).values("total")[:1]
+
+        subscription_sq = Subscription.objects.filter(
+            user_id=OuterRef("pk"),
+            is_active=True
+        ).order_by("-end_date")
 
         # ==========================================================
         # USER ANNOTATION (FIXED RELATION PATHS)
@@ -703,7 +715,14 @@ class UserListView(APIView):
                 default=Value(0),
                 output_field=IntegerField()
             ),
+            current_plan_type=Subquery(
+                subscription_sq.values("plan__name")[:1]
+            ),
 
+            current_plan_expiry=Subquery(
+                subscription_sq.values("end_date")[:1]
+            ),
+            
             # =========================
             # COMPLETED JOBS (ROLE BASED)
             # =========================
@@ -861,6 +880,7 @@ class UserListView(APIView):
         page = paginator.paginate_queryset(users, request)
 
         serializer = AdminUserDetailSerializer(page, many=True, context={"request": request})
+        
 
         return paginator.get_paginated_response({
             "status": "success",
@@ -876,7 +896,7 @@ class UserListView(APIView):
                 "cancelled_subscriptions": cancelled_subscriptions,
                 "expired_subscriptions": expired_subscriptions,
                 "basic_subscriptions": basic_subscriptions,
-                 "pro_subscriptions": pro_subscriptions,
+                "pro_subscriptions": pro_subscriptions,
                 "churn_rate": churn_rate,
                 "platform_fee_collected": platform_fee_collected,
                 "average_rating": round(overall_average_rating, 2) if overall_average_rating else 0.0
