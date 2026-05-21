@@ -49,104 +49,6 @@ def job_created(sender, instance, created, **kwargs):
 
 
 
-
-
-# class UpcomingJobsListView(generics.ListAPIView):
-#     serializer_class = JobSerializer
-#     permission_classes = [permissions.IsAuthenticated]
-
-#     def get_queryset(self):
-#         landscaper_profile = getattr(
-#             self.request.user,
-#             "landscaper_profile",
-#             None
-#         )
-
-#         if not landscaper_profile:
-#             return Job.objects.none()
-
-#         today = now().date()
-
-#         # ✅ AUTO MARK PAST JOBS AS MISSED
-#         Job.objects.filter(
-#             landscaper=landscaper_profile,
-#             status=Job.Status.UPCOMING,
-#             scheduled_date__lt=today
-#         ).update(status=Job.Status.MISSED)
-
-#         queryset = Job.objects.filter(
-#             landscaper=landscaper_profile,
-#             status=Job.Status.UPCOMING,
-#             is_active=True,
-#             scheduled_date__gte=today
-#         )
-
-#         # filters
-#         selected_date = self.request.query_params.get("date")
-#         today_flag = self.request.query_params.get("today")
-
-#         if selected_date:
-#             queryset = queryset.filter(
-#                 scheduled_date=selected_date
-#             )
-
-#         elif today_flag == "true":
-#             queryset = queryset.filter(
-#                 scheduled_date=today
-#             )
-
-#         return queryset.order_by(
-#             "scheduled_date",
-#             "scheduled_time"
-#         )
-
-#     def get_queryset(self):
-#         landscaper_profile = getattr(
-#             self.request.user,
-#             "landscaper_profile",
-#             None
-#         )
-
-#         if not landscaper_profile:
-#             return Job.objects.none()
-
-#         today = now().date()
-
-#         # 1. UPDATE ALL JOB STATUSES FIRST (must run BEFORE filtering)
-#         jobs = Job.objects.filter(
-#             landscaper=landscaper_profile,
-#             is_active=True
-#         ).prefetch_related("items", "images")
-
-#         for job in jobs:
-#             job.update_status_from_items(save=True)
-
-#         # 2. MARK MISSED JOBS
-#         Job.objects.filter(
-#             landscaper=landscaper_profile,
-#             status=Job.Status.UPCOMING,
-#             scheduled_date__lt=today
-#         ).update(status=Job.Status.MISSED)
-
-#         # 3. NOW BUILD FINAL QUERYSET
-#         queryset = Job.objects.filter(
-#             landscaper=landscaper_profile,
-#             status=Job.Status.IN_PROGRESS,
-#             is_active=True
-#         )
-
-#         # filters
-#         selected_date = self.request.query_params.get("date")
-#         today_flag = self.request.query_params.get("today")
-
-#         if selected_date:
-#             queryset = queryset.filter(scheduled_date=selected_date)
-
-#         elif today_flag == "true":
-#             queryset = queryset.filter(scheduled_date=today)
-
-#         return queryset.order_by("scheduled_date", "scheduled_time")
-
 class UpcomingJobsListView(generics.ListAPIView):
     serializer_class = JobSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -178,6 +80,9 @@ class UpcomingJobsListView(generics.ListAPIView):
             queryset = queryset.filter(scheduled_date=date)
 
         return queryset.order_by("scheduled_date", "scheduled_time")
+
+
+        
 
 class ClientUpcomingJobsListView(generics.ListAPIView):
     serializer_class = JobSerializer

@@ -11,6 +11,20 @@ from jobs.models import Job, JobItem, JobImage, JobReschedule
 from rest_framework import serializers
 from profiles.serializers import ClientProfileSerializer,LandscaperProfileSerializer
 from landscapers.serializers import BusinessLandscaperProfileSerializer
+from rest_framework import serializers
+from profiles.serializers import ExternalClientSerializer, ClientProfileSerializer
+from .models import Job
+from property.serializers import PropertySerializer
+from rest_framework import serializers
+from jobs.models import Job, JobImage, JobReschedule
+from profiles.serializers import ClientProfileSerializer
+
+from decimal import Decimal, InvalidOperation
+from rest_framework import serializers
+from profiles.models import ExternalClient
+from jobs.models import Job, JobItem
+
+
 
 
 class JobItemSerializer(serializers.ModelSerializer):
@@ -62,14 +76,78 @@ class JobRescheduleSerializer(serializers.ModelSerializer):
 
 
 
+# class JobSerializer(serializers.ModelSerializer):
+#     total_price = serializers.SerializerMethodField()
+#     booking_price = serializers.SerializerMethodField()
+#     items = serializers.SerializerMethodField()
+#     images = serializers.SerializerMethodField()
+#     reschedules = serializers.SerializerMethodField()
+#     client = ClientProfileSerializer(read_only=True)
+#     landscaper_info = serializers.SerializerMethodField()
+#     job_property = PropertySerializer(read_only=True)
+#     external_client = ExternalClientSerializer(read_only=True)
 
+#     class Meta:
+#         model = Job
+#         fields = [
+#             "id",
+#             "booking",
+#             "client",
+#             "external_client",
+#             "landscaper_info",
+#             "job_property",
+#             "scheduled_date",
+#             "scheduled_time",
+#             "booking_price",
+#             "total_price",
+#             "note",
+#             "status",
+#             "is_active",
+#             "completed_at",
+#             "items",
+#             "images",
+#             "reschedules",
+#         ]
 
-from rest_framework import serializers
-from profiles.serializers import ExternalClientSerializer, ClientProfileSerializer
-from .models import Job
-# import your other serializers too
-# from .serializers or same file:
-# JobItemSerializer, JobImageSerializer, JobRescheduleSerializer
+#     def get_booking_price(self, obj):
+#         if obj.booking and obj.booking.price is not None:
+#             return str(obj.booking.price)
+#         return "0.00"
+
+#     def get_total_price(self, obj):
+#         if obj.total_price is None or obj.total_price == 0:
+#             if obj.booking and obj.booking.price is not None:
+#                 return str(obj.booking.price)
+#             return "0.00"
+#         return str(obj.total_price)
+
+#     def get_landscaper_info(self, obj):
+#         business = obj.landscaper
+#         if not business:
+#             return None
+
+#         user = business.user
+#         personal = getattr(user, "landscaperprofilies", None)
+
+#         return {
+#             "id": business.id,
+#             "name": personal.name if personal else None,
+#             "phone": personal.phone if personal else None,
+#             "image": personal.image.url if personal and personal.image else None,
+#             "business_name": business.business_name,
+#             "business_email": business.business_email,
+#             "business_phone": business.business_phone,
+#         }
+
+#     def get_items(self, obj):
+#         return JobItemSerializer(obj.items.all(), many=True).data
+
+#     def get_images(self, obj):
+#         return JobImageSerializer(obj.images.all(), many=True).data
+
+#     def get_reschedules(self, obj):
+#         return JobRescheduleSerializer(obj.reschedules.all(), many=True).data
+
 
 
 class JobSerializer(serializers.ModelSerializer):
@@ -80,7 +158,10 @@ class JobSerializer(serializers.ModelSerializer):
     reschedules = serializers.SerializerMethodField()
     client = ClientProfileSerializer(read_only=True)
     landscaper_info = serializers.SerializerMethodField()
-    job_property = serializers.StringRelatedField()
+
+    # CHANGED: removed StringRelatedField so we can control output
+    job_property = PropertySerializer(read_only=True)
+
     external_client = ExternalClientSerializer(read_only=True)
 
     class Meta:
@@ -135,6 +216,33 @@ class JobSerializer(serializers.ModelSerializer):
             "business_phone": business.business_phone,
         }
 
+    # =====================================
+    # FIX: ONLY SHOW SELECTED PROPERTY
+    # =====================================
+    def get_client(self, obj):
+        client = obj.client
+        if not client:
+            return None
+
+        return {
+            "id": client.id,
+            "user_id": client.user.id,
+            "email": client.user.email,
+            "name": client.name,
+            "phone": client.phone,
+            "latitude": client.latitude,
+            "longitude": client.longitude,
+            "address": client.address,
+            "image": client.image.url if client.image else None,
+
+            # IMPORTANT FIX:
+            # Only show property linked with THIS JOB
+            "property": (
+                PropertySerializer(obj.job_property).data
+                if obj.job_property else None
+            ),
+        }
+
     def get_items(self, obj):
         return JobItemSerializer(obj.items.all(), many=True).data
 
@@ -146,12 +254,8 @@ class JobSerializer(serializers.ModelSerializer):
 
 
 
+
 # completd job serializers
-from rest_framework import serializers
-from jobs.models import Job, JobImage, JobReschedule
-from profiles.serializers import ClientProfileSerializer
-
-
 class CompletedJobSerializer(serializers.ModelSerializer):
     booking_price = serializers.SerializerMethodField()
     client = ClientProfileSerializer(read_only=True)
@@ -227,10 +331,6 @@ class CompletedJobSerializer(serializers.ModelSerializer):
 
 
 
-from decimal import Decimal, InvalidOperation
-from rest_framework import serializers
-from profiles.models import ExternalClient
-from jobs.models import Job, JobItem
 
 
 class ManualOneTimeJobCreateSerializer(serializers.Serializer):
@@ -345,22 +445,14 @@ class JobItemClientSerializer(serializers.ModelSerializer):
         ]
 
 
-# class JobImageSerializer(serializers.ModelSerializer):
-#     image_url = serializers.SerializerMethodField()
 
-#     class Meta:
-#         model = JobImage
-#         fields = ["id", "image_url", "image_type", "caption"]
-
-#     def get_image_url(self, obj):
-#         return obj.image.url if obj.image else None
 
 
 class ClientJobDetailSerializer(serializers.ModelSerializer):
     completed_items = serializers.SerializerMethodField()
     before_images = serializers.SerializerMethodField()
     after_images = serializers.SerializerMethodField()
-    landscaper_name = serializers.SerializerMethodField()  # ✅ ADD THIS
+    landscaper_name = serializers.SerializerMethodField() 
     stripe_pay_url = serializers.SerializerMethodField()   
 
     class Meta:
@@ -368,7 +460,7 @@ class ClientJobDetailSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "client_name",
-            "landscaper_name",  # ✅ ADD THIS
+            "landscaper_name", 
             "scheduled_date",
             "scheduled_time",
             "status",

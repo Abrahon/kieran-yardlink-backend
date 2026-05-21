@@ -51,7 +51,7 @@ from django.shortcuts import get_object_or_404
 from jobs.models import Job
 from subscriptions.models import Subscription, SubscriptionStatus
 from django.db import transaction
-
+from subscriptions.helpers import can_add_client
 from django.utils import timezone
 
 from rest_framework import status
@@ -292,6 +292,18 @@ class RespondConnectionRequestAPIView(APIView):
         # -------------------------
         # CHECK PLAN LIMIT
         # -------------------------
+
+        # 🔥 ADD THIS (CLIENT LIMIT CHECK)
+        # 🔥 LANDSCAPER ACCEPT LIMIT CHECK
+        if action == "accept":
+
+            if user.role == "landscaper":
+
+                if not can_add_client(landscaper_user):
+                    return Response({
+                        "error": "Client limit reached for your plan"
+                    }, status=403)
+
         accepted_count = ConnectionRequest.objects.filter(
             is_accepted=True
         ).filter(

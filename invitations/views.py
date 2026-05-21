@@ -15,18 +15,66 @@ from .models import TeamInvitation
 from .serializers import SendInvitationSerializer,AcceptInvitationSerializer,InvitationListSerializer
 from .permissions import IsProLandscaper
 from invitations.models import TeamInvitation
+from django.core.exceptions import ValidationError
+
+from subscriptions.helpers import can_add_team_member
 
 # =========================
 # SEND INVITATION
 # =========================
+
+# class SendInvitationView(CreateAPIView):
+#     serializer_class = SendInvitationSerializer
+#     permission_classes = [IsAuthenticated, IsProLandscaper]
+
+#     def perform_create(self, serializer):
+#         user = self.request.user
+#         landscaper = user.landscaper_profile
+#         email = serializer.validated_data["email"]
+
+#         invitation = TeamInvitation.objects.create(
+#             inviter=user,
+#             landscaper=landscaper,
+#             email=email
+#         )
+
+#                 # ✅ FIXED LINK (points to HTML page)
+#         invite_link = f"/invitations/accept/{invitation.token}/"
+
+#         send_mail(
+#             subject="You're invited to join a landscaper team",
+#             message=f"Accept invitation using this link: {invite_link}",
+#             from_email=settings.DEFAULT_FROM_EMAIL,
+#             recipient_list=[email],
+#         )
+
+
+
+
 class SendInvitationView(CreateAPIView):
     serializer_class = SendInvitationSerializer
     permission_classes = [IsAuthenticated, IsProLandscaper]
 
-    def perform_create(self, serializer):
-        user = self.request.user
+    def create(self, request, *args, **kwargs):
+
+        user = request.user
         landscaper = user.landscaper_profile
-        email = serializer.validated_data["email"]
+        email = request.data.get("email")
+
+        # -------------------------
+        # LIMIT CHECK (STOP HERE)
+        # -------------------------
+        if not can_add_team_member(user):
+            return Response(
+                {
+                    "success": False,
+                    "message": "Team member limit reached for your plan"
+                },
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
 
         invitation = TeamInvitation.objects.create(
             inviter=user,
@@ -34,14 +82,25 @@ class SendInvitationView(CreateAPIView):
             email=email
         )
 
-                # ✅ FIXED LINK (points to HTML page)
         invite_link = f"/invitations/accept/{invitation.token}/"
 
+        # -------------------------
+        # EMAIL ONLY WHEN SUCCESS
+        # -------------------------
         send_mail(
             subject="You're invited to join a landscaper team",
             message=f"Accept invitation using this link: {invite_link}",
             from_email=settings.DEFAULT_FROM_EMAIL,
             recipient_list=[email],
+        )
+
+        return Response(
+            {
+                "success": True,
+                "message": "Invitation sent successfully",
+                "invite_link": invite_link
+            },
+            status=status.HTTP_201_CREATED
         )
 
 
