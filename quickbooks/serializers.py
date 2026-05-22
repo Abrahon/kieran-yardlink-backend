@@ -37,6 +37,7 @@ class QuickBooksConnectionSerializer(serializers.ModelSerializer):
         ]
 
 
+
 class QuickBooksConnectionConfigUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = QuickBooksConnection

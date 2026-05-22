@@ -9,11 +9,13 @@ from quickbooks.views import (
     quickbooks_deposit_accounts,
     quickbooks_sync_logs,
     quickbooks_sync_invoice,
+    quickbooks_success
 )
 
 urlpatterns = [
     path("quickbooks/connect/", quickbooks_connect, name="quickbooks-connect"),
     path("quickbooks/callback/", quickbooks_callback, name="quickbooks-callback"),
+    path("quickbooks-connected-success/",quickbooks_success,name="quickbooks_success"),
 
     path("quickbooks/config/", quickbooks_connection_detail, name="quickbooks-config-detail"),
     path("quickbooks/config/update/", quickbooks_update_config, name="quickbooks-config-update"),

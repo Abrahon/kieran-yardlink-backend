@@ -42,15 +42,27 @@ from landscapers.models import BusinessProfile
 from quickbooks.crypto import encrypt_text
 from quickbooks.models import QuickBooksConnection,QuickBooksOAuthState,QuickBooksSyncLog
 from quickbooks.services import build_authorization_url, exchange_code_for_tokens
+from subscriptions.helpers import can_use_quickbooks 
+from django.shortcuts import render
+
+
 
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def quickbooks_connect(request):
+
     landscaper = getattr(request.user, "landscaper_profile", None)
     if not landscaper:
         return Response(
             {"error": "Landscaper profile not found."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    #  ADD THIS CHECK HERE
+    if not can_use_quickbooks(request.user):
+        return Response(
+            {"error": "QuickBooks integration is only available for Pro plan"},
             status=status.HTTP_403_FORBIDDEN
         )
 
@@ -64,6 +76,12 @@ def quickbooks_connect(request):
     return Response({
         "authorization_url": build_authorization_url(state)
     }, status=status.HTTP_200_OK)
+
+
+
+# success page after quickbooks connection - can be used to show a nice message or redirect to app home
+def quickbooks_success(request):
+    return render(request, "quickbooks/success.html")
 
 
 @api_view(["GET"])
@@ -128,7 +146,7 @@ def quickbooks_callback(request):
     oauth_state.is_used = True
     oauth_state.save(update_fields=["is_used"])
 
-    return redirect("/quickbooks-connected-success/")
+    return redirect("/api/quickbooks-connected-success/")
 
 
 @api_view(["GET"])

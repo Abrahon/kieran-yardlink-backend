@@ -37,6 +37,8 @@ class QuickBooksConnection(models.Model):
         return f"QBO Connection - {self.landscaper.business_name}"
 
 
+
+
 class QuickBooksSyncLog(models.Model):
     class ObjectType(models.TextChoices):
         CUSTOMER = "customer", "Customer"
