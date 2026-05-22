@@ -119,6 +119,17 @@ def can_add_client(user):
     return False
 
 
+def get_landscaper_plan(user):
+    subscription = Subscription.objects.filter(
+        user=user,
+        is_active=True
+    ).select_related("plan").first()
+
+    if not subscription:
+        return "basic"
+
+    return subscription.plan.name.lower()
+
 # =========================================
 # FEATURES
 # =========================================
@@ -141,3 +152,7 @@ def can_use_route_optimization(user):
 
 def can_use_quickbooks(user):
     return is_pro_plan(user)
+
+
+def can_use_pro_features(user):
+    return get_landscaper_plan(user) == "pro"

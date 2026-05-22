@@ -106,6 +106,7 @@ from rest_framework import generics, permissions
 from rest_framework.exceptions import PermissionDenied
 from .models import ServiceQuote
 from .serializers import ServiceQuoteSerializer
+from subscriptions.helpers import can_use_pro_features, get_landscaper_plan
 
 
 
@@ -116,6 +117,7 @@ from .serializers import ServiceQuoteSerializer
 # =========================
 # CREATE BUSINESS PROFILE
 # =========================
+
 class CompleteLandscaperProfileView(generics.CreateAPIView):
     serializer_class = BusinessLandscaperProfileSerializer
     permission_classes = [IsLandscaper]
@@ -124,16 +126,35 @@ class CompleteLandscaperProfileView(generics.CreateAPIView):
     def perform_create(self, serializer):
         user = self.request.user
 
+        # ❌ already exists check
         if BusinessProfile.objects.filter(user=user).exists():
             raise ValidationError({"detail": "Business profile already exists."})
 
+        # 🧠 PLAN CHECK
+        plan = get_landscaper_plan(user)
+
+        # -----------------------------
+        # BASIC PLAN RESTRICTIONS
+        # -----------------------------
+        if plan == "basic":
+            # restrict pro-only fields if they are in request
+            if self.request.FILES.get("profile_image"):
+                raise ValidationError({
+                    "detail": "Profile image is only available in Pro plan."
+                })
+
+            # you can also restrict other fields here later
+
+        # -----------------------------
+        # SAVE PROFILE
+        # -----------------------------
         try:
             with transaction.atomic():
                 serializer.context["user"] = user
                 serializer.save()
+
         except Exception as e:
             raise APIException(f"Business profile creation failed: {str(e)}")
-
 
 
 # =========================
@@ -834,92 +855,6 @@ class LandscaperFind(generics.ListAPIView):
 
 
 # # set working hours for landscapers
-# class WorkingHoursListCreateView(generics.ListCreateAPIView):
-#     serializer_class = WorkingHoursSerializer
-#     permission_classes = [permissions.IsAuthenticated, IsLandscaper]
-
-#     def get_queryset(self):
-#         profile = BusinessProfile.objects.filter(user=self.request.user).first()
-#         if not profile:
-#             return WorkingHours.objects.none()
-
-#         return WorkingHours.objects.filter(
-#             landscaper=profile
-#         ).order_by("day", "start_time")
-
-#     def create(self, request, *args, **kwargs):
-
-#         try:
-#             profile = BusinessProfile.objects.get(user=request.user)
-#         except BusinessProfile.DoesNotExist:
-#             return Response(
-#                 {"detail": "Business profile not found."},
-#                 status=status.HTTP_404_NOT_FOUND
-#             )
-
-#         data = request.data
-
-#         days = data.get("days")
-#         start_time = data.get("start_time")
-#         end_time = data.get("end_time")
-
-#         if not days:
-#             return Response(
-#                 {"error": "days field is required."},
-#                 status=status.HTTP_400_BAD_REQUEST
-#             )
-
-#         if isinstance(days, str):
-#             days = [days]
-
-#         VALID_DAYS = [d[0] for d in DAYS_OF_WEEK]
-
-#         created_slots = []
-#         errors = []
-
-#         for day in days:
-
-#             if day not in VALID_DAYS:
-#                 errors.append({
-#                     "day": day,
-#                     "detail": "Invalid day"
-#                 })
-#                 continue
-
-#             # check time overlap
-#             overlapping = WorkingHours.objects.filter(
-#                 landscaper=profile,
-#                 day=day,
-#                 start_time__lt=end_time,
-#                 end_time__gt=start_time
-#             )
-
-#             if overlapping.exists():
-#                 errors.append({
-#                     "day": day,
-#                     "detail": "Slot overlaps existing slot"
-#                 })
-#                 continue
-
-#             slot = WorkingHours.objects.create(
-#                 landscaper=profile,
-#                 day=day,
-#                 start_time=start_time,
-#                 end_time=end_time
-#             )
-
-#             created_slots.append(slot)
-
-#         serializer = self.get_serializer(created_slots, many=True)
-
-#         return Response(
-#             {
-#                 "created_slots": serializer.data,
-#                 "errors": errors
-#             },
-#             status=status.HTTP_201_CREATED
-#         )
-
 
 
 

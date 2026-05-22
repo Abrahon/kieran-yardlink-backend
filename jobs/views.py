@@ -1,6 +1,4 @@
 
-
-
 from rest_framework import generics, permissions, status, serializers
 from rest_framework.response import Response
 from rest_framework.decorators import api_view, permission_classes
@@ -13,6 +11,8 @@ from jobs.serializers import (
     JobRescheduleSerializer,
     JobItemSerializer,
 )
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.views import APIView
 from django.utils.timezone import now
 from django.db.models.signals import post_save
 from django.dispatch import receiver
@@ -113,10 +113,6 @@ class ClientUpcomingJobsListView(generics.ListAPIView):
             queryset = queryset.filter(scheduled_date=now().date())
 
         return queryset.order_by("scheduled_date", "scheduled_time")
-
-
-
-
 
 
 
@@ -460,29 +456,76 @@ class JobRescheduleCreateView(generics.CreateAPIView):
         if not job:
             raise serializers.ValidationError({"error": "Job is required."})
 
-        # ✅ allow BOTH client + landscaper
+        # -----------------------------
+        # BLOCK IF JOB STARTED OR DONE
+        # -----------------------------
+        if job.status in [Job.Status.IN_PROGRESS, Job.Status.COMPLETED]:
+            raise serializers.ValidationError({
+                "error": "Cannot reschedule after job has started or completed."
+            })
+
+        # -----------------------------
+        # VERIFY OWNERSHIP
+        # -----------------------------
         if landscaper and job.landscaper != landscaper:
             raise serializers.ValidationError({"error": "Not allowed."})
 
         if client and job.client != client:
             raise serializers.ValidationError({"error": "Not allowed."})
 
-        if job.status == Job.Status.COMPLETED:
-            raise serializers.ValidationError({"error": "Cannot reschedule completed job."})
+        # -----------------------------
+        # ROLE BASED LOGIC
+        # -----------------------------
 
-        # ✅ save reschedule record
-        reschedule = serializer.save(
-            requested_by=user,
-            old_date=job.scheduled_date,
-            old_time=job.scheduled_time
-        )
+        # 👤 CLIENT → REQUEST ONLY
+        if client:
+            serializer.save(
+                requested_by=user,
+                old_date=job.scheduled_date,
+                old_time=job.scheduled_time,
+                status="pending"
+            )
+            return
 
-        # ✅ UPDATE JOB (THIS WAS MISSING)
+        # 👷 LANDSCAPER → DIRECT UPDATE
+        if landscaper:
+            reschedule = serializer.save(
+                requested_by=user,
+                old_date=job.scheduled_date,
+                old_time=job.scheduled_time,
+                status="approved"
+            )
+
+            job.scheduled_date = reschedule.new_date
+            job.scheduled_time = reschedule.new_time
+            job.status = Job.Status.RESCHEDULED
+            job.save(update_fields=["scheduled_date", "scheduled_time", "status"])
+
+
+# landscaper approval and client requested reschedule list
+
+class ApproveJobRescheduleView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        reschedule = get_object_or_404(JobReschedule, id=pk)
+
+        job = reschedule.job
+
+        # only landscaper can approve
+        if request.user != job.landscaper.user:
+            return Response({"error": "Not allowed"}, status=403)
+
+        # apply changes
         job.scheduled_date = reschedule.new_date
         job.scheduled_time = reschedule.new_time
         job.status = Job.Status.RESCHEDULED
-        job.save(update_fields=["scheduled_date", "scheduled_time", "status", "updated_at"])
+        job.save()
 
+        reschedule.status = "approved"
+        reschedule.save()
+
+        return Response({"message": "Reschedule approved"})
 
 
 

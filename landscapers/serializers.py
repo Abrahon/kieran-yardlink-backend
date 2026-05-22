@@ -14,7 +14,7 @@ from django.core.exceptions import ValidationError
 from profiles.models import ClientProfile
 from landscapers.models import BusinessProfile
 from rest_framework import serializers
-
+from subscriptions.helpers import get_landscaper_plan
 from profiles.models import ClientProfile
 from .models import ClientCustomService
 from property.models import Property
@@ -50,6 +50,18 @@ class BusinessLandscaperProfileSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["is_profile_completed", "quickbooks_connected"]
 
+    # -----------------------------
+    # PLAN-BASED FIELD VALIDATION
+    # -----------------------------
+    def validate_profile_image(self, value):
+        user = self.context["request"].user
+
+        if get_landscaper_plan(user) == "basic":
+            raise serializers.ValidationError(
+                "Profile image is only available in Pro plan"
+            )
+        return value
+
     def validate(self, attrs):
         """
         Ensure only one of insurance_doc or license_doc is uploaded
@@ -58,34 +70,52 @@ class BusinessLandscaperProfileSerializer(serializers.ModelSerializer):
         license_doc = attrs.get("license_doc") or getattr(self.instance, "license_doc", None)
 
         if insurance and license_doc:
-            raise ValidationError("You can upload either insurance OR license document, not both.")
+            raise serializers.ValidationError(
+                "You can upload either insurance OR license document, not both."
+            )
+
         return attrs
 
+
+    # def create(self, validated_data):
+    #     request = self.context.get("request")
+    #     user = request.user
+
+    #     if hasattr(user, "landscaper_profile"):
+    #         raise ValidationError("Business profile already exists.")
+
+    #     profile_image = validated_data.pop("profile_image", None)
+    #     insurance_doc = validated_data.pop("insurance_doc", None)
+    #     license_doc = validated_data.pop("license_doc", None)
+
+    #     instance = BusinessProfile.objects.create(
+    #         user=user,
+    #         **validated_data
+    #     )
+
+    #     if profile_image:
+    #         instance.profile_image = profile_image
+    #     if insurance_doc:
+    #         instance.insurance_doc = insurance_doc
+    #     if license_doc:
+    #         instance.license_doc = license_doc
+
+    #     instance.save()
+    #     return instance
+
+    # -----------------------------
+    # CREATE
+    # -----------------------------
     def create(self, validated_data):
         request = self.context.get("request")
         user = request.user
 
         if hasattr(user, "landscaper_profile"):
-            raise ValidationError("Business profile already exists.")
+            raise serializers.ValidationError("Business profile already exists.")
 
-        profile_image = validated_data.pop("profile_image", None)
-        insurance_doc = validated_data.pop("insurance_doc", None)
-        license_doc = validated_data.pop("license_doc", None)
+        return BusinessProfile.objects.create(user=user, **validated_data)
 
-        instance = BusinessProfile.objects.create(
-            user=user,
-            **validated_data
-        )
 
-        if profile_image:
-            instance.profile_image = profile_image
-        if insurance_doc:
-            instance.insurance_doc = insurance_doc
-        if license_doc:
-            instance.license_doc = license_doc
-
-        instance.save()
-        return instance
 
     def update(self, instance, validated_data):
         # -----------------------------

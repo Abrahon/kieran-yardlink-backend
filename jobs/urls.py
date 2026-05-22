@@ -18,7 +18,8 @@ from jobs.views import (
     ClientUpcomingJobsListView,
     update_job_status,
     ProblemJobsListView,
-    ClientUpcomingServiceDetailView
+    ClientUpcomingServiceDetailView,
+    ApproveJobRescheduleView
 )
 
 
@@ -44,11 +45,8 @@ urlpatterns = [
     # path("client/jobs/<int:job_id>/pay/",client_pay_job,name="client-pay-job"),
     path("client/upcoming-service/", ClientUpcomingJobsListView.as_view()),
     # Upcoming service detail
-    path(
-        "client/upcoming-services/<int:id>/",
-        ClientUpcomingServiceDetailView.as_view(),
-        name="client-upcoming-service-detail"
-    ),
+    path("client/upcoming-services/<int:id>/",ClientUpcomingServiceDetailView.as_view(),name="client-upcoming-service-detail"),
+    path("jobs/reschedule/<int:pk>/approve/",ApproveJobRescheduleView.as_view(),name="job-reschedule-approve"),
     path("landscaper/jobs/<int:job_id>/status/", update_job_status, name="job-status-update"),
     path("landscaper/jobs/problem/", ProblemJobsListView.as_view(), name="problem-jobs"),
 ]
