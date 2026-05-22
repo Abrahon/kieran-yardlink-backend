@@ -27,7 +27,7 @@ from quickbooks.services import (
     create_payment as qbo_create_payment,
 )
 
-
+from rest_framework.views import APIView
 import secrets
 from datetime import timedelta
 
@@ -148,7 +148,40 @@ def quickbooks_callback(request):
 
     return redirect("/api/quickbooks-connected-success/")
 
+# disconnect quickboos
 
+
+
+class QuickBooksDisconnectAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        # Get landscaper profile from logged-in user
+        landscaper = getattr(request.user, "landscaper_profile", None)
+
+        if not landscaper:
+            return Response(
+                {"error": "Landscaper profile not found."},
+                status=403
+            )
+
+        # Deactivate QuickBooks connection
+        updated = QuickBooksConnection.objects.filter(
+            landscaper=landscaper,
+            is_active=True
+        ).update(is_active=False)
+
+        if updated == 0:
+            return Response(
+                {"message": "No active QuickBooks connection found."},
+                status=404
+            )
+
+        return Response(
+            {"message": "Disconnected successfully"},
+            status=200
+        )
+        
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def quickbooks_connection_detail(request):

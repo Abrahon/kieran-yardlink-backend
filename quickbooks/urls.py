@@ -9,8 +9,10 @@ from quickbooks.views import (
     quickbooks_deposit_accounts,
     quickbooks_sync_logs,
     quickbooks_sync_invoice,
-    quickbooks_success
+    quickbooks_success,
+    QuickBooksDisconnectAPIView
 )
+
 
 urlpatterns = [
     path("quickbooks/connect/", quickbooks_connect, name="quickbooks-connect"),
@@ -26,4 +28,5 @@ urlpatterns = [
     path("quickbooks/logs/", quickbooks_sync_logs, name="quickbooks-sync-logs"),
 
     path("quickbooks/invoices/<int:invoice_id>/sync/", quickbooks_sync_invoice, name="quickbooks-sync-invoice"),
+    path("quickbooks/disconnect/",QuickBooksDisconnectAPIView.as_view(),name="quickbooks-disconnect" ),
 ]
