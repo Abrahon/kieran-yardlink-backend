@@ -12,7 +12,7 @@ User = get_user_model()
 from rest_framework import serializers
 from django.core.validators import RegexValidator
 from .models import User, RoleChoices,OTP,UserReport  # make sure RoleChoices exists
-
+import re
 
 from .enums import RoleChoices
 
@@ -116,6 +116,21 @@ class SignupSerializer(serializers.Serializer):
             )
         return attrs
 
+
+
+
+
+class RequestOTPSerializer(serializers.Serializer):
+    phone_number = serializers.CharField()
+
+    def validate_phone_number(self, value):
+        if len(value) < 10:
+            raise serializers.ValidationError("Invalid phone number")
+
+        if not re.match(r"^\+?[0-9]{10,15}$", value):
+            raise serializers.ValidationError("Phone format invalid")
+
+        return value
 
 
 # ---------------------------
@@ -366,11 +381,11 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
     average_rating = serializers.SerializerMethodField()
     review_count = serializers.SerializerMethodField()
     last_login = serializers.SerializerMethodField()
-        # ✅ NAME OVERRIDE
+        #  NAME OVERRIDE
     name = serializers.SerializerMethodField()
 
     # =========================
-    # ✅ ADD THIS (PLAN INFO)
+    #  ADD THIS (PLAN INFO)
     # =========================
     plan_type = serializers.CharField(source="current_plan_type", read_only=True)
     plan_expiry = serializers.DateTimeField(source="current_plan_expiry", read_only=True)

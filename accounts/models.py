@@ -5,6 +5,12 @@ from django.utils import timezone
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from .enums import RoleChoices
 
+from django.db import models
+from django.utils import timezone
+from datetime import timedelta
+import random
+
+
 
 class UserManager(BaseUserManager):
     def create_user(self, email, password=None, role=None, **extra_fields):
@@ -42,13 +48,10 @@ class UserManager(BaseUserManager):
 
 
 class User(AbstractBaseUser, PermissionsMixin):
-
-    # accounts/models.py
     stripe_customer_id = models.CharField(
         max_length=255,
         blank=True,
-        null=True
-)
+        null=True)
 
     name = models.CharField(max_length=100)
     email = models.EmailField(unique=True)
@@ -58,7 +61,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     longitude = models.DecimalField(max_digits=20, decimal_places=18, blank=True, null=True)
     admin_notes = models.TextField(blank=True, null=True)
     is_flagged = models.BooleanField(default=False)
-    allow_notification = models.BooleanField(default=False)  
+    allow_notification = models.BooleanField(default=False)
+
   
 
     # NOTE: no default role. Must be provided.
@@ -103,6 +107,34 @@ class User(AbstractBaseUser, PermissionsMixin):
         Return the full name of the user for compatibility with Django conventions.
         """
         return self.name or self.email
+
+
+# SMS verification model
+class UserPhone(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+
+    phone_number = models.CharField(max_length=20, unique=True)
+
+    is_verified = models.BooleanField(default=False)
+    sms_opt_in = models.BooleanField(default=False)
+
+    verification_code = models.CharField(max_length=6, null=True, blank=True)
+    code_created_at = models.DateTimeField(null=True, blank=True)
+
+    verified_at = models.DateTimeField(null=True, blank=True)
+
+    def generate_otp(self):
+        otp = str(random.randint(100000, 999999))
+        self.verification_code = otp
+        self.code_created_at = timezone.now()
+        self.save()
+        return otp
+
+    def is_otp_expired(self):
+        if not self.code_created_at:
+            return True
+        return timezone.now() > self.code_created_at + timedelta(minutes=5)
+
 
 
 class OTP(models.Model):

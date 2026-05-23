@@ -217,6 +217,9 @@ class InProgressJobsListView(generics.ListAPIView):
             "-scheduled_date",
             "-scheduled_time"
         )
+
+
+        
 # --- In Progress Job Detail ---
 class InProgressJobDetailView(generics.RetrieveAPIView):
     serializer_class = JobSerializer

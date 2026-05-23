@@ -1636,3 +1636,91 @@ class AdminSubscriptionInvoiceDetailView(APIView):
                 "lines": invoice_lines
             }
         }, status=status.HTTP_200_OK)
+
+
+
+# =====================================================
+# twilio sms  services 
+# =====================================================
+
+# from rest_framework.decorators import api_view, permission_classes
+# from rest_framework.permissions import IsAuthenticated
+# from rest_framework.response import Response
+# from django.utils import timezone
+
+# from .models import UserPhone
+# from .serializers import RequestOTPSerializer, VerifyOTPSerializer
+# from services.sms_service import send_sms
+
+
+# @api_view(["POST"])
+# @permission_classes([IsAuthenticated])
+# def request_otp(request):
+#     serializer = RequestOTPSerializer(data=request.data)
+#     serializer.is_valid(raise_exception=True)
+
+#     phone_number = serializer.validated_data["phone_number"]
+
+#     user_phone, _ = UserPhone.objects.get_or_create(user=request.user)
+
+#     # 🔴 RATE LIMIT CHECK (basic protection)
+#     if user_phone.code_created_at and not user_phone.is_otp_expired():
+#         return Response(
+#             {"error": "OTP already sent. Please wait before requesting again."},
+#             status=429
+#         )
+
+#     otp = user_phone.generate_otp()
+
+#     try:
+#         send_sms(phone_number, f"Your YardLink OTP is {otp}")
+#     except Exception as e:
+#         return Response({"error": str(e)}, status=500)
+
+#     return Response({"message": "OTP sent successfully"})
+
+# verify otp 
+# @api_view(["POST"])
+# @permission_classes([IsAuthenticated])
+# def verify_otp(request):
+#     serializer = VerifyOTPSerializer(data=request.data)
+#     serializer.is_valid(raise_exception=True)
+
+#     phone_number = serializer.validated_data["phone_number"]
+#     otp = serializer.validated_data["otp"]
+
+#     try:
+#         user_phone = UserPhone.objects.get(
+#             user=request.user,
+#             phone_number=phone_number
+#         )
+#     except UserPhone.DoesNotExist:
+#         return Response({"error": "Phone number not found"}, status=404)
+
+#     # ❌ OTP expired
+#     if user_phone.is_otp_expired():
+#         return Response({"error": "OTP expired. Request new one."}, status=400)
+
+#     # ❌ Wrong OTP
+#     if user_phone.verification_code != otp:
+#         return Response({"error": "Invalid OTP"}, status=400)
+
+#     # ✅ success
+#     user_phone.is_verified = True
+#     user_phone.verification_code = None
+#     user_phone.verified_at = timezone.now()
+#     user_phone.save()
+
+#     return Response({"message": "Phone verified successfully"})
+
+
+# SMS OPT-IN 
+# @api_view(["POST"])
+# @permission_classes([IsAuthenticated])
+# def update_sms_opt_in(request):
+#     user_phone, _ = UserPhone.objects.get_or_create(user=request.user)
+
+#     user_phone.sms_opt_in = bool(request.data.get("sms_opt_in"))
+#     user_phone.save()
+
+#     return Response({"message": "SMS preference updated"})

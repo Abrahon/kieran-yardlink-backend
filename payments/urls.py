@@ -15,7 +15,8 @@ from .views import (
     ConfirmCashPaymentAPIView,
     # admin_income_overview,
     AdminStripeVsCashDashboardAPIView,
-    admin_dashboard_stats
+    admin_dashboard_stats,
+    EarningsCSVExportView
 
     
 )
@@ -79,5 +80,6 @@ urlpatterns = [
     path("recent-payments/", RecentPaymentsAPIView.as_view(), name="recent-payments"),
     path('client/payment/history/', client_payment_history, name='client-payment-history'),
     path("admin/transactions/stats/", admin_dashboard_stats, name="admin-transaction-summary"),
+    path("reports/earnings/csv/", EarningsCSVExportView.as_view()),
 
 ]

@@ -3,6 +3,9 @@ from django.dispatch import receiver
 from django.contrib.auth import get_user_model
 
 from profiles.models import AdminProfile
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from .models import User, UserPhone
 
 User = get_user_model()
 
@@ -23,3 +26,12 @@ def save_admin_profile(sender, instance, **kwargs):
     """
     if hasattr(instance, "admin_profile"):
         instance.admin_profile.save()
+
+
+
+
+# CONNECT PHONE MODEL AUTOMATICALLY
+@receiver(post_save, sender=User)
+def create_user_phone(sender, instance, created, **kwargs):
+    if created:
+        UserPhone.objects.create(user=instance)

@@ -64,3 +64,13 @@ def send_otp_email(to_email, otp_code, name="User"):
     except Exception as exc:
         logger.exception("Unexpected error sending OTP to %s: %s", to_email, exc)
         return False
+
+
+# role checking utilities
+# TODO 
+def is_landscaper(user):
+    return user.role == "landscaper"
+
+
+def is_phone_required(user):
+    return user.role == "landscaper"

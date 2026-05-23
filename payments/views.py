@@ -17,7 +17,7 @@ from subscriptions.models import Subscription
 from subscriptions.enums import SubscriptionStatus
 stripe.api_key = settings.STRIPE_SECRET_KEY
 from django.shortcuts import get_object_or_404
-from common.permissions import IsClient,IsLandscaper
+from common.permissions import IsClient,IsLandscaper,IsProLandscaper
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from django.utils.timezone import now
@@ -114,6 +114,13 @@ from datetime import datetime, time
 from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework.pagination import PageNumberPagination
+from common.permissions import IsProLandscaper
+import csv
+from django.http import HttpResponse
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from django.utils import timezone
+
 
 
 
@@ -1656,7 +1663,7 @@ from payments.enums import PaymentStatus
 
 
 class ProLandscaperMonthlyRevenueView(APIView):
-    permission_classes = [IsLandscaper]
+    permission_classes = [IsProLandscaper]
 
     def get(self, request):
         user = request.user
@@ -1779,6 +1786,48 @@ class ProLandscaperMonthlyRevenueView(APIView):
         }
 
         return Response(data, status=200)
+
+
+# csv export
+class EarningsCSVExportView(APIView):
+    permission_classes = [IsProLandscaper]
+
+    def get(self, request):
+        user = request.user
+        landscaper = user.landscaper_profile
+
+        current_year = timezone.now().year
+
+        jobs = Job.objects.filter(
+            landscaper=landscaper,
+            is_active=True
+        )
+
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = 'attachment; filename="earnings_report.csv"'
+
+        writer = csv.writer(response)
+
+        # Header
+        writer.writerow(["Month", "Total Revenue"])
+
+        monthly_data = jobs.filter(
+            payment_status=PaymentStatus.PAID,
+            scheduled_date__year=current_year
+        ).annotate(
+            month=TruncMonth("scheduled_date")
+        ).values("month").annotate(
+            total=Sum("total_price")
+        )
+
+        for item in monthly_data:
+            writer.writerow([
+                item["month"].strftime("%Y-%m"),
+                float(item["total"] or 0)
+            ])
+
+        return response
+
 
 # stripe vs cash
 class AdminStripeVsCashDashboardAPIView(APIView):

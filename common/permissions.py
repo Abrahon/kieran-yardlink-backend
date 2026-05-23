@@ -5,63 +5,84 @@ from accounts.models import RoleChoices
 # common/permissions.py
 from rest_framework.permissions import BasePermission
 from accounts.models import RoleChoices
-from profiles.models import LandscaperProfilies  
+from profiles.models import LandscaperProfilies
+from rest_framework.permissions import BasePermission
+from accounts.enums import RoleChoices
+from subscriptions.utils import get_user_plan
+
+from rest_framework.permissions import BasePermission
+from accounts.enums import RoleChoices
 
 
 class IsAdmin(BasePermission):
     def has_permission(self, request, view):
-        user = request.user
-        return bool(user.is_authenticated and user.role == RoleChoices.ADMIN)
+        return (
+            request.user.is_authenticated and
+            request.user.role == RoleChoices.ADMIN
+        )
 
 
 class IsClient(BasePermission):
     def has_permission(self, request, view):
-        user = request.user
-        return bool(user.is_authenticated and user.role == RoleChoices.CLIENT)
+        return (
+            request.user.is_authenticated and
+            request.user.role == RoleChoices.CLIENT
+        )
 
 
 class IsLandscaper(BasePermission):
-    """
-    Allows access only to landscapers (Basic + Pro)
-    """
     def has_permission(self, request, view):
-        user = request.user
-        return bool(user.is_authenticated and user.role == RoleChoices.LANDSCAPER)
+        return (
+            request.user.is_authenticated and
+            request.user.role == RoleChoices.LANDSCAPER
+        )
 
 
-# NEW — PRO LANDSCAPER ONLY
+
+
+
+
+from subscriptions.enums import SubscriptionStatus
+from subscriptions.models import Subscription
+
 class IsProLandscaper(BasePermission):
-    """
-    Allows access only to PRO landscapers
-    """
+
     def has_permission(self, request, view):
         user = request.user
-        if not (user.is_authenticated and user.role == RoleChoices.LANDSCAPER):
+
+        if not user.is_authenticated:
             return False
 
-        return LandscaperProfilies.objects.filter(
+        if user.role != RoleChoices.LANDSCAPER:
+            return False
+
+        return Subscription.objects.filter(
             user=user,
-            plan=LandscaperProfilies.PRO
+            is_active=True,
+            plan__name__iexact="pro",
+            status__in=[
+                SubscriptionStatus.ACTIVE,
+                SubscriptionStatus.TRIALING
+            ]
         ).exists()
 
 
-#  OPTIONAL — BASIC LANDSCAPER ONLY
 class IsBasicLandscaper(BasePermission):
-    """
-    Allows access only to BASIC landscapers
-    """
     def has_permission(self, request, view):
         user = request.user
-        if not (user.is_authenticated and user.role == RoleChoices.LANDSCAPER):
+
+        if not user.is_authenticated:
             return False
 
-        return LandscaperProfilies.objects.filter(
-            user=user,
-            plan=LandscaperProfilies.BASIC
-        ).exists()
+        if user.role != RoleChoices.LANDSCAPER:
+            return False
+
+        return getattr(user, "plan_type", None) == "Basic"
 
 
 class IsWorker(BasePermission):
     def has_permission(self, request, view):
-        user = request.user
-        return bool(user.is_authenticated and user.role == RoleChoices.WORKER)
+        return (
+            request.user.is_authenticated and
+            request.user.role == RoleChoices.WORKER
+        )
