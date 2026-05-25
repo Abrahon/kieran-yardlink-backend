@@ -24,6 +24,9 @@ from rest_framework import serializers
 from profiles.models import ExternalClient
 from jobs.models import Job, JobItem
 
+from django.utils import timezone
+from rest_framework import serializers
+
 
 
 
@@ -65,16 +68,53 @@ class JobImageSerializer(serializers.ModelSerializer):
 
 
 
+from rest_framework import serializers
+from django.utils import timezone
+from .models import JobReschedule
+
+
 class JobRescheduleSerializer(serializers.ModelSerializer):
+
     class Meta:
         model = JobReschedule
         fields = [
-            "id", "job", "old_date", "old_time",
-            "new_date", "new_time", "reason", "requested_by", "created_at"
+            "id",
+            "job",
+            "old_date",
+            "old_time",
+            "new_date",
+            "new_time",
+            "reason",
+            "requested_by",
+            "status",        # ✅ ADD THIS (from new model)
+            "created_at",
         ]
-        read_only_fields = ["requested_by", "created_at", "old_date", "old_time"]
 
+        read_only_fields = [
+            "requested_by",
+            "created_at",
+            "old_date",
+            "old_time",
+            "status",        # ✅ status controlled by backend logic
+        ]
 
+    def validate(self, attrs):
+
+        new_date = attrs.get("new_date")
+
+        if not new_date:
+            raise serializers.ValidationError({
+                "new_date": "This field is required."
+            })
+
+        # block past date
+        if new_date < timezone.now().date():
+            raise serializers.ValidationError({
+                "new_date": "Cannot reschedule to past date."
+            })
+
+        return attrs
+        
 
 # class JobSerializer(serializers.ModelSerializer):
 #     total_price = serializers.SerializerMethodField()
@@ -158,7 +198,7 @@ class JobSerializer(serializers.ModelSerializer):
     reschedules = serializers.SerializerMethodField()
     client = ClientProfileSerializer(read_only=True)
     landscaper_info = serializers.SerializerMethodField()
-
+    client = serializers.SerializerMethodField()
     # CHANGED: removed StringRelatedField so we can control output
     job_property = PropertySerializer(read_only=True)
 
@@ -221,6 +261,7 @@ class JobSerializer(serializers.ModelSerializer):
     # =====================================
     def get_client(self, obj):
         client = obj.client
+
         if not client:
             return None
 
@@ -230,17 +271,10 @@ class JobSerializer(serializers.ModelSerializer):
             "email": client.user.email,
             "name": client.name,
             "phone": client.phone,
-            "latitude": client.latitude,
-            "longitude": client.longitude,
-            "address": client.address,
+            "latitude": getattr(client, "latitude", None),
+            "longitude": getattr(client, "longitude", None),
+            "address": getattr(client, "address", None),
             "image": client.image.url if client.image else None,
-
-            # IMPORTANT FIX:
-            # Only show property linked with THIS JOB
-            "property": (
-                PropertySerializer(obj.job_property).data
-                if obj.job_property else None
-            ),
         }
 
     def get_items(self, obj):
@@ -251,6 +285,7 @@ class JobSerializer(serializers.ModelSerializer):
 
     def get_reschedules(self, obj):
         return JobRescheduleSerializer(obj.reschedules.all(), many=True).data
+
 
 
 
@@ -511,3 +546,31 @@ class ClientJobDetailSerializer(serializers.ModelSerializer):
             return profile.name
 
         return landscaper.business_name
+
+
+class ProblemJobSerializer(serializers.ModelSerializer):
+
+    property_address = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Job
+        fields = [
+            "id",
+            "status",
+            "note",
+            "property_address",
+            "scheduled_date",
+            "scheduled_time",
+        ]
+
+    def get_property_address(self, obj):
+
+        # 1️⃣ direct job property (highest priority)
+        if obj.job_property and obj.job_property.address:
+            return obj.job_property.address
+
+        # 2️⃣ fallback to booking property
+        if obj.booking and obj.booking.property:
+            return obj.booking.property.address
+
+        return None

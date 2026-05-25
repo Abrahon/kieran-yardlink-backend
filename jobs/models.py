@@ -628,13 +628,95 @@ class Job(TimeStampedModel):
     # STATUS ENGINE
     # ======================================================
 
+    # def sync_status(self, save=True):
+
+    #     total_items = self.items.count()
+
+    #     completed_items = self.items.filter(
+    #         is_completed=True
+    #     ).count()
+
+    #     has_before = self.images.filter(
+    #         image_type=JobImage.ImageType.BEFORE
+    #     ).exists()
+
+    #     has_after = self.images.filter(
+    #         image_type=JobImage.ImageType.AFTER
+    #     ).exists()
+
+    #     # =====================================
+    #     # COMPLETED
+    #     # =====================================
+    #     # all items completed
+    #     # + before image uploaded
+    #     # + after image uploaded
+    #     # =====================================
+
+    #     if (
+    #         total_items > 0
+    #         and completed_items == total_items
+    #         and has_before
+    #         and has_after
+    #     ):
+
+    #         new_status = self.Status.COMPLETED
+
+    #     # =====================================
+    #     # IN PROGRESS
+    #     # =====================================
+    #     # work started
+    #     # OR any image uploaded
+    #     # =====================================
+
+    #     elif (
+    #         completed_items > 0
+    #         or has_before
+    #         or has_after
+    #     ):
+
+    #         new_status = self.Status.IN_PROGRESS
+
+    #     # =====================================
+    #     # UPCOMING
+    #     # =====================================
+
+    #     else:
+
+    #         new_status = self.Status.UPCOMING
+
+    #     # save only if changed
+    #     if self.status != new_status:
+
+    #         self.status = new_status
+
+    #         if new_status == self.Status.COMPLETED:
+    #             self.completed_at = timezone.now()
+    #         else:
+    #             self.completed_at = None
+
+    #         if save:
+    #             self.save(
+    #                 update_fields=[
+    #                     "status",
+    #                     "completed_at",
+    #                     "updated_at"
+    #                 ]
+    #             )
+
+    #     return self.status
     def sync_status(self, save=True):
 
-        total_items = self.items.count()
+        # ❗ NEVER override manual states
+        if self.status in [
+            self.Status.CANCELLED,
+            self.Status.SKIPPED,
+            self.Status.MISSED,
+            self.Status.RESCHEDULED,
+        ]:
+            return self.status
 
-        completed_items = self.items.filter(
-            is_completed=True
-        ).count()
+        total_items = self.items.count()
+        completed_items = self.items.filter(is_completed=True).count()
 
         has_before = self.images.filter(
             image_type=JobImage.ImageType.BEFORE
@@ -644,67 +726,38 @@ class Job(TimeStampedModel):
             image_type=JobImage.ImageType.AFTER
         ).exists()
 
-        # =====================================
-        # COMPLETED
-        # =====================================
-        # all items completed
-        # + before image uploaded
-        # + after image uploaded
-        # =====================================
-
         if (
             total_items > 0
             and completed_items == total_items
             and has_before
             and has_after
         ):
-
             new_status = self.Status.COMPLETED
-
-        # =====================================
-        # IN PROGRESS
-        # =====================================
-        # work started
-        # OR any image uploaded
-        # =====================================
 
         elif (
             completed_items > 0
             or has_before
             or has_after
         ):
-
             new_status = self.Status.IN_PROGRESS
 
-        # =====================================
-        # UPCOMING
-        # =====================================
-
         else:
-
             new_status = self.Status.UPCOMING
 
-        # save only if changed
         if self.status != new_status:
 
             self.status = new_status
 
-            if new_status == self.Status.COMPLETED:
-                self.completed_at = timezone.now()
-            else:
-                self.completed_at = None
+            self.completed_at = (
+                timezone.now()
+                if new_status == self.Status.COMPLETED
+                else None
+            )
 
             if save:
-                self.save(
-                    update_fields=[
-                        "status",
-                        "completed_at",
-                        "updated_at"
-                    ]
-                )
+                self.save(update_fields=["status", "completed_at", "updated_at"])
 
         return self.status
-
     # ======================================================
     # HELPERS
     # ======================================================
@@ -979,14 +1032,41 @@ class JobImage(TimeStampedModel):
         return f"Job #{self.job.id} - {self.image_type}"
 
 
+
+
 class JobReschedule(TimeStampedModel):
-    job = models.ForeignKey(Job, on_delete=models.CASCADE, related_name="reschedules")
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        APPROVED = "approved", "Approved"
+        REJECTED = "rejected", "Rejected"
+
+    job = models.ForeignKey(
+        Job,
+        on_delete=models.CASCADE,
+        related_name="reschedules"
+    )
+
     old_date = models.DateField()
     old_time = models.TimeField()
     new_date = models.DateField()
     new_time = models.TimeField()
+
     reason = models.TextField(blank=True, null=True)
-    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="job_reschedule_requests")
+
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="job_reschedule_requests"
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING
+    )
 
     class Meta:
         ordering = ["-created_at"]

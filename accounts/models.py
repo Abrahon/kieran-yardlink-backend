@@ -113,7 +113,12 @@ class User(AbstractBaseUser, PermissionsMixin):
 class UserPhone(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
 
-    phone_number = models.CharField(max_length=20, unique=True)
+    phone_number = models.CharField(
+        max_length=20,
+        unique=True,
+        null=True,
+        blank=True
+    )
 
     is_verified = models.BooleanField(default=False)
     sms_opt_in = models.BooleanField(default=False)
@@ -156,7 +161,6 @@ class OTP(models.Model):
 
 
 # report model
-
 
 from django.conf import settings
 

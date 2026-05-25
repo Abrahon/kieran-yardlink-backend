@@ -105,9 +105,12 @@ class SignupSerializer(serializers.Serializer):
     )
 
     def validate_email(self, value):
-        if User.objects.filter(email=value).exists():
+        email = value.strip().lower()
+
+        if User.objects.filter(email__iexact=email, is_active=True).exists():
             raise serializers.ValidationError("This email is already registered.")
-        return value
+
+        return email
 
     def validate(self, attrs):
         if attrs.get("password") != attrs.get("confirm_password"):

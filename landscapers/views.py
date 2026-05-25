@@ -1135,8 +1135,8 @@ def toggle_service_active(request, pk):
         "is_active": service.is_active
     })
 
-# service stats 
 
+# service stats 
 class ServiceStatsAPIView(APIView):
     """
     Returns statistics for logged-in landscaper's services.
@@ -1175,6 +1175,7 @@ class ServiceStatsAPIView(APIView):
             },
             status=status.HTTP_200_OK
         )
+
 
 
 # for client list vailabe data

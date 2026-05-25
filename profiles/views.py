@@ -55,6 +55,17 @@ from subscriptions.enums import SubscriptionStatus
 from django.db.models import OuterRef, Subquery
 from django.db.models import F, FloatField
 from django.db.models.functions import ACos, Cos, Sin, Radians
+from common.permissions import IsLandscaper
+from django.db.models import Q
+from django.db.models import Exists
+from rest_framework import generics, permissions
+from django.db.models import Exists, OuterRef
+from landscapers.models import BusinessProfile
+from subscriptions.models import Subscription, SubscriptionStatus
+from .serializers import LandscaperProfileSerializer
+
+
+
 
 
 # admin profile
@@ -67,6 +78,8 @@ class AdminProfileView(RetrieveUpdateAPIView):
         # Get the AdminProfile for the logged-in user, create if missing
         profile, _ = AdminProfile.objects.get_or_create(user=self.request.user)
         return profile
+
+
 
 
 # worker profile
@@ -115,6 +128,8 @@ class WorkerProfileView(generics.GenericAPIView):
         raise PermissionDenied("Access denied")
 
 
+
+
 # pro landscaper 
 class ProLandscaperWorkersView(generics.ListAPIView):
     """
@@ -154,7 +169,7 @@ class ProLandscaperWorkersView(generics.ListAPIView):
 #         return profile
 
 
-from common.permissions import IsLandscaper
+
 
 
 class LandScaperProfileView(generics.RetrieveAPIView):
@@ -330,16 +345,6 @@ class ChangePasswordAPIView(generics.UpdateAPIView):
 
 
 # # ---------------- All Landscapers ----------------
-from django.db.models import Q
-
-from django.db.models import Exists
-
-from rest_framework import generics, permissions
-from django.db.models import Exists, OuterRef
-
-from landscapers.models import BusinessProfile
-from subscriptions.models import Subscription, SubscriptionStatus
-from .serializers import LandscaperProfileSerializer
 
 class AllLandscapersListView(generics.ListAPIView):
     serializer_class = LandscaperProfileSerializer

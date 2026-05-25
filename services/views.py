@@ -20,7 +20,7 @@ from rest_framework import generics, status
 from .models import ClientService, ClientServicePreference
 from jobs.models import Job
 from bookings.models import BookingRequest
-
+from invoice.models import Invoice
 from .serializers import (
     ServiceSerializer,
     ClientServicePreferenceWriteSerializer,
@@ -38,8 +38,6 @@ from payments.enums import PaymentStatus
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework import status
 from django.shortcuts import get_object_or_404
-
-
 
 
 
@@ -125,170 +123,6 @@ class ClientPreferenceNoteUpdateAPIView(APIView):
 
 
 
-
-# from rest_framework.views import APIView
-# from rest_framework.response import Response
-# from django.db.models import Q
-# from jobs.models import Job, JobImage
-
-
-# class ClientServiceOverviewAPIView(APIView):
-#     permission_classes = [IsClient]
-
-#     def get(self, request):
-#         client = request.user.clientprofile
-
-#         # -------------------------
-#         # ALL CLIENT JOBS
-#         # -------------------------
-#         jobs = Job.objects.filter(
-#             client=client,
-#             is_active=True
-#         ).select_related(
-#             "job_property",
-#             "invoice"
-#         ).prefetch_related(
-#             "images"
-#         ).order_by("-scheduled_date")
-
-#         if not jobs.exists():
-#             return Response({
-#                 "message": "No service history found.",
-#                 "data": None
-#             })
-
-#         # -------------------------
-#         # LAST COMPLETED JOB (FOR SERVICE)
-#         # -------------------------
-#         last_completed_job = jobs.filter(
-#             status=Job.Status.COMPLETED
-#         ).order_by("-completed_at").first()
-
-#         # -------------------------
-#         # LAST JOB WITH INVOICE (FOR PAYMENT)
-#         # -------------------------
-#         last_invoice_job = jobs.filter(
-#             invoice__isnull=False
-#         ).order_by("-created_at").first()
-
-#         # -------------------------
-#         # PROPERTY INFO
-#         # -------------------------
-#         property_obj = last_completed_job.job_property if last_completed_job else None
-
-#         property_data = None
-#         if property_obj:
-#             property_data = {
-#                 "address": getattr(property_obj, "address", None),
-#                 "property_size": getattr(property_obj, "property_size", None),
-#                 "latitude": getattr(property_obj, "latitude", None),
-#                 "longitude": getattr(property_obj, "longitude", None),
-#             }
-
-#         # -------------------------
-#         # SERVICE SUMMARY
-#         # -------------------------
-#         service_summary = {
-#             "total_jobs": jobs.count(),
-#             "last_service_date": (
-#                 last_completed_job.completed_at if last_completed_job else None
-#             ),
-#             "service_frequency": self.calculate_frequency(jobs),
-#             "last_job_status": last_completed_job.status if last_completed_job else None,
-#         }
-
-#         # -------------------------
-#         # PAYMENT INFO
-#         # -------------------------
-#         payment_data = None
-#         next_payment_due = None
-
-#         if last_invoice_job and hasattr(last_invoice_job, "invoice"):
-#             invoice = last_invoice_job.invoice
-
-#             payment_data = {
-#                 "invoice_id": invoice.id,
-#                 "invoice_number": invoice.invoice_number,
-#                 "status": invoice.status,
-#                 "total": invoice.total,
-#                 "paid_at": invoice.paid_at,
-#                 "checkout_url": invoice.stripe_checkout_url,
-#             }
-
-#             if invoice.status != "paid":
-#                 next_payment_due = {
-#                     "amount": invoice.total,
-#                     "status": invoice.status,
-#                     "pay_url": invoice.stripe_checkout_url,
-#                 }
-
-#         # -------------------------
-#         # RECENT IMAGES
-#         # -------------------------
-#         recent_images = self.get_recent_images(jobs)
-
-#         return Response({
-#             "property": property_data,
-#             "service_summary": service_summary,
-#             "payment": payment_data,
-#             "next_payment": next_payment_due,
-#             "recent_images": recent_images
-#         })
-
-#     # -------------------------
-#     # RECENT IMAGES METHOD
-#     # -------------------------
-#     def get_recent_images(self, jobs):
-#         images = JobImage.objects.filter(
-#             job__in=jobs
-#         ).order_by("-created_at")[:10]
-
-#         return [
-#             {
-#                 "id": img.id,
-#                 "job_id": img.job_id,
-#                 "image": img.image.url if img.image else None,
-#                 "image_type": img.image_type,
-#                 "caption": img.caption,
-#                 "created_at": img.created_at,
-#             }
-#             for img in images
-#         ]
-
-#     # -------------------------
-#     # SERVICE FREQUENCY
-#     # -------------------------
-#     def calculate_frequency(self, jobs):
-#         if jobs.count() < 2:
-#             return "Not enough data"
-
-#         dates = list(
-#             jobs.values_list("scheduled_date", flat=True)
-#             .order_by("-scheduled_date")[:5]
-#         )
-
-#         if len(dates) < 2:
-#             return "Not enough data"
-
-#         gaps = []
-#         for i in range(len(dates) - 1):
-#             gap = (dates[i] - dates[i + 1]).days
-#             gaps.append(gap)
-
-#         avg_gap = sum(gaps) / len(gaps)
-
-#         if avg_gap <= 7:
-#             return "Weekly"
-#         elif avg_gap <= 14:
-#             return "Bi-weekly"
-#         elif avg_gap <= 30:
-#             return "Monthly"
-#         else:
-#             return "Occasional"
-
-
-
-
 class LandscaperCompleteJobAPIView(APIView):
     permission_classes = [IsLandscaper]
 
@@ -335,6 +169,7 @@ class LandscaperCompleteJobAPIView(APIView):
             ],
             "total_price": total_price
         })
+
 
 
 
@@ -420,20 +255,29 @@ class ServiceOverviewAPIView(APIView):
         # -------------------------
         # LAST JOB WITH INVOICE (FOR PAYMENT)
         # -------------------------
-        last_invoice_job = jobs.filter(
-            invoice__isnull=False
-        ).order_by("-created_at").first()
+
+
+        last_invoice = (
+            Invoice.objects
+            .filter(
+                job__client=client,
+                status__in=["pending", "unpaid", "sent", "draft"]
+            )
+            .select_related("job")
+            .order_by("-created_at")
+            .first()
+        )
 
         # -------------------------
         # PROPERTY INFO
         # -------------------------
         property_obj = (
-            jobs.filter(
+            Job.objects.filter(
+                client=client,
                 job_property__isnull=False,
-                job_property__is_active=True   
             )
             .select_related("job_property")
-            .order_by("-created_at")
+            .order_by("-scheduled_date", "-scheduled_time")
             .first()
         )
 
@@ -468,8 +312,8 @@ class ServiceOverviewAPIView(APIView):
         payment_data = None
         next_payment_due = None
 
-        if last_invoice_job and hasattr(last_invoice_job, "invoice"):
-            invoice = last_invoice_job.invoice
+        if last_invoice and last_invoice.job:
+            invoice = last_invoice
 
             payment_data = {
                 "invoice_id": invoice.id,

@@ -4,7 +4,7 @@ from .models import Property
 class PropertySerializer(serializers.ModelSerializer):
     # First image for quick display
     image = serializers.SerializerMethodField()
-    # Full list of images
+
     images = serializers.ListField(child=serializers.CharField(), read_only=True)
 
     class Meta:
