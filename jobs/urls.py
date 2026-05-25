@@ -19,7 +19,8 @@ from jobs.views import (
     update_job_status,
     ProblemJobsListView,
     ClientUpcomingServiceDetailView,
-    ApproveJobRescheduleView
+    PendingRescheduleListView,
+    RescheduleActionView
 )
 
 
@@ -46,7 +47,20 @@ urlpatterns = [
     path("client/upcoming-service/", ClientUpcomingJobsListView.as_view()),
     # Upcoming service detail
     path("client/upcoming-services/<int:id>/",ClientUpcomingServiceDetailView.as_view(),name="client-upcoming-service-detail"),
-    path("jobs/reschedule/<int:pk>/approve/",ApproveJobRescheduleView.as_view(),name="job-reschedule-approve"),
+    # path("jobs/reschedule/<int:pk>/approve/",ApproveJobRescheduleView.as_view(),name="job-reschedule-approve"),
     path("landscaper/jobs/<int:job_id>/status/", update_job_status, name="job-status-update"),
     path("landscaper/jobs/problem/", ProblemJobsListView.as_view(), name="problem-jobs"),
+        # 📌 Pending reschedule list (landscaper dashboard)
+    path(
+        "reschedule/pending/",
+        PendingRescheduleListView.as_view(),
+        name="reschedule-pending-list"
+    ),
+
+    # 📌 Approve / Reject (single unified endpoint)
+    path(
+        "reschedule/<int:pk>/action/",
+        RescheduleActionView.as_view(),
+        name="reschedule-action"
+    ),
 ]

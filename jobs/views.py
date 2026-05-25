@@ -646,28 +646,119 @@ class JobRescheduleCreateView(generics.CreateAPIView):
 
 # landscaper approval and client requested reschedule list
 
-class ApproveJobRescheduleView(APIView):
-    permission_classes = [IsAuthenticated]
+from rest_framework import generics, permissions
+from .models import JobReschedule
+from .serializers import JobRescheduleSerializer
 
+
+class PendingRescheduleListView(generics.ListAPIView):
+    serializer_class = JobRescheduleSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        landscaper = getattr(user, "landscaper_profile", None)
+
+        if not landscaper:
+            return JobReschedule.objects.none()
+
+        return JobReschedule.objects.filter(
+            job__landscaper=landscaper,
+            status="pending"
+        ).select_related("job", "requested_by").order_by("-created_at")
+
+
+from django.db import transaction
+from django.shortcuts import get_object_or_404
+from rest_framework import generics, permissions, serializers, status
+from rest_framework.response import Response
+
+from .models import JobReschedule
+
+
+class RescheduleActionView(generics.GenericAPIView):
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @transaction.atomic
     def post(self, request, pk):
-        reschedule = get_object_or_404(JobReschedule, id=pk)
+        user = request.user
+        landscaper = getattr(user, "landscaper_profile", None)
+
+        if not landscaper:
+            return Response(
+                {"error": "Only landscaper can perform this action."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        action = request.data.get("action")  # approve / reject
+        reason = request.data.get("reason")
+
+        reschedule = get_object_or_404(
+            JobReschedule,
+            pk=pk,
+            job__landscaper=landscaper
+        )
+
+        # =========================
+        # VALIDATE STATUS
+        # =========================
+        if reschedule.status != "pending":
+            return Response(
+                {"error": "Only pending requests can be processed."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         job = reschedule.job
 
-        # only landscaper can approve
-        if request.user != job.landscaper.user:
-            return Response({"error": "Not allowed"}, status=403)
+        # =========================
+        # APPROVE
+        # =========================
+        if action == "approve":
 
-        # apply changes
-        job.scheduled_date = reschedule.new_date
-        job.scheduled_time = reschedule.new_time
-        job.status = Job.Status.RESCHEDULED
-        job.save()
+            job.scheduled_date = reschedule.new_date
+            job.scheduled_time = reschedule.new_time
+            job.status = "upcoming"
 
-        reschedule.status = "approved"
-        reschedule.save()
+            job.save(update_fields=[
+                "scheduled_date",
+                "scheduled_time",
+                "status"
+            ])
 
-        return Response({"message": "Reschedule approved"})
+            reschedule.status = "approved"
+            reschedule.save(update_fields=["status"])
+
+            return Response({
+                "message": "Reschedule approved successfully."
+            }, status=200)
+
+        # =========================
+        # REJECT
+        # =========================
+        if action == "reject":
+
+            if not reason:
+                return Response(
+                    {"error": "Reason is required for rejection."},
+                    status=400
+                )
+
+            reschedule.status = "rejected"
+            reschedule.reason = reason
+            reschedule.save(update_fields=["status", "reason"])
+
+            return Response({
+                "message": "Reschedule rejected."
+            }, status=200)
+
+        # =========================
+        # INVALID ACTION
+        # =========================
+        return Response(
+            {"error": "Invalid action. Use 'approve' or 'reject'."},
+            status=400
+        )
 
 
 
