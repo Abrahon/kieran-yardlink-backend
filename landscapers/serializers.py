@@ -433,8 +433,6 @@ class PublicServiceSerializer(serializers.ModelSerializer):
             "base_price",
             "pricing_type",
             "min_price",
-            "latitude",
-            "longitude",
             "is_active",
         ]
 

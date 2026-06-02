@@ -196,34 +196,96 @@ class GetBusinessProfileView(generics.RetrieveAPIView):
 
 
 
+# class ServiceListCreateView(generics.ListCreateAPIView):
+#     serializer_class = ServiceSerializer
+#     permission_classes = [IsLandscaper]
+
+#     def get_queryset(self):
+#         business = getattr(self.request.user, "landscaper_profile", None)
+
+#         if not business:
+#             return Service.objects.none()
+
+#         queryset = Service.objects.filter(business=business)
+
+#         # ✅ SEARCH PARAMS
+#         search = self.request.query_params.get("search")
+#         min_price = self.request.query_params.get("min_price")
+#         max_price = self.request.query_params.get("max_price")
+
+#         # =========================
+#         # NAME SEARCH
+#         # =========================
+#         if search:
+#             queryset = queryset.filter(
+#                 Q(name__icontains=search)
+#             )
+
+#         # =========================
+#         # PRICE FILTER
+#         # =========================
+#         if min_price:
+#             queryset = queryset.filter(price__gte=min_price)
+
+#         if max_price:
+#             queryset = queryset.filter(price__lte=max_price)
+
+#         return queryset
+
+#     def perform_create(self, serializer):
+#         business = getattr(self.request.user, "landscaper_profile", None)
+
+#         if not business:
+#             raise PermissionDenied("You must have a business profile to create services.")
+
+#         serializer.save(business=business)
+from django.db.models import Q
+from rest_framework import generics
+from rest_framework.exceptions import PermissionDenied
+from rest_framework.permissions import IsAuthenticated
+
 class ServiceListCreateView(generics.ListCreateAPIView):
     serializer_class = ServiceSerializer
-    permission_classes = [IsLandscaper]
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        business = getattr(self.request.user, "landscaper_profile", None)
+        user = self.request.user
 
-        if not business:
+        # -------------------------
+        # CLIENT: See all services
+        # -------------------------
+        if hasattr(user, "clientprofile"):
+            queryset = Service.objects.all()
+
+        # -------------------------
+        # LANDSCAPER: See own services
+        # -------------------------
+        elif hasattr(user, "landscaper_profile"):
+            queryset = Service.objects.filter(
+                business=user.landscaper_profile
+            )
+
+        else:
             return Service.objects.none()
 
-        queryset = Service.objects.filter(business=business)
-
-        # ✅ SEARCH PARAMS
+        # -------------------------
+        # SEARCH PARAMS
+        # -------------------------
         search = self.request.query_params.get("search")
         min_price = self.request.query_params.get("min_price")
         max_price = self.request.query_params.get("max_price")
 
-        # =========================
+        # -------------------------
         # NAME SEARCH
-        # =========================
+        # -------------------------
         if search:
             queryset = queryset.filter(
                 Q(name__icontains=search)
             )
 
-        # =========================
+        # -------------------------
         # PRICE FILTER
-        # =========================
+        # -------------------------
         if min_price:
             queryset = queryset.filter(price__gte=min_price)
 
@@ -233,13 +295,18 @@ class ServiceListCreateView(generics.ListCreateAPIView):
         return queryset
 
     def perform_create(self, serializer):
-        business = getattr(self.request.user, "landscaper_profile", None)
+        business = getattr(
+            self.request.user,
+            "landscaper_profile",
+            None
+        )
 
         if not business:
-            raise PermissionDenied("You must have a business profile to create services.")
+            raise PermissionDenied(
+                "Only landscapers can create services."
+            )
 
         serializer.save(business=business)
-
 
 
 
@@ -295,7 +362,7 @@ class ServiceDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 class PublicLandscaperServiceListView(generics.ListAPIView):
     serializer_class = PublicServiceSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         business_id = self.kwargs.get("business_id")

@@ -208,14 +208,222 @@ class LandscaperPersonalProfileSerializer(serializers.ModelSerializer):
 
 
 
+# class LandscaperProfileSerializer(serializers.ModelSerializer):
+#     user_id = serializers.IntegerField(source="user.id", read_only=True)
+#     email = serializers.EmailField(source="user.email", read_only=True)
+#     plan = serializers.SerializerMethodField()
+#     name = serializers.SerializerMethodField()
+#     phone = serializers.SerializerMethodField()
+#     image = serializers.SerializerMethodField()
+#     address = serializers.SerializerMethodField()
+#     services = serializers.SerializerMethodField()
+#     working_hours = serializers.SerializerMethodField()
+#     worker_count = serializers.SerializerMethodField()
+
+#     already_sent = serializers.SerializerMethodField()
+#     connection_request_id = serializers.SerializerMethodField()
+#     average_rating = serializers.SerializerMethodField()
+#     total_reviews = serializers.SerializerMethodField()
+#     reviews = serializers.SerializerMethodField()
+#     business_name = serializers.SerializerMethodField()
+#     business_email = serializers.SerializerMethodField()
+#     business_phone = serializers.SerializerMethodField()
+#     is_connected = serializers.SerializerMethodField()
+
+
+#     class Meta:
+#         model = BusinessProfile
+#         fields = [
+#             "id",
+#             "user_id",
+#             "email",
+#             "plan",
+#             "name",
+#             "phone",
+#             "business_name",
+#             "business_email",
+#             "business_phone",
+#             "latitude",
+#             "longitude",
+#             "address",
+#             "image",
+#             "working_hours",
+#             "services",
+#             "worker_count",
+#             "already_sent",
+#             "is_connected",
+#             "connection_request_id",
+#             "average_rating",
+#             "total_reviews",
+#             "reviews",
+#         ]
+
+#     def get_plan(self, obj):
+#         subscription = Subscription.objects.filter(
+#             user=obj.user,
+#             is_active=True,
+#             status=SubscriptionStatus.ACTIVE
+#         ).select_related("plan").first()
+#         return subscription.plan.name.lower() if subscription else "free"
+
+#     def get_name(self, obj):
+#         profile, _ = LandscaperProfilies.objects.get_or_create(user=obj.user)
+#         return profile.name
+
+#     def get_phone(self, obj):
+#         profile, _ = LandscaperProfilies.objects.get_or_create(user=obj.user)
+#         return profile.phone
+
+#     def get_image(self, obj):
+#         if hasattr(obj, "profile_image") and obj.profile_image:
+#             return obj.profile_image.url
+#         return None
+    
+#     def get_working_hours(self, obj):
+#         business = getattr(obj.user, "landscaper_profile", None)
+#         if not business:
+#             return []
+
+#         hours = business.working_hours.filter(is_active=True)
+#         return WorkingHoursSerializer(hours, many=True).data
+
+
+#     def get_services(self, obj):
+#         services = Service.objects.filter(business=obj, is_active=True)
+
+#         return [
+#             {
+#                 "id": s.id,
+#                 "name": s.name,
+#                 "pricing_type": s.pricing_type,
+
+#                 # ✅ correct price logic
+#                 "price": float(s.base_price) if s.pricing_type == "fixed"
+#                         else float(s.min_price) if s.min_price else 0,
+#             }
+#             for s in services
+#         ]
+
+
+
+#     def get_worker_count(self, obj):
+#         return obj.team_invitations.filter(
+#             status=InvitationStatus.ACCEPTED
+#         ).count()
+
+#     # def get_already_sent(self, obj):
+#     #     request = self.context.get("request")
+#     #     if not request or not request.user.is_authenticated:
+#     #         return False
+
+#     #     return ConnectionRequest.objects.filter(
+#     #         sender=request.user,
+#     #         receiver=obj.user,
+#     #         is_accepted=False
+#     #     ).exists()
+
+#     def get_already_sent(self, obj):
+#         request = self.context.get("request")
+#         if not request or not request.user.is_authenticated:
+#             return False
+
+#         return ConnectionRequest.objects.filter(
+#             Q(sender=request.user, receiver=obj.user) |
+#             Q(sender=obj.user, receiver=request.user)
+#         ).exists()
+#     def get_is_connected(self, obj):
+#         request = self.context.get("request")
+#         if not request or not request.user.is_authenticated:
+#             return False
+
+#         return ConnectionRequest.objects.filter(
+#             Q(sender=request.user, receiver=obj.user) |
+#             Q(sender=obj.user, receiver=request.user),
+#             is_accepted=True
+#         ).exists()
+
+#     def get_business_name(self, obj):
+#         business = getattr(obj.user, "landscaper_profile", None)
+#         return business.business_name if business else None
+
+
+#     def get_business_email(self, obj):
+#         business = getattr(obj.user, "landscaper_profile", None)
+#         return business.business_email if business else None
+
+
+#     def get_business_phone(self, obj):
+#         business = getattr(obj.user, "landscaper_profile", None)
+#         return business.business_phone if business else None
+
+
+#     def get_connection_request_id(self, obj):
+#         request = self.context.get("request")
+#         if not request or not request.user.is_authenticated:
+#             return None
+
+#         connection = ConnectionRequest.objects.filter(
+#             Q(sender=request.user, receiver=obj.user) |
+#             Q(sender=obj.user, receiver=request.user)
+#         ).first()
+
+#         return connection.id if connection else None
+
+#     def get_average_rating(self, obj):
+#         avg = LandscaperReview.objects.filter(
+#             landscaper=obj.user
+#         ).aggregate(avg=Avg("rating"))["avg"] or 0
+#         return round(avg, 1)
+
+#     def get_total_reviews(self, obj):
+#         return LandscaperReview.objects.filter(
+#             landscaper=obj.user
+#         ).count()
+
+#     def get_reviews(self, obj):
+#         reviews = LandscaperReview.objects.filter(
+#             landscaper=obj.user
+#         ).select_related("client").order_by("-created_at")
+#         return LandscaperReviewSerializer(reviews, many=True).data
+#     def update(self, instance, validated_data):
+#         user_data = validated_data.pop("user", None)
+
+#         # ✅ update user model
+#         if user_data:
+#             name = user_data.get("name")
+#             if name is not None:
+#                 instance.user.name = name
+#                 instance.user.save()
+
+#         # ✅ update client profile fields (like image)
+#         return super().update(instance, validated_data)
+
+#     def get_address(self, obj):
+#         try:
+#             latitude = getattr(obj, "latitude", None)
+#             longitude = getattr(obj, "longitude", None)
+
+#             if latitude and longitude:
+#                 geolocator = Nominatim(user_agent="yardlink_app")
+#                 location = geolocator.reverse(f"{latitude}, {longitude}")
+#                 return location.address if location else None
+
+#             return None
+
+#         except Exception:
+#             return None
+
 class LandscaperProfileSerializer(serializers.ModelSerializer):
+
     user_id = serializers.IntegerField(source="user.id", read_only=True)
     email = serializers.EmailField(source="user.email", read_only=True)
+
     plan = serializers.SerializerMethodField()
     name = serializers.SerializerMethodField()
     phone = serializers.SerializerMethodField()
     image = serializers.SerializerMethodField()
     address = serializers.SerializerMethodField()
+
     services = serializers.SerializerMethodField()
     working_hours = serializers.SerializerMethodField()
     worker_count = serializers.SerializerMethodField()
@@ -225,11 +433,11 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
     average_rating = serializers.SerializerMethodField()
     total_reviews = serializers.SerializerMethodField()
     reviews = serializers.SerializerMethodField()
-    business_name = serializers.SerializerMethodField()
-    business_email = serializers.SerializerMethodField()
-    business_phone = serializers.SerializerMethodField()
-    is_connected = serializers.SerializerMethodField()
 
+    # business_name = serializers.SerializerMethodField()
+    # business_email = serializers.SerializerMethodField()
+    # business_phone = serializers.SerializerMethodField()
+    is_connected = serializers.SerializerMethodField()
 
     class Meta:
         model = BusinessProfile
@@ -240,9 +448,9 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
             "plan",
             "name",
             "phone",
-            "business_name",
-            "business_email",
-            "business_phone",
+            # "business_name",
+            # "business_email",
+            # "business_phone",
             "latitude",
             "longitude",
             "address",
@@ -258,6 +466,9 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
             "reviews",
         ]
 
+    # -------------------------
+    # PLAN (OPTIMIZED)
+    # -------------------------
     def get_plan(self, obj):
         subscription = Subscription.objects.filter(
             user=obj.user,
@@ -266,6 +477,9 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
         ).select_related("plan").first()
         return subscription.plan.name.lower() if subscription else "free"
 
+    # -------------------------
+    # NAME / PHONE (NO DB CALL)
+    # -------------------------
     def get_name(self, obj):
         profile, _ = LandscaperProfilies.objects.get_or_create(user=obj.user)
         return profile.name
@@ -275,144 +489,107 @@ class LandscaperProfileSerializer(serializers.ModelSerializer):
         return profile.phone
 
     def get_image(self, obj):
-        if hasattr(obj, "profile_image") and obj.profile_image:
-            return obj.profile_image.url
-        return None
-    
+        return obj.profile_image.url if getattr(obj, "profile_image", None) else None
+
+    # -------------------------
+    # WORKING HOURS (FROM PREFETCH)
+    # -------------------------
     def get_working_hours(self, obj):
-        business = getattr(obj.user, "landscaper_profile", None)
-        if not business:
-            return []
+        hours = getattr(obj, "pref_working_hours", [])
+        return WorkingHoursSerializer(hours[:7], many=True).data
 
-        hours = business.working_hours.filter(is_active=True)
-        return WorkingHoursSerializer(hours, many=True).data
-
-
+    # -------------------------
+    # SERVICES (FROM PREFETCH)
+    # -------------------------
     def get_services(self, obj):
-        services = Service.objects.filter(business=obj, is_active=True)
-
         return [
             {
                 "id": s.id,
                 "name": s.name,
                 "pricing_type": s.pricing_type,
-
-                # ✅ correct price logic
                 "price": float(s.base_price) if s.pricing_type == "fixed"
-                        else float(s.min_price) if s.min_price else 0,
+                else float(s.min_price or 0),
             }
-            for s in services
+            for s in getattr(obj, "pref_services", [])[:5]
         ]
 
+    # -------------------------
+    # REVIEWS (FROM PREFETCH)
+    # -------------------------
+    def get_reviews(self, obj):
+        reviews = getattr(obj.user, "pref_reviews", [])
+        return LandscaperReviewSerializer(reviews[:3], many=True).data
+
+    # -------------------------
+    # RATINGS (NO DB QUERY)
+    # -------------------------
+    def get_average_rating(self, obj):
+        reviews = getattr(obj.user, "pref_reviews", [])
+        if not reviews:
+            return 0
+        return round(sum(r.rating for r in reviews) / len(reviews), 1)
+
+    def get_total_reviews(self, obj):
+        return len(getattr(obj.user, "pref_reviews", []))
+
+    # def get_business_name(self, obj):
+    #     business = getattr(obj.user, "landscaper_profile", None)
+    #     return business.business_name if business else None
+
+
+    # def get_business_email(self, obj):
+    #     business = getattr(obj.user, "landscaper_profile", None)
+    #     return business.business_email if business else None
+
+
+    # def get_business_phone(self, obj):
+    #     business = getattr(obj.user, "landscaper_profile", None)
+    #     return business.business_phone if business else None
 
 
     def get_worker_count(self, obj):
         return obj.team_invitations.filter(
             status=InvitationStatus.ACCEPTED
         ).count()
-
-    # def get_already_sent(self, obj):
-    #     request = self.context.get("request")
-    #     if not request or not request.user.is_authenticated:
-    #         return False
-
-    #     return ConnectionRequest.objects.filter(
-    #         sender=request.user,
-    #         receiver=obj.user,
-    #         is_accepted=False
-    #     ).exists()
-
+    # -------------------------
+    # CONNECTION LOGIC (KEEP BUT OPTIMIZED LATER)
+    # -------------------------
     def get_already_sent(self, obj):
         request = self.context.get("request")
-        if not request or not request.user.is_authenticated:
+        if not request:
             return False
-
         return ConnectionRequest.objects.filter(
             Q(sender=request.user, receiver=obj.user) |
             Q(sender=obj.user, receiver=request.user)
         ).exists()
+
     def get_is_connected(self, obj):
         request = self.context.get("request")
-        if not request or not request.user.is_authenticated:
+        if not request:
             return False
-
         return ConnectionRequest.objects.filter(
             Q(sender=request.user, receiver=obj.user) |
             Q(sender=obj.user, receiver=request.user),
             is_accepted=True
         ).exists()
 
-    def get_business_name(self, obj):
-        business = getattr(obj.user, "landscaper_profile", None)
-        return business.business_name if business else None
-
-
-    def get_business_email(self, obj):
-        business = getattr(obj.user, "landscaper_profile", None)
-        return business.business_email if business else None
-
-
-    def get_business_phone(self, obj):
-        business = getattr(obj.user, "landscaper_profile", None)
-        return business.business_phone if business else None
-
-
     def get_connection_request_id(self, obj):
         request = self.context.get("request")
-        if not request or not request.user.is_authenticated:
+        if not request:
             return None
 
-        connection = ConnectionRequest.objects.filter(
+        conn = ConnectionRequest.objects.filter(
             Q(sender=request.user, receiver=obj.user) |
             Q(sender=obj.user, receiver=request.user)
         ).first()
 
-        return connection.id if connection else None
+        return conn.id if conn else None
 
-    def get_average_rating(self, obj):
-        avg = LandscaperReview.objects.filter(
-            landscaper=obj.user
-        ).aggregate(avg=Avg("rating"))["avg"] or 0
-        return round(avg, 1)
-
-    def get_total_reviews(self, obj):
-        return LandscaperReview.objects.filter(
-            landscaper=obj.user
-        ).count()
-
-    def get_reviews(self, obj):
-        reviews = LandscaperReview.objects.filter(
-            landscaper=obj.user
-        ).select_related("client").order_by("-created_at")
-        return LandscaperReviewSerializer(reviews, many=True).data
-    def update(self, instance, validated_data):
-        user_data = validated_data.pop("user", None)
-
-        # ✅ update user model
-        if user_data:
-            name = user_data.get("name")
-            if name is not None:
-                instance.user.name = name
-                instance.user.save()
-
-        # ✅ update client profile fields (like image)
-        return super().update(instance, validated_data)
-
+    # -------------------------
+    # ADDRESS (❌ FIXED - REMOVED SLOW GEOCODING)
+    # -------------------------
     def get_address(self, obj):
-        try:
-            latitude = getattr(obj, "latitude", None)
-            longitude = getattr(obj, "longitude", None)
-
-            if latitude and longitude:
-                geolocator = Nominatim(user_agent="yardlink_app")
-                location = geolocator.reverse(f"{latitude}, {longitude}")
-                return location.address if location else None
-
-            return None
-
-        except Exception:
-            return None
-
+        return getattr(obj, "address", None)
 
 
 # # serializers.py for client

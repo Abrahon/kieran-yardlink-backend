@@ -38,6 +38,7 @@ from payments.enums import PaymentStatus
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework import status
 from django.shortcuts import get_object_or_404
+from property.models import Property
 
 
 
@@ -220,6 +221,184 @@ class RescheduleServiceAPIView(APIView):
 
 
 # property overview 
+# class ServiceOverviewAPIView(APIView):
+#     permission_classes = [IsClient]
+
+#     def get(self, request):
+#         client = request.user.clientprofile
+
+#         # -------------------------
+#         # ALL CLIENT JOBS
+#         # -------------------------
+#         jobs = Job.objects.filter(
+#             client=client,
+#             is_active=True
+#         ).select_related(
+#             "job_property",
+#             "invoice"
+#         ).prefetch_related(
+#             "images"
+#         ).order_by("-scheduled_date")
+
+#         if not jobs.exists():
+#             return Response({
+#                 "message": "No service history found.",
+#                 "data": None
+#             })
+
+#         # -------------------------
+#         # LAST COMPLETED JOB (FOR SERVICE)
+#         # -------------------------
+#         last_completed_job = jobs.filter(
+#             status=Job.Status.COMPLETED
+#         ).order_by("-completed_at").first()
+
+#         # -------------------------
+#         # LAST JOB WITH INVOICE (FOR PAYMENT)
+#         # -------------------------
+
+
+#         last_invoice = (
+#             Invoice.objects
+#             .filter(
+#                 job__client=client,
+#                 status__in=["pending", "unpaid", "sent", "draft"]
+#             )
+#             .select_related("job")
+#             .order_by("-created_at")
+#             .first()
+#         )
+
+#         # -------------------------
+#         # PROPERTY INFO
+#         # -------------------------
+#         property_obj = (
+#             Job.objects.filter(
+#                 client=client,
+#                 job_property__isnull=False,
+#                 job_property__is_active=True
+#             )
+#             .select_related("job_property")
+#             .order_by("-scheduled_date", "-scheduled_time")
+#             .first()
+#         )
+
+#         property_data = None
+#         prop_instance = None   # ✅ ADD THIS
+
+#         if property_obj and property_obj.job_property:
+#             prop = property_obj.job_property
+#             prop_instance = prop  # ✅ pass real property object
+
+#             property_data = {
+#                 "id": prop.id,
+#                 "address": getattr(prop, "address", None),
+#                 "property_size": getattr(prop, "property_size", None),
+#                 "latitude": getattr(prop, "latitude", None),
+#                 "longitude": getattr(prop, "longitude", None),
+#                 "is_active": prop.is_active,
+#             }
+#         # -------------------------
+#         # SERVICE SUMMARY
+#         # -------------------------
+#         service_summary = {
+#             "total_jobs": jobs.count(),
+#             "last_service_date": (
+#                 last_completed_job.completed_at if last_completed_job else None
+#             ),
+#             "service_frequency": self.calculate_frequency(jobs),
+#             "last_job_status": last_completed_job.status if last_completed_job else None,
+#         }
+
+#         # -------------------------
+#         # PAYMENT INFO
+#         # -------------------------
+#         payment_data = None
+#         next_payment_due = None
+
+#         if last_invoice and last_invoice.job:
+#             invoice = last_invoice
+
+#             payment_data = {
+#                 "invoice_id": invoice.id,
+#                 "invoice_number": invoice.invoice_number,
+#                 "status": invoice.status,
+#                 "total": invoice.total,
+#                 "paid_at": invoice.paid_at,
+#                 "checkout_url": invoice.stripe_checkout_url,
+#             }
+
+#             if invoice.status != "paid":
+#                 next_payment_due = {
+#                     "amount": invoice.total,
+#                     "status": invoice.status,
+#                     "pay_url": invoice.stripe_checkout_url,
+#                 }
+
+#         # -------------------------
+#         # RECENT IMAGES
+#         # -------------------------
+#         recent_images = self.get_recent_images(jobs)
+
+#         return Response({
+#             "property": property_data,
+#             "service_summary": service_summary,
+#             "payment": payment_data,
+#             "next_payment": next_payment_due,
+#             "recent_images": recent_images
+#         })
+
+#     # -------------------------
+#     # RECENT IMAGES METHOD
+#     # -------------------------
+#     def get_recent_images(self, jobs):
+#         images = JobImage.objects.filter(
+#             job__in=jobs
+#         ).order_by("-created_at")[:10]
+
+#         return [
+#             {
+#                 "id": img.id,
+#                 "job_id": img.job_id,
+#                 "image": img.image.url if img.image else None,
+#                 "image_type": img.image_type,
+#                 "caption": img.caption,
+#                 "created_at": img.created_at,
+#             }
+#             for img in images
+#         ]
+
+#     # -------------------------
+#     # SERVICE FREQUENCY
+#     # -------------------------
+#     def calculate_frequency(self, jobs):
+#         if jobs.count() < 2:
+#             return "Not enough data"
+
+#         dates = list(
+#             jobs.values_list("scheduled_date", flat=True)
+#             .order_by("-scheduled_date")[:5]
+#         )
+
+#         if len(dates) < 2:
+#             return "Not enough data"
+
+#         gaps = []
+#         for i in range(len(dates) - 1):
+#             gap = (dates[i] - dates[i + 1]).days
+#             gaps.append(gap)
+
+#         avg_gap = sum(gaps) / len(gaps)
+
+#         if avg_gap <= 7:
+#             return "Weekly"
+#         elif avg_gap <= 14:
+#             return "Bi-weekly"
+#         elif avg_gap <= 30:
+#             return "Monthly"
+#         else:
+#             return "Occasional"
+
 class ServiceOverviewAPIView(APIView):
     permission_classes = [IsClient]
 
@@ -255,8 +434,6 @@ class ServiceOverviewAPIView(APIView):
         # -------------------------
         # LAST JOB WITH INVOICE (FOR PAYMENT)
         # -------------------------
-
-
         last_invoice = (
             Invoice.objects
             .filter(
@@ -269,30 +446,36 @@ class ServiceOverviewAPIView(APIView):
         )
 
         # -------------------------
-        # PROPERTY INFO
+        # PROPERTY INFO (ONLY ACTIVE)
         # -------------------------
-        property_obj = (
-            Job.objects.filter(
-                client=client,
-                job_property__isnull=False,
-            )
-            .select_related("job_property")
-            .order_by("-scheduled_date", "-scheduled_time")
-            .first()
-        )
+        # -------------------------
+        # PROPERTY INFO (FIXED)
+        # -------------------------
+        # -------------------------
+        # PROPERTY INFO (ONLY ACTIVE PROPERTY)
+        # -------------------------
+        property_obj = Property.objects.filter(
+            owner=client.user,
+            is_active=True
+        ).order_by("-created_at").first()
 
         property_data = None
+        prop_instance = None
 
-        if property_obj and property_obj.job_property:
-            prop = property_obj.job_property
+        if property_obj:
+            prop_instance = property_obj
 
             property_data = {
-                "id": prop.id,
-                "address": getattr(prop, "address", None),
-                "property_size": getattr(prop, "property_size", None),
-                "latitude": getattr(prop, "latitude", None),
-                "longitude": getattr(prop, "longitude", None),
-                "is_active": prop.is_active,  
+                "id": property_obj.id,
+                "address": property_obj.address,
+                "property_size": property_obj.property_size,
+                "latitude": property_obj.latitude,
+                "longitude": property_obj.longitude,
+                "cut_height_inches": property_obj.cut_height_inches,
+                "grass_types": property_obj.grass_types,
+                "notes": property_obj.notes,
+                "is_active": property_obj.is_active,
+                "images": property_obj.images,
             }
         # -------------------------
         # SERVICE SUMMARY
@@ -394,7 +577,6 @@ class ServiceOverviewAPIView(APIView):
             return "Monthly"
         else:
             return "Occasional"
-
 
 
 
