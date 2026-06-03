@@ -86,7 +86,7 @@ class JobRescheduleSerializer(serializers.ModelSerializer):
             "new_time",
             "reason",
             "requested_by",
-            "status",        # ✅ ADD THIS (from new model)
+            "status",        
             "created_at",
         ]
 
@@ -95,7 +95,7 @@ class JobRescheduleSerializer(serializers.ModelSerializer):
             "created_at",
             "old_date",
             "old_time",
-            "status",        # ✅ status controlled by backend logic
+            "status",       
         ]
 
     def validate(self, attrs):
