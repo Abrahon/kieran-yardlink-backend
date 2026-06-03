@@ -101,6 +101,8 @@ class UpcomingJobsListView(generics.ListAPIView):
         ).order_by("scheduled_date", "scheduled_time")
 
 
+
+
 class ClientUpcomingJobsListView(generics.ListAPIView):
     serializer_class = JobSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -111,23 +113,44 @@ class ClientUpcomingJobsListView(generics.ListAPIView):
         if not client_profile:
             return Job.objects.none()
 
-        queryset = Job.objects.filter(
-            client=client_profile,
-            status=Job.Status.UPCOMING,
-            is_active=True
+        today = now().date()
+        current_time = now().time()
+
+        return (
+            Job.objects.filter(
+                client=client_profile,
+                is_active=True,
+            )
+            .select_related(
+                "client",
+                "client__user",
+                "booking",
+                "landscaper",
+                "job_property"
+            )
+            .prefetch_related(
+                "items",
+                "images",
+                "reschedules"
+            )
+            .filter(
+                Q(scheduled_date__gt=today) |
+                Q(scheduled_date=today, scheduled_time__gte=current_time)
+            )
+            .order_by("scheduled_date", "scheduled_time")
         )
 
         # 🔹 query params
         selected_date = self.request.query_params.get("date")
         today_flag = self.request.query_params.get("today")
 
-        # ✅ PRIORITY 1: specific date
+        # ✅ filter by specific date
         if selected_date:
             queryset = queryset.filter(scheduled_date=selected_date)
 
-        # ✅ PRIORITY 2: today
+        # ✅ filter today only
         elif today_flag == "true":
-            queryset = queryset.filter(scheduled_date=now().date())
+            queryset = queryset.filter(scheduled_date=today)
 
         return queryset.order_by("scheduled_date", "scheduled_time")
 
@@ -177,6 +200,8 @@ class ClientUpcomingServiceDetailView(generics.RetrieveAPIView):
             raise NotFound(
                 detail="Upcoming service not found."
             )
+
+
 # --- Job Detail ---
 class JobDetailView(generics.RetrieveAPIView):
     serializer_class = JobSerializer

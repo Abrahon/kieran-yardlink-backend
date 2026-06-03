@@ -260,21 +260,25 @@ class JobSerializer(serializers.ModelSerializer):
     # FIX: ONLY SHOW SELECTED PROPERTY
     # =====================================
     def get_client(self, obj):
-        client = obj.client
-
-        if not client:
-            return None
+        user = obj.client.user
 
         return {
-            "id": client.id,
-            "user_id": client.user.id,
-            "email": client.user.email,
-            "name": client.name,
-            "phone": client.phone,
-            "latitude": getattr(client, "latitude", None),
-            "longitude": getattr(client, "longitude", None),
-            "address": getattr(client, "address", None),
-            "image": client.image.url if client.image else None,
+            "id": obj.client.id,
+            "user_id": user.id,
+            "email": user.email,
+
+            # ✅ ALWAYS from USER (NOT ClientProfile)
+            "name": user.name,
+            "phone": user.phone,
+            "latitude": user.latitude,
+            "longitude": user.longitude,
+            "address": user.address,
+
+            "image": (
+                obj.client.image.url
+                if getattr(obj.client, "image", None)
+                else None
+            ),
         }
 
     def get_items(self, obj):
