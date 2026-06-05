@@ -1920,38 +1920,157 @@ class ServiceQuoteActionView(generics.UpdateAPIView):
 
 
 
+# class ServiceQuoteListForLandscaper(generics.ListAPIView):
+#     serializer_class = ServiceQuoteSerializer
+#     permission_classes = [permissions.IsAuthenticated]
+
+#     def get_queryset(self):
+
+#         user = self.request.user
+
+#         # -------------------------
+#         # CLIENT VIEW
+#         # -------------------------
+#         if hasattr(user, "clientprofile"):
+#             return ServiceQuote.objects.filter(
+#                 client=user.clientprofile
+#             ).select_related(
+#                 "client",
+#                 "landscaper",
+#                 "service",
+#                 "property"
+#             ).order_by("-created_at")
+
+#         # -------------------------
+#         # LANDSCAPER VIEW
+#         # -------------------------
+#         if hasattr(user, "landscaper_profile"):
+#             return ServiceQuote.objects.filter(
+#                 landscaper=user.landscaper_profile
+#             ).select_related(
+#                 "client",
+#                 "landscaper",
+#                 "service",
+#                 "property"
+#             ).order_by("-created_at")
+
+#         raise PermissionDenied("No valid profile found.")
+
+from django.db.models import Q
+from rest_framework import generics, permissions
+from rest_framework.exceptions import PermissionDenied
+
+
 class ServiceQuoteListForLandscaper(generics.ListAPIView):
     serializer_class = ServiceQuoteSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-
         user = self.request.user
 
-        # -------------------------
-        # CLIENT VIEW
-        # -------------------------
-        if hasattr(user, "clientprofile"):
-            return ServiceQuote.objects.filter(
-                client=user.clientprofile
+        client = getattr(user, "clientprofile", None)
+        landscaper = getattr(user, "landscaper_profile", None)
+
+        if client:
+            custom_qs = ClientCustomService.objects.filter(
+                client=client,
+                is_active=True
             ).select_related(
-                "client",
-                "landscaper",
+                "client__user",
+                "property",
+                "landscaper__user"
+            )
+
+            quote_qs = ServiceQuote.objects.filter(
+                client=client
+            ).select_related(
+                "client__user",
+                "landscaper__user",
                 "service",
                 "property"
-            ).order_by("-created_at")
+            )
 
-        # -------------------------
-        # LANDSCAPER VIEW
-        # -------------------------
-        if hasattr(user, "landscaper_profile"):
-            return ServiceQuote.objects.filter(
-                landscaper=user.landscaper_profile
+        elif landscaper:
+            custom_qs = ClientCustomService.objects.filter(
+                landscaper=landscaper
             ).select_related(
-                "client",
-                "landscaper",
+                "client__user",
+                "property",
+                "landscaper__user"
+            )
+
+            quote_qs = ServiceQuote.objects.filter(
+                landscaper=landscaper.user   # ✅ IMPORTANT FIX
+            ).select_related(
+                "client__user",
+                "landscaper__user",
                 "service",
                 "property"
-            ).order_by("-created_at")
+            )
 
-        raise PermissionDenied("No valid profile found.")
+        else:
+            raise PermissionDenied("No valid profile found.")
+
+        return self._merge_queryset(custom_qs, quote_qs)
+
+    def _merge_queryset(self, custom_qs, quote_qs):
+        custom_qs = list(custom_qs)
+        quote_qs = list(quote_qs)
+
+        for obj in custom_qs:
+            obj.request_type = "custom_request"
+
+        for obj in quote_qs:
+            obj.request_type = "quote_request"
+
+        return custom_qs + quote_qs
+    
+
+from rest_framework import status
+from django.shortcuts import get_object_or_404
+
+class ServiceQuoteDeleteView(generics.DestroyAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    queryset = ServiceQuote.objects.all()
+
+    def delete(self, request, *args, **kwargs):
+        quote_id = kwargs.get("pk")
+
+        user = request.user
+        client = getattr(user, "clientprofile", None)
+        landscaper = getattr(user, "landscaper_profile", None)
+
+        quote = get_object_or_404(ServiceQuote, id=quote_id)
+
+        # -------------------------
+        # CLIENT DELETE RULE
+        # -------------------------
+        if client:
+            if quote.client != client:
+                return Response(
+                    {"error": "You cannot delete this quote."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+        # -------------------------
+        # LANDSCAPER DELETE RULE
+        # -------------------------
+        elif landscaper:
+            if quote.landscaper != landscaper:
+                return Response(
+                    {"error": "You cannot delete this quote."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+        else:
+            return Response(
+                {"error": "Invalid user type."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        quote.delete()
+
+        return Response(
+            {"message": "Quote request deleted successfully."},
+            status=status.HTTP_200_OK
+        )

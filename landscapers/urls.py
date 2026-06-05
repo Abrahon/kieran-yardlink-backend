@@ -34,7 +34,8 @@ from .views import (
     ServiceQuoteActionView,
     ServiceQuoteListForLandscaper,
     ClientCounterOfferListView,
-    get_landscaper_availability
+    get_landscaper_availability,
+    ServiceQuoteDeleteView
 
 )
 
@@ -120,6 +121,11 @@ urlpatterns = [
     path("quotes/<int:pk>/counter/", ServiceQuoteCounterView.as_view()),
     path("quotes/<int:pk>/action/", ServiceQuoteActionView.as_view()),
     path("quotes/counter-list/", ClientCounterOfferListView.as_view()),
+    path(
+        "quotes/<int:pk>/delete/",
+        ServiceQuoteDeleteView.as_view(),
+        name="quote-delete"
+)
 
 
 ]

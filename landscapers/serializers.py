@@ -624,7 +624,7 @@ class ServiceQuoteSerializer(serializers.ModelSerializer):
         source="service",
         write_only=True
     )
-
+    request_type = serializers.SerializerMethodField()  # ✅ ADD HERE
     landscaper = serializers.SerializerMethodField()
 
     class Meta:
@@ -660,7 +660,7 @@ class ServiceQuoteSerializer(serializers.ModelSerializer):
 
             # PRICE
             "price",
-
+            "request_type",  # ✅ ADD TO FIELDS
             # STATUS
             "status",
 
@@ -679,27 +679,37 @@ class ServiceQuoteSerializer(serializers.ModelSerializer):
         ]
 
     # =====================================
-    # LANDSCAPER INFO
+    # LANDSCAPER INFO (FIXED)
     # =====================================
 
     def get_landscaper(self, obj):
-
         landscaper = obj.landscaper
 
         if not landscaper:
             return None
 
-        profile = getattr(landscaper, "landscaperprofilies", None)
+        user = landscaper.user
+        profile = getattr(user, "landscaperprofilies", None)
 
         return {
             "id": landscaper.id,
-            "name": getattr(profile, "name", None),
-            "email": landscaper.user.email if landscaper.user else None,
+
+            # ✅ FIX HERE (IMPORTANT)
+            "name": user.name or getattr(profile, "name", None),
+
+            "email": user.email,
+
             "phone": getattr(profile, "phone", None),
             "address": getattr(profile, "address", None),
-            "profile_image": getattr(profile, "profile_image", None),
-        }
 
+            "profile_image": (
+                profile.profile_image.url
+                if profile and getattr(profile, "profile_image", None)
+                else None
+            ),
+        }
+    def get_request_type(self, obj):
+        return getattr(obj, "request_type", "quote_request")
     # =====================================
     # VALIDATION
     # =====================================
