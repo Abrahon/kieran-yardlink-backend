@@ -96,45 +96,6 @@ from django.db import transaction
 
 
 
-# class SignupView(generics.GenericAPIView):
-#     serializer_class = SignupSerializer
-#     permission_classes = [AllowAny]
-#     parser_classes = (MultiPartParser, FormParser)
-
-#     def post(self, request):
-#         serializer = self.get_serializer(data=request.data)
-#         serializer.is_valid(raise_exception=True)
-#         data = serializer.validated_data
-#         email = data["email"]
-
-
-#         request.session["pending_user"] = {
-
-#             "email": data["email"],
-#             "name": data["name"],
-#             "password": data["password"],
-#             "phone": data.get("phone"),
-#             "address": data.get("address"),
-#             "latitude": str(data["latitude"]) if data.get("latitude") else None,
-#             "longitude": str(data["longitude"]) if data.get("longitude") else None,
-#             "role": data["role"],
-#             "allow_notification": data.get("allow_notification", False)
-#         }
-
-#         request.session.modified = True
-
-#         # OTP handling
-#         OTP.objects.filter(email=email).delete()
-#         otp_code = generate_otp()
-#         OTP.objects.create(email=email, code=otp_code)
-
-#         send_otp_email(email, otp_code, data["name"])
-
-#         return Response(
-#             {"detail": f"Verification OTP sent to {data['role']} email."},
-#             status=200
-#         )
-
 class SignupView(generics.GenericAPIView):
     serializer_class = SignupSerializer
     permission_classes = [AllowAny]

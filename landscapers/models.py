@@ -56,7 +56,12 @@ class BusinessProfile(models.Model):
         null=True,
         blank=True
     )
-
+    
+    # Service Area
+    service_radius_km = models.PositiveIntegerField(
+        default=20,
+        help_text="How far the landscaper is willing to travel"
+    )
     # Profile image (Pro only — validated via subscription app)
     profile_image = CloudinaryField(
         "pro_landscaper",
@@ -99,8 +104,6 @@ class BusinessProfile(models.Model):
 
 # standard service
 # models.py
-
-
 
 class Service(models.Model):
 
@@ -198,6 +201,8 @@ class Service(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.business.business_name})"
+
+
 
 # qute model
 

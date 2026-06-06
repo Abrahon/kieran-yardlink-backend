@@ -92,7 +92,12 @@ from django.db import transaction
 from django.db import transaction
 from rest_framework.decorators import api_view, permission_classes
 from django.utils.dateparse import parse_date, parse_time
+from rest_framework import generics, permissions, status
+from rest_framework.response import Response
+from rest_framework.exceptions import ValidationError
 
+from .models import ServiceQuote
+from .serializers import ServiceQuoteSerializer
 from decimal import Decimal
 from django.db import transaction
 from rest_framework.response import Response
@@ -107,6 +112,13 @@ from rest_framework.exceptions import PermissionDenied
 from .models import ServiceQuote
 from .serializers import ServiceQuoteSerializer
 from subscriptions.helpers import can_use_pro_features, get_landscaper_plan
+
+from rest_framework import generics, permissions, serializers
+from django.db import IntegrityError
+from landscapers.models import Addon, BusinessProfile
+
+
+
 
 
 
@@ -126,7 +138,7 @@ class CompleteLandscaperProfileView(generics.CreateAPIView):
     def perform_create(self, serializer):
         user = self.request.user
 
-        # ❌ already exists check
+        #  already exists check
         if BusinessProfile.objects.filter(user=user).exists():
             raise ValidationError({"detail": "Business profile already exists."})
 
@@ -239,10 +251,6 @@ class GetBusinessProfileView(generics.RetrieveAPIView):
 #             raise PermissionDenied("You must have a business profile to create services.")
 
 #         serializer.save(business=business)
-from django.db.models import Q
-from rest_framework import generics
-from rest_framework.exceptions import PermissionDenied
-from rest_framework.permissions import IsAuthenticated
 
 class ServiceListCreateView(generics.ListCreateAPIView):
     serializer_class = ServiceSerializer
@@ -360,17 +368,7 @@ class ServiceDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 
 
-class PublicLandscaperServiceListView(generics.ListAPIView):
-    serializer_class = PublicServiceSerializer
-    permission_classes = [IsAuthenticated]
 
-    def get_queryset(self):
-        business_id = self.kwargs.get("business_id")
-
-        return Service.objects.filter(
-            business_id=business_id,
-            is_active=True
-        ).select_related("business").order_by("name")
 
 
 class ServiceAddonListView(generics.ListAPIView):
@@ -476,7 +474,6 @@ class ClientCustomServiceRetrieveDestroyView(generics.RetrieveDestroyAPIView):
             {"message": "Service request deleted successfully."},
             status=status.HTTP_200_OK
         )
-
 
 
 
@@ -622,23 +619,6 @@ def client_confirm_service(request, pk):
 # Landscaper Views
 # ================================
 
-# class LandscaperCustomServicePendingListView(generics.ListAPIView):
-#     serializer_class = ClientCustomServiceSerializer
-#     permission_classes = [IsLandscaper]
-
-#     def get_queryset(self):
-#         # Get the landscaper profile for the logged-in user
-#         try:
-#             landscaper_profile = self.request.user.landscaper_profile
-#         except AttributeError:
-#             return ClientCustomService.objects.none()
-
-#         # Filter requests sent to this landscaper profile
-#         return ClientCustomService.objects.filter(
-#             landscaper=landscaper_profile,
-#             status="pending",
-#             is_active=True
-#         ).order_by("-created_at")
 
 
 
@@ -797,13 +777,6 @@ def toggle_client_custom_service_active(request, pk):
 
 
 
-
-from rest_framework import generics, permissions, serializers
-from django.db import IntegrityError
-from landscapers.models import Addon, BusinessProfile
-from landscapers.serializers import AddonSerializer
-from django.db import transaction
-from rest_framework import generics, permissions, status
 
 class AddonListCreateView(generics.ListCreateAPIView):
     serializer_class = AddonSerializer
@@ -1663,12 +1636,7 @@ class LandscaperQuoteListView(generics.ListAPIView):
         ).order_by("-created_at")
 
 
-from rest_framework import generics, permissions, status
-from rest_framework.response import Response
-from rest_framework.exceptions import ValidationError
 
-from .models import ServiceQuote
-from .serializers import ServiceQuoteSerializer
 
 
 # class ServiceQuoteCreateView(generics.CreateAPIView):
@@ -1919,42 +1887,6 @@ class ServiceQuoteActionView(generics.UpdateAPIView):
 
 
 
-
-# class ServiceQuoteListForLandscaper(generics.ListAPIView):
-#     serializer_class = ServiceQuoteSerializer
-#     permission_classes = [permissions.IsAuthenticated]
-
-#     def get_queryset(self):
-
-#         user = self.request.user
-
-#         # -------------------------
-#         # CLIENT VIEW
-#         # -------------------------
-#         if hasattr(user, "clientprofile"):
-#             return ServiceQuote.objects.filter(
-#                 client=user.clientprofile
-#             ).select_related(
-#                 "client",
-#                 "landscaper",
-#                 "service",
-#                 "property"
-#             ).order_by("-created_at")
-
-#         # -------------------------
-#         # LANDSCAPER VIEW
-#         # -------------------------
-#         if hasattr(user, "landscaper_profile"):
-#             return ServiceQuote.objects.filter(
-#                 landscaper=user.landscaper_profile
-#             ).select_related(
-#                 "client",
-#                 "landscaper",
-#                 "service",
-#                 "property"
-#             ).order_by("-created_at")
-
-#         raise PermissionDenied("No valid profile found.")
 
 from django.db.models import Q
 from rest_framework import generics, permissions

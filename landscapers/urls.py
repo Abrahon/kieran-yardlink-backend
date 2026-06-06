@@ -26,7 +26,6 @@ from .views import (
     toggle_working_hour,
     get_landscaper_available_dates,
     get_landscaper_available_slots,
-    PublicLandscaperServiceListView,
     ServiceAddonListView,
     ClientAcceptedServiceListView,
     ServiceQuoteCreateView,
@@ -53,7 +52,7 @@ urlpatterns = [
     path("services/", ServiceListCreateView.as_view(), name="service-list-create"),
     path("services/<int:pk>/", ServiceDetailView.as_view(), name="service-detail"),
      # Client booking selection
-    path("landscapers/<int:business_id>/services/", PublicLandscaperServiceListView.as_view(), name="public-landscaper-services"),
+
     path("services/<int:service_id>/addons/", ServiceAddonListView.as_view(), name="service-addons"),
 
     # taggle 
@@ -121,6 +120,7 @@ urlpatterns = [
     path("quotes/<int:pk>/counter/", ServiceQuoteCounterView.as_view()),
     path("quotes/<int:pk>/action/", ServiceQuoteActionView.as_view()),
     path("quotes/counter-list/", ClientCounterOfferListView.as_view()),
+    # optional
     path(
         "quotes/<int:pk>/delete/",
         ServiceQuoteDeleteView.as_view(),

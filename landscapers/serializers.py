@@ -42,6 +42,7 @@ class BusinessLandscaperProfileSerializer(serializers.ModelSerializer):
             "description",
             "latitude",
             "longitude",
+            "service_radius_km",
             "profile_image",
             "quickbooks_connected",
             "insurance_doc",
@@ -508,98 +509,7 @@ class StandardServiceSerializer(serializers.ModelSerializer):
 
 
 
-# class ServiceQuoteSerializer(serializers.ModelSerializer):
-
-#     client = ClientProfileMiniSerializer(read_only=True)
-#     landscaper = serializers.SerializerMethodField()
-#         # -------------------------
-#     # FIX: allow property input
-#     # -------------------------
-#     property_id = serializers.PrimaryKeyRelatedField(
-#         queryset=Property.objects.all(),
-#         source="property",
-#         write_only=True
-#     )
-
-#     class Meta:
-#         model = ServiceQuote
-
-#         fields = [
-#             "id",
-#             "service",
-#             "client",
-#             "landscaper",
-#             "property",
-#             "property_id",
-#             "message",
-#             "preferred_date",
-#             "preferred_time",
-#             "scheduled_date",
-#             "scheduled_time",
-#             "price",
-#             "status",
-#             "created_at",
-#             "updated_at",
-#         ]
-
-#         read_only_fields = [
-#             "id",
-#             "client",
-#             "price", 
-#             "landscaper",
-#             "created_at",
-#             "updated_at",
-#         ]
-
-#     def get_landscaper(self, obj):
-#         landscaper = obj.landscaper
-
-#         if not landscaper:
-#             return None
-
-#         profile = getattr(landscaper, "landscaperprofilies", None)
-#         return {
-#             "id": landscaper.id,
-#             "name": getattr(profile, "name", None),
-#             "email": landscaper.user.email if landscaper.user else None,
-#             "phone": getattr(profile, "phone", None),
-#             "address": getattr(profile, "address", None),
-#             "profile_image": getattr(profile, "profile_image", None),
-#         }
-
-
-#     def validate(self, data):
-
-#         service = data.get("service")
-
-#         if not service:
-#             raise serializers.ValidationError({
-#                 "service": "Service is required."
-#             })
-
-#         return data
-
-#     def create(self, validated_data):
-#         request = self.context["request"]
-
-#         # FIX THIS LINE
-#         client = getattr(request.user, "clientprofile", None)
-
-#         if not client:
-#             raise serializers.ValidationError("Client profile not found")
-
-#         service = validated_data["service"]
-
-#         validated_data["client"] = client
-#         validated_data["landscaper"] = service.business
-#         validated_data["price"] = None
-
-#         return super().create(validated_data)
-
 # serializers.py
-
-
-
 
 class ServiceQuoteSerializer(serializers.ModelSerializer):
 
