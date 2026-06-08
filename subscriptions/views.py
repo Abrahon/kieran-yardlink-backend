@@ -1405,84 +1405,226 @@ class AdminLandscaperSubscriptionManageAPIView(APIView):
         )
 
 
+
+
 class AdminSubscriptionActionAPIView(APIView):
     permission_classes = [IsAdminUser]
 
     def post(self, request, subscription_id):
-        subscription = get_object_or_404(Subscription, id=subscription_id)
+        subscription = get_object_or_404(
+            Subscription,
+            id=subscription_id
+        )
 
         action = request.data.get("action")
         reason = request.data.get("reason", "")
 
+        if not action:
+            return Response(
+                {"detail": "action is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         old_data = SubscriptionSerializer(subscription).data
 
-        if not action:
-            return Response({"detail": "action is required"}, status=400)
+        try:
 
-        # =========================
-        # 1. EXTEND TRIAL
-        # =========================
-        if action == "extend_trial":
-            days = int(request.data.get("days", 0))
+            # ====================================
+            # EXTEND TRIAL
+            # ====================================
+            if action == "extend_trial":
 
-            subscription.extend_trial(days)
+                days = int(request.data.get("days", 0))
 
-        # =========================
-        # 2. CHANGE PLAN (UPGRADE / DOWNGRADE)
-        # =========================
-        elif action == "change_plan":
-            plan_id = request.data.get("plan_id")
-            plan = get_object_or_404(Plan, id=plan_id)
+                if days <= 0:
+                    return Response(
+                        {"detail": "days must be greater than 0"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
 
-            subscription.plan = plan
-            subscription.start_date = timezone.now()
-            subscription.end_date = timezone.now() + timedelta(days=plan.duration_days)
-            subscription.is_trial = False
-            subscription.status = SubscriptionStatus.ACTIVE
-            subscription.is_active = True
+                subscription.extend_trial(days)
 
-        # =========================
-        # 3. APPLY DISCOUNT OVERRIDE
-        # =========================
-        elif action == "apply_discount":
-            discount = Decimal(request.data.get("discount", 0))
-            subscription.discount_override = discount
+            # ====================================
+            # CHANGE PLAN
+            # ====================================
+            elif action == "change_plan":
 
-        # =========================
-        # 4. PAUSE / RESUME
-        # =========================
-        elif action == "pause":
-            subscription.is_active = False
-            subscription.status = SubscriptionStatus.PAUSED
+                plan_id = request.data.get("plan_id")
 
-        elif action == "resume":
-            subscription.is_active = True
-            subscription.status = SubscriptionStatus.ACTIVE
+                if not plan_id:
+                    return Response(
+                        {"detail": "plan_id is required"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
 
-        # =========================
-        # 5. AUTO RENEW TOGGLE
-        # =========================
-        elif action == "toggle_auto_renew":
-            subscription.auto_renew = not subscription.auto_renew
+                plan = get_object_or_404(
+                    Plan,
+                    id=plan_id
+                )
 
-        else:
-            return Response({"detail": "Invalid action"}, status=400)
+                subscription.plan = plan
+                subscription.start_date = timezone.now()
+                subscription.end_date = (
+                    timezone.now()
+                    + timedelta(days=plan.duration_days)
+                )
+                subscription.is_trial = False
+                subscription.status = SubscriptionStatus.ACTIVE
+                subscription.is_active = True
 
-        subscription.save()
+                subscription.save()
 
-        # =========================
-        # LOG EVERYTHING
-        # =========================
-        SubscriptionLog.objects.create(
-            subscription=subscription,
-            action=action,
-            old_data=old_data,
-            new_data=SubscriptionSerializer(subscription).data,
-            reason=reason,
-            created_by=request.user
+            # ====================================
+            # APPLY DISCOUNT
+            # ====================================
+            elif action == "apply_discount":
+
+                discount = Decimal(
+                    str(request.data.get("discount", 0))
+                )
+
+                if discount < 0 or discount > 100:
+                    return Response(
+                        {
+                            "detail":
+                            "Discount must be between 0 and 100"
+                        },
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                subscription.discount_override = discount
+                subscription.save()
+
+            # ====================================
+            # PAUSE
+            # ====================================
+            elif action == "pause":
+
+                subscription.is_active = False
+                subscription.status = SubscriptionStatus.PAUSED
+
+                subscription.save(
+                    update_fields=[
+                        "is_active",
+                        "status",
+                        "updated_at"
+                    ]
+                )
+
+            # ====================================
+            # RESUME
+            # ====================================
+            elif action == "resume":
+
+                subscription.is_active = True
+                subscription.status = SubscriptionStatus.ACTIVE
+
+                subscription.save(
+                    update_fields=[
+                        "is_active",
+                        "status",
+                        "updated_at"
+                    ]
+                )
+
+            # ====================================
+            # AUTO RENEW
+            # ====================================
+            elif action == "toggle_auto_renew":
+
+                subscription.auto_renew = (
+                    not subscription.auto_renew
+                )
+
+                subscription.save(
+                    update_fields=[
+                        "auto_renew",
+                        "updated_at"
+                    ]
+                )
+
+            else:
+                return Response(
+                    {"detail": "Invalid action"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            new_data = SubscriptionSerializer(subscription).data
+
+            # ====================================
+            # AUDIT LOG
+            # ====================================
+            SubscriptionLog.objects.create(
+                subscription=subscription,
+                action=action,
+                performed_by=request.user,
+                old_data=old_data,
+                new_data=new_data,
+                reason=reason,
+                metadata={
+                    "subscription_id": subscription.id,
+                    "plan": subscription.plan.name,
+                    "status": subscription.status
+                },
+                ip_address=request.META.get(
+                    "REMOTE_ADDR"
+                ),
+                user_agent=request.META.get(
+                    "HTTP_USER_AGENT"
+                ),
+            )
+
+            return Response(
+                {
+                    "message": "Action completed successfully",
+                    "subscription": new_data
+                },
+                status=status.HTTP_200_OK
+            )
+
+        except Exception as e:
+
+            return Response(
+                {
+                    "detail": str(e)
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+class AdminAssignSubscriptionAPIView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def post(self, request):
+        user_id = request.data.get("user_id")
+        plan_id = request.data.get("plan_id")
+
+        if not user_id or not plan_id:
+            return Response(
+                {"detail": "user_id and plan_id are required"},
+                status=400
+            )
+
+        user = get_object_or_404(User, id=user_id)
+        plan = get_object_or_404(Plan, id=plan_id)
+
+        now = timezone.now()
+
+        subscription = Subscription.objects.create(
+            user=user,
+            plan=plan,
+            status=SubscriptionStatus.ACTIVE,
+            is_active=True,
+            is_trial=request.data.get("is_trial", False),
+            auto_renew=request.data.get("auto_renew", True),
+            start_date=now,
+            end_date=now + timedelta(days=plan.duration_days),
         )
 
         return Response({
-            "message": "Action completed successfully",
-            "subscription": SubscriptionSerializer(subscription).data
-        }, status=200)
+            "message": "Subscription assigned successfully",
+            "subscription_id": subscription.id,
+            "user": user.email,
+            "plan": plan.name,
+            "start_date": subscription.start_date,
+            "end_date": subscription.end_date
+        }, status=201)

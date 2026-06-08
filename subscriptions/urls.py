@@ -66,6 +66,12 @@ urlpatterns = [
         views.AdminSubscriptionActionAPIView.as_view(),
         name="admin-subscription-action"
     ),
+    path(
+        "admin/subscriptions/assign/",
+        views.AdminAssignSubscriptionAPIView.as_view(),
+        name="admin-assign-subscription"
+    ),
+
 
 
 
