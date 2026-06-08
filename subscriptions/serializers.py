@@ -3,7 +3,8 @@ from .models import Plan,Subscription
 from django.utils import timezone
 from datetime import timedelta
 from django.contrib.auth import get_user_model
-from subscriptions.models import Subscription
+from subscriptions.models import Subscription, SubscriptionLog
+
 User = get_user_model()
 
 from decimal import Decimal
@@ -425,4 +426,27 @@ class AdminPlanOptionSerializer(serializers.ModelSerializer):
             "price",
             "discount",
             "duration",
+        ]
+
+class SubscriptionLogSerializer(serializers.ModelSerializer):
+    performed_by_name = serializers.CharField(
+        source="performed_by.email",
+        read_only=True
+    )
+
+    class Meta:
+        model = SubscriptionLog
+        fields = [
+            "id",
+            "subscription",
+            "action",
+            "performed_by",
+            "performed_by_name",
+            "old_data",
+            "new_data",
+            "metadata",
+            "reason",
+            "level",
+            "ip_address",
+            "created_at",
         ]

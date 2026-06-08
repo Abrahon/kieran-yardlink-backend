@@ -61,6 +61,11 @@ urlpatterns = [
         views.AdminLandscaperSubscriptionManageAPIView.as_view(),
         name="admin-landscaper-subscription-manage",
     ),
+    path(
+        "admin/subscriptions/<int:subscription_id>/action/",
+        views.AdminSubscriptionActionAPIView.as_view(),
+        name="admin-subscription-action"
+    ),
 
 
 
