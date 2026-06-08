@@ -52,7 +52,7 @@ from .serializers import (
     AdminPlanOptionSerializer,
     AdminLandscaperSubscriptionEditSerializer,
 )
-
+from decimal import Decimal
 import stripe
 from django.conf import settings
 from .models import Plan, Subscription
@@ -83,7 +83,16 @@ from datetime import timedelta
 from .models import Plan
 from .serializers import PlanSerializer
 from datetime import datetime
-
+from django.utils import timezone
+from django.db.models import Sum, Count, F, DecimalField, ExpressionWrapper
+from django.db.models.functions import Coalesce
+from django.core.exceptions import ValidationError
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from django.db.models import Sum, F, DecimalField, ExpressionWrapper
+from django.db.models.functions import Coalesce
+from .models import Plan, Subscription, SubscriptionStatus
 stripe.api_key = settings.STRIPE_SECRET_KEY
 
 
@@ -483,6 +492,9 @@ def stripe_webhook(request):
     # =========================================================
     # 1. CHECKOUT COMPLETED
     # =========================================================
+    # =========================================================
+    # 1. CHECKOUT COMPLETED
+    # =========================================================
     if event_type == "checkout.session.completed":
 
         try:
@@ -506,19 +518,48 @@ def stripe_webhook(request):
 
             stripe_sub = stripe.Subscription.retrieve(subscription_id)
 
-            start_ts = getattr(stripe_sub, "current_period_start", None)
-            end_ts = getattr(stripe_sub, "current_period_end", None)
+            now = timezone.now()
 
-            # ✅ SINGLE TRIAL SOURCE (Stripe)
-            is_trial = getattr(stripe_sub, "trial_end", None) is not None
+            # =====================================================
+            # 🚨 TRIAL LOGIC (ONLY ONCE PER USER)
+            # =====================================================
+            existing_trial = Subscription.objects.filter(
+                user=user,
+                is_trial=True
+            ).exists()
 
-            if is_trial:
-                start_date = timezone.now()
-                end_date = start_date + timedelta(days=14)
+            if not existing_trial:
+                # FIRST TIME USER → 14 DAYS TRIAL
+                start_date = now
+                end_date = now + timedelta(days=14)
+                is_trial = True
+
             else:
-                start_date = datetime.fromtimestamp(start_ts, tz=timezone.utc) if start_ts else timezone.now()
-                end_date = datetime.fromtimestamp(end_ts, tz=timezone.utc) if end_ts else timezone.now()
+                # PAID SUBSCRIPTION (FROM STRIPE)
+                start_ts = getattr(stripe_sub, "current_period_start", None)
+                end_ts = getattr(stripe_sub, "current_period_end", None)
 
+                start_date = (
+                    datetime.fromtimestamp(start_ts, tz=timezone.utc)
+                    if start_ts else now
+                )
+
+                end_date = (
+                    datetime.fromtimestamp(end_ts, tz=timezone.utc)
+                    if end_ts else (start_date + timedelta(days=plan.duration_days))
+                )
+
+                is_trial = False
+
+            # =====================================================
+            # SAFETY CHECK (VERY IMPORTANT)
+            # =====================================================
+            if end_date <= start_date:
+                end_date = start_date + timedelta(days=plan.duration_days)
+
+            # =====================================================
+            # SAVE SUBSCRIPTION
+            # =====================================================
             Subscription.objects.update_or_create(
                 stripe_subscription_id=subscription_id,
                 defaults={
@@ -547,29 +588,34 @@ def stripe_webhook(request):
 
         try:
             subscription_id = data.get("subscription")
-            if subscription_id:
-                stripe_sub = stripe.Subscription.retrieve(subscription_id)
 
-                start_ts = getattr(stripe_sub, "current_period_start", None)
-                end_ts = getattr(stripe_sub, "current_period_end", None)
+            if not subscription_id:
+                return HttpResponse(status=200)
 
-                if stripe_sub.status == "trialing":
-                    start_date = timezone.now()
-                    end_date = start_date + timedelta(days=14)
-                else:
-                    start_date = datetime.fromtimestamp(start_ts, tz=timezone.utc) if start_ts else timezone.now()
-                    end_date = datetime.fromtimestamp(end_ts, tz=timezone.utc) if end_ts else timezone.now()
+            stripe_sub = stripe.Subscription.retrieve(subscription_id)
 
-                Subscription.objects.filter(
-                    stripe_subscription_id=subscription_id
-                ).update(
-                    status=stripe_sub.status,
-                    is_active=stripe_sub.status in ["active", "trialing"],
-                    is_trial=(stripe_sub.status == "trialing"),
-                    start_date=start_date,
-                    end_date=end_date,
-                    updated_at=timezone.now(),
-                )
+            start_ts = stripe_sub.get("current_period_start")
+            end_ts = stripe_sub.get("current_period_end")
+
+            if not start_ts or not end_ts:
+                return HttpResponse(status=200)
+
+            start_date = datetime.fromtimestamp(start_ts, tz=timezone.utc)
+            end_date = datetime.fromtimestamp(end_ts, tz=timezone.utc)
+
+            if end_date <= start_date:
+                end_date = start_date + timedelta(days=30)
+
+            Subscription.objects.filter(
+                stripe_subscription_id=subscription_id
+            ).update(
+                status=stripe_sub.get("status"),
+                is_active=stripe_sub.get("status") in ["active", "trialing"],
+                is_trial=(stripe_sub.get("status") == "trialing"),
+                start_date=start_date,
+                end_date=end_date,
+                updated_at=timezone.now(),
+            )
 
         except Exception as e:
             print("invoice.payment_succeeded error:", str(e))
@@ -726,29 +772,48 @@ class AdminDashboardStatsView(APIView):
         now = timezone.now()
         month_start = now.replace(day=1)
 
+        # Total plans
         total_plans = Plan.objects.count()
 
+        # ✅ FIXED ACTIVE LOGIC (IMPORTANT)
         active_subscriptions = Subscription.objects.filter(
-            status="active",
+            is_active=True,
             end_date__gte=now
         ).count()
 
+        # Expired subscriptions (FIXED)
         expired_subscriptions = Subscription.objects.filter(
+            is_active=True,
             end_date__lt=now
         ).count()
 
-        # Monthly revenue (DB-based, Stripe-safe)
+        # Monthly revenue (safe version)
         monthly_revenue = Subscription.objects.filter(
             start_date__gte=month_start,
-            status="active"
+            is_active=True,
+            end_date__gte=now
         ).aggregate(
-            total=Sum("plan__price")
-        )["total"] or 0
+            total=Coalesce(
+                Sum(
+                    ExpressionWrapper(
+                        F("plan__price")
+                        - (F("plan__price") * F("discount_override") / Decimal("100")),
+                        output_field=DecimalField()
+                    )
+                ),
+                Decimal("0")
+            )
+        )["total"]
 
+        # Subscribers by plan (FIXED)
         subscribers_by_plan = (
-            Subscription.objects.filter(status="active")
+            Subscription.objects.filter(
+                is_active=True,
+                end_date__gte=now
+            )
             .values("plan__name")
             .annotate(total=Count("id"))
+            .order_by("-total")
         )
 
         return Response({
@@ -756,11 +821,9 @@ class AdminDashboardStatsView(APIView):
             "active_subscriptions": active_subscriptions,
             "expired_subscriptions": expired_subscriptions,
             "monthly_revenue": monthly_revenue,
-            "subscribers_by_plan": subscribers_by_plan
+            "subscribers_by_plan": list(subscribers_by_plan),
         })
-
-
-
+    
 
 # admin plan delete
 

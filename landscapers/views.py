@@ -474,6 +474,7 @@ class ClientCustomServiceRetrieveDestroyView(generics.RetrieveDestroyAPIView):
             {"message": "Service request deleted successfully."},
             status=status.HTTP_200_OK
         )
+    
 
 
 
@@ -620,9 +621,6 @@ def client_confirm_service(request, pk):
 # ================================
 
 
-
-
-
 class LandscaperCustomServicePendingListView(generics.ListAPIView):
     """
     Landsacaper sees all pending custom service requests
@@ -711,6 +709,7 @@ def landscaper_accept_service(request, pk):
         "scheduled_date": service.preferred_date,
         "scheduled_time": service.preferred_time,
     }, status=200)
+
 
 
 # accepet client custom service landscaper
@@ -1956,6 +1955,7 @@ class ServiceQuoteListForLandscaper(generics.ListAPIView):
             obj.request_type = "quote_request"
 
         return custom_qs + quote_qs
+    
     
 
 from rest_framework import status
