@@ -1246,6 +1246,72 @@ class AdminUserBillingSummaryView(APIView):
 
 
 
+# billing history
+
+class AdminUserBillingHistoryAPIView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request, user_id):
+
+        user = get_object_or_404(User, id=user_id)
+
+        subscription = (
+            Subscription.objects
+            .filter(user=user)
+            .order_by("-created_at")
+            .first()
+        )
+
+        if not subscription:
+            return Response({
+                "status": "success",
+                "billing_history": []
+            })
+
+        billing_history = []
+
+        if subscription.stripe_subscription_id:
+
+            try:
+
+                invoices = stripe.Invoice.list(
+                    subscription=subscription.stripe_subscription_id,
+                    limit=100
+                )
+
+                for invoice in invoices.auto_paging_iter():
+
+                    billing_history.append({
+                        "invoice_id": invoice.get("id"),
+                        "invoice_number": invoice.get("number"),
+                        "amount_paid": (
+                            invoice.get("amount_paid", 0) or 0
+                        ) / 100,
+                        "currency": invoice.get("currency"),
+                        "status": invoice.get("status"),
+                        "invoice_pdf": invoice.get("invoice_pdf"),
+                        "hosted_invoice_url": invoice.get(
+                            "hosted_invoice_url"
+                        ),
+                        "created": invoice.get("created")
+                    })
+
+            except Exception as e:
+
+                return Response(
+                    {"detail": str(e)},
+                    status=400
+                )
+
+        return Response({
+            "status": "success",
+            "user": {
+                "id": user.id,
+                "name": user.name,
+                "email": user.email
+            },
+            "billing_history": billing_history
+        })
 
 
 

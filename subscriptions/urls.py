@@ -71,6 +71,11 @@ urlpatterns = [
         views.AdminAssignSubscriptionAPIView.as_view(),
         name="admin-assign-subscription"
     ),
+    path(
+        "admin/users/<int:user_id>/billing-history/",
+        views.AdminUserBillingHistoryAPIView.as_view(),
+        name="admin-user-billing-history"
+    ),
 
 
 
