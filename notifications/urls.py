@@ -3,7 +3,7 @@ from .views import (
     NotificationListView,
     NotificationSettingsView,
     RecentCompletedNotificationsAPIView,
-    UserNotificationsAPIView,
+    NotificationReadAPIView,
     save_fcm_token,
     TestNotificationAPIView
 )
@@ -15,6 +15,6 @@ urlpatterns = [
     path("notifications/settings/", NotificationSettingsView.as_view()),
     path("notifications/recent-completed/", RecentCompletedNotificationsAPIView.as_view()),
 
-    path("notifications/<int:notification_id>/", UserNotificationsAPIView.as_view()),
+    path("notifications/<int:notification_id>/read/", NotificationReadAPIView.as_view()),
     path("test/", TestNotificationAPIView.as_view(), name="test-notification"),
 ]

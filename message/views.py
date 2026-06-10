@@ -2,6 +2,8 @@
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+from message.serializers import ChatThreadSerializer, MessageSerializer
 from .models import ChatThread, Message
 from accounts.models import User
 from django.db.models.functions import Lower, Trim
@@ -12,6 +14,9 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.db.models import Q
+from rest_framework import generics, permissions
+from rest_framework.response import Response
+from .models import ChatThread, Message
 
 
 class ConversationListAPIView(APIView):
@@ -86,27 +91,7 @@ class ConversationDetailAPIView(APIView):
             "messages": data
         })
 
-#  delete user who is send message
 
-# class DeleteThreadFromInboxAPIView(APIView):
-#     permission_classes = [IsAuthenticated]
-
-#     def delete(self, request, thread_id):
-#         """
-#         "Delete" a thread from the inbox of the requesting user.
-#         This just hides the thread for this user.
-#         """
-#         try:
-#             thread = ChatThread.objects.get(id=thread_id)
-#         except ChatThread.DoesNotExist:
-#             return Response({"detail": "Thread not found."}, status=404)
-
-#         if request.user not in thread.participants:
-#             return Response({"detail": "Not allowed."}, status=403)
-
-#         # Hide the thread for this user
-#         thread.hidden_for.add(request.user)
-#         return Response({"detail": "Thread removed from your inbox."}, status=200)
 
 
 
@@ -291,6 +276,7 @@ class AdminConversationListAPIView(APIView):
         )
 
 
+# old
 class AdminConversationDetailAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -350,3 +336,65 @@ class AdminConversationDetailAPIView(APIView):
             },
             status=status.HTTP_200_OK
         )
+    
+    
+# old
+class MessageCreateView(generics.CreateAPIView):
+    serializer_class = MessageSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def create(self, request, *args, **kwargs):
+        thread_id = request.data.get("thread_id")
+        text = request.data.get("text", "").lower()
+
+        thread = ChatThread.objects.get(id=thread_id)
+
+        # -------------------------
+        # CREATE MESSAGE
+        # -------------------------
+        message = Message.objects.create(
+            thread=thread,
+            sender=request.user,
+            text=request.data.get("text"),
+            file=request.data.get("file")
+        )
+
+        # -------------------------
+        # AUTO TAG LOGIC (NO AI)
+        # -------------------------
+        if any(w in text for w in ["payment", "invoice", "bill"]):
+            thread.tag = "billing"
+
+        elif any(w in text for w in ["subscribe", "plan", "subscription"]):
+            thread.tag = "subscription"
+
+        elif any(w in text for w in ["help", "issue", "problem"]):
+            thread.tag = "support"
+
+        elif any(w in text for w in ["price", "quote", "cost"]):
+            thread.tag = "inquiry"
+
+        else:
+            thread.tag = "general"
+
+        thread.save()
+
+        return Response({
+            "message": "Message sent",
+            "tag": thread.tag
+        })
+
+
+class AdminChatThreadListView(generics.ListAPIView):
+    serializer_class = ChatThreadSerializer
+    permission_classes = [permissions.IsAdminUser]
+
+    def get_queryset(self):
+        queryset = ChatThread.objects.all()
+
+        tag = self.request.query_params.get("tag")
+
+        if tag:
+            queryset = queryset.filter(tag=tag)
+
+        return queryset.order_by("-updated_at")

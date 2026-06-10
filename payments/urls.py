@@ -16,7 +16,8 @@ from .views import (
     # admin_income_overview,
     AdminStripeVsCashDashboardAPIView,
     admin_dashboard_stats,
-    EarningsCSVExportView
+    EarningsCSVExportView,
+    AdminUserPaymentsView
 
     
 )
@@ -81,5 +82,8 @@ urlpatterns = [
     path('client/payment/history/', client_payment_history, name='client-payment-history'),
     path("admin/transactions/stats/", admin_dashboard_stats, name="admin-transaction-summary"),
     path("reports/earnings/csv/", EarningsCSVExportView.as_view()),
+
+    path("admin/users/<int:user_id>/payments/", AdminUserPaymentsView.as_view()),
+
 
 ]

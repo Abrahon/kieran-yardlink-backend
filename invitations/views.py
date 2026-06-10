@@ -53,7 +53,7 @@ from subscriptions.helpers import can_add_team_member
 
 class SendInvitationView(CreateAPIView):
     serializer_class = SendInvitationSerializer
-    permission_classes = [IsAuthenticated, IsProLandscaper]
+    permission_classes = [IsAuthenticated]
 
     def create(self, request, *args, **kwargs):
 

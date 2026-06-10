@@ -261,8 +261,11 @@ def create_checkout_session(request):
 
             subscription_data=subscription_data,
 
-            success_url="https://yourdomain.com/success/?session_id={CHECKOUT_SESSION_ID}",
-            cancel_url="https://yourdomain.com/cancel/",
+            # success_url="https://yourdomain.com/success/?session_id={CHECKOUT_SESSION_ID}",
+            # cancel_url="https://yourdomain.com/cancel/",
+            
+            success_url="http://127.0.0.1:8000/success/?session_id={CHECKOUT_SESSION_ID}",
+            cancel_url="http://127.0.0.1:8000/cancel/",
         )
 
         return Response({

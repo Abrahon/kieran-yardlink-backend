@@ -28,6 +28,9 @@ from firebase_admin import messaging  # If you use FCM
 from rest_framework.decorators import api_view, permission_classes
 from .models import Device
 
+
+
+
 class NotificationListView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -42,6 +45,8 @@ class NotificationListView(APIView):
             notifications = notifications.filter(is_read=False)
         serializer = NotificationSerializer(notifications, many=True)
         return Response({"notifications": serializer.data})
+    
+
 
 
 class NotificationSettingsView(APIView):
@@ -68,20 +73,67 @@ class NotificationSettingsView(APIView):
 
 
 
+
+
+# def send_push_notification(user, title, message, notification_type):
+#     settings = getattr(user, "notification_settings", None)
+#     if settings:
+#         if notification_type == "job" and not settings.job_alert:
+#             return
+#         if notification_type == "payment" and not settings.payment_alert:
+#             return
+#         if notification_type == "weather" and not settings.weather_alert:
+#             return
+
+#     Notification.objects.create(
+#         user=user,
+#         notification_type=notification_type,
+#         title=title,
+#         message=message
+#     )
+
+#     # ✅ USE DEVICE MODEL (FIXED)
+#     from .models import Device
+
+#     devices = Device.objects.filter(user=user, is_active=True)
+
+#     tokens = [d.token for d in devices]
+
+#     if not tokens:
+#         return
+
+#     messaging.send_multicast(
+#         messaging.MulticastMessage(
+#             notification=messaging.Notification(
+#                 title=title,
+#                 body=message
+#             ),
+#             tokens=tokens
+#         )
+#     )
+
+from firebase_admin import messaging
+from .models import Device, Notification
+
+
 def send_push_notification(user, title, message, notification_type):
+
+    # -------------------------
+    # 1. Notification Settings Check
+    # -------------------------
     settings = getattr(user, "notification_settings", None)
-    if not settings:
-        return
 
-    # Check if notifications are enabled
-    if notification_type == "job" and not settings.job_alert:
-        return
-    if notification_type == "payment" and not settings.payment_alert:
-        return
-    if notification_type == "weather" and not settings.weather_alert:
-        return
+    if settings:
+        if notification_type == "job" and not settings.job_alert:
+            return
+        if notification_type == "payment" and not settings.payment_alert:
+            return
+        if notification_type == "weather" and not settings.weather_alert:
+            return
 
-    # Create notification record
+    # -------------------------
+    # 2. Save DB Notification
+    # -------------------------
     Notification.objects.create(
         user=user,
         notification_type=notification_type,
@@ -89,39 +141,57 @@ def send_push_notification(user, title, message, notification_type):
         message=message
     )
 
-    # Send FCM push
-    if hasattr(user, "fcm_token") and user.fcm_token:
-        messaging.send(
-            messaging.Message(
-                notification=messaging.Notification(
-                    title=title,
-                    body=message
-                ),
-                token=user.fcm_token
-            )
+    # -------------------------
+    # 3. Get devices
+    # -------------------------
+    devices = Device.objects.filter(user=user, is_active=True)
+
+    if not devices.exists():
+        return
+
+    # -------------------------
+    # 4. Build messages
+    # -------------------------
+    messages = [
+        messaging.Message(
+            notification=messaging.Notification(
+                title=title,
+                body=message
+            ),
+            token=device.token
         )
+        for device in devices
+    ]
+
+    # -------------------------
+    # 5. Send all safely
+    # -------------------------
+    for msg in messages:
+        try:
+            messaging.send(msg)
+        except Exception as e:
+            print("FCM error:", e)
+            
 
 # notifications/views.py
-class UserNotificationsAPIView(APIView):
+class NotificationReadAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
-        """
-        Get all notifications for logged-in user
-        """
-        notifications = Notification.objects.filter(user=request.user)
-        serializer = NotificationSerializer(notifications, many=True)
-        return Response(serializer.data)
-
     def patch(self, request, notification_id):
-        """
-        Mark a notification as read
-        """
-        notification = Notification.objects.filter(id=notification_id, user=request.user).first()
+        notification = Notification.objects.filter(
+            id=notification_id,
+            user=request.user
+        ).first()
+
         if not notification:
-            return Response({"detail": "Notification not found"}, status=404)
+            return Response(
+                {"detail": "Notification not found"},
+                status=404
+            )
+
         notification.is_read = True
         notification.save(update_fields=["is_read"])
+
         return Response({"detail": "Notification marked as read"})
 
 
@@ -129,34 +199,40 @@ class UserNotificationsAPIView(APIView):
 
 class RecentCompletedNotificationsAPIView(APIView):
     """
-    Returns recent completed service/job notifications for the logged-in user.
+    Returns recent job/service notifications for the logged-in user.
     Supports optional 'limit' query param (default 10).
     """
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         limit = request.query_params.get("limit", 10)
+
         try:
             limit = int(limit)
         except ValueError:
             limit = 10
 
-        notifications = Notification.objects.filter(
+        base_queryset = Notification.objects.filter(
             user=request.user,
-            notification_type="job",  # only completed job/service notifications
-            is_read=False  # optional: filter unread
-        ).order_by("-created_at")[:limit]
+            notification_type="job"
+        )
+
+        total_count = base_queryset.count()
+
+        notifications = (
+            base_queryset
+            .order_by("-created_at")[:limit]
+        )
 
         serializer = NotificationSerializer(notifications, many=True)
+
         return Response({
-            "count": notifications.count(),
+            "count": total_count,
+            "limit": limit,
             "notifications": serializer.data
         })
 
 # .....
-
-
-
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])

@@ -36,7 +36,7 @@ class MessageSerializer(serializers.ModelSerializer):
     message_type = serializers.ReadOnlyField()
 
     class Meta:
-        model = Mes sage
+        model = Message
         fields = [
             'id',
             'thread',

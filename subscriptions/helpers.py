@@ -5,6 +5,8 @@ from invitations.models import TeamInvitation, InvitationStatus
 
 from django.db.models import Q
 from connections.models import ConnectionRequest
+from django.db.models import Q
+from subscriptions.models import Subscription, SubscriptionStatus
 
 
 def get_active_client_count(landscaper_user):
@@ -99,24 +101,40 @@ def can_add_team_member(user):
 # =========================================
 
 
-def can_add_client(user):
 
-    landscaper = getattr(user, "landscaper_profile", None)
 
-    if not landscaper:
-        return False
+def can_add_client(landscaper_user):
 
-    plan = get_plan_name(user)
+    subscription = (
+        Subscription.objects
+        .filter(
+            user=landscaper_user,
+            is_active=True,
+            status__in=[
+                SubscriptionStatus.ACTIVE,
+                SubscriptionStatus.TRIALING
+            ]
+        )
+        .select_related("plan")
+        .first()
+    )
 
-    total_clients = landscaper.connections.count()
+    plan_name = "basic"
 
-    if plan == "basic":
-        return total_clients <= 10
+    if subscription and subscription.plan:
+        plan_name = subscription.plan.name.lower()
 
-    if plan == "pro":
-        return True
+    total_clients = ConnectionRequest.objects.filter(
+        is_accepted=True
+    ).filter(
+        Q(sender=landscaper_user) |
+        Q(receiver=landscaper_user)
+    ).count()
 
-    return False
+    if plan_name == "basic":
+        return total_clients < 10
+
+    return True
 
 
 def get_landscaper_plan(user):

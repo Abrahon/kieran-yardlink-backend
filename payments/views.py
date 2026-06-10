@@ -84,7 +84,9 @@ from django.contrib.auth.models import User
 from django.db.models import Sum, Value, DecimalField
 from django.db.models.functions import Coalesce
 from django.utils.timezone import now
-
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+from reportlab.lib import colors
+from django.http import HttpResponse
 from rest_framework.decorators import api_view, permission_classes
 
 from rest_framework.response import Response
@@ -120,6 +122,12 @@ from django.http import HttpResponse
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from django.http import HttpResponse
+from rest_framework.permissions import IsAdminUser
+from rest_framework.views import APIView
 
 
 
@@ -131,7 +139,7 @@ from django.utils import timezone
 from notifications.services import send_push_notification
 
 def payment_success(request):
-    payment = Payment.objects.create(...)
+    payment =Invoice.objects.create(...)
 
     send_push_notification(
         user=payment.user,
@@ -140,46 +148,6 @@ def payment_success(request):
         notification_type="payment",
         data={"screen": "payment_history"}
     )
-
-    
-
-# @api_view(["POST"])
-# @permission_classes([IsAuthenticated])
-# def create_invoice_checkout_session(request):
-#     invoice_id = request.data.get("invoice_id")
-#     if not invoice_id:
-#         return Response({"error": "invoice_id is required"}, status=status.HTTP_400_BAD_REQUEST)
-
-#     client = getattr(request.user, "clientprofile", None)
-#     if not client:
-#         return Response({"error": "Client profile not found"}, status=status.HTTP_403_FORBIDDEN)
-
-#     try:
-#         invoice = Invoice.objects.select_related("job", "job__client", "job__landscaper").get(
-#             id=invoice_id,
-#             job__client=client
-#         )
-#     except Invoice.DoesNotExist:
-#         return Response({"error": "Invoice not found"}, status=status.HTTP_404_NOT_FOUND)
-
-#     if invoice.status == Invoice.Status.PAID:
-#         return Response({"message": "Invoice already paid"}, status=status.HTTP_200_OK)
-
-#     try:
-#         session = create_invoice_checkout_session(invoice)
-#     except Exception as e:
-#         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-#     invoice.status = Invoice.Status.PENDING
-#     invoice.stripe_session_id = session.id
-#     invoice.stripe_checkout_url = session.url
-#     invoice.save(update_fields=["status", "stripe_session_id", "stripe_checkout_url", "updated_at"])
-
-#     return Response({
-#         "invoice_id": invoice.id,
-#         "invoice_number": invoice.invoice_number,
-#         "checkout_url": session.url,
-#     }, status=status.HTTP_200_OK)
 
 
 @api_view(["POST"])
@@ -1201,6 +1169,8 @@ def admin_dashboard_stats(request):
         }
     })
 
+
+
 @api_view(["GET"])
 @permission_classes([IsAdminUser])
 def stripe_all_payments(request):
@@ -1448,6 +1418,39 @@ def stripe_all_payments(request):
 
         return response
 
+    if download == "pdf":
+
+        response = HttpResponse(content_type="application/pdf")
+        response["Content-Disposition"] = 'attachment; filename="payments_report.pdf"'
+
+        doc = SimpleDocTemplate(response)
+
+        table_data = [[
+            "ID", "Name", "Email", "Type", "Amount", "Status", "Date"
+        ]]
+
+        for item in data:
+            table_data.append([
+                item.get("record_id"),
+                item.get("name"),
+                item.get("email"),
+                item.get("type"),
+                item.get("amount_paid"),
+                item.get("status"),
+                str(item.get("date")),
+            ])
+
+        table = Table(table_data)
+
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
+        ]))
+
+        doc.build([table])
+
+        return response
     paginator = PageNumberPagination()
     paginator.page_size = 10
     result_page = paginator.paginate_queryset(data, request)
@@ -1465,6 +1468,162 @@ def stripe_all_payments(request):
         "results": result_page,
     })
 
+
+
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAdminUser
+from rest_framework.response import Response
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from django.http import HttpResponse
+
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+from reportlab.lib import colors
+
+import csv
+
+class AdminUserPaymentsView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request, user_id):
+
+        download = request.GET.get("download", "").lower()
+
+        data = []
+
+        # =========================
+        # 1. CLIENT INVOICES
+        # =========================
+        invoices = Invoice.objects.select_related(
+            "job",
+            "job__client__user",
+            "job__landscaper",
+        ).filter(job__client__user_id=user_id)
+
+        for invoice in invoices:
+            job = invoice.job
+
+            data.append({
+                "record_id": invoice.id,
+                "type": "service",
+                "amount_paid": float(invoice.total or 0),
+                "base_amount": float(invoice.subtotal or 0),
+                "status": invoice.status,
+                "transaction_id": invoice.stripe_session_id,
+                "date": invoice.created_at,
+                "invoice_number": invoice.invoice_number,
+                "job_id": job.id if job else None,
+            })
+
+        # =========================
+        # 2. SUBSCRIPTIONS
+        # =========================
+        subscriptions = Subscription.objects.select_related("plan").filter(
+            user_id=user_id
+        )
+
+        for sub in subscriptions:
+            plan_price = float(sub.plan.price or 0)
+
+            amount_paid = plan_price
+            if sub.discount_override:
+                amount_paid = plan_price - (plan_price * float(sub.discount_override) / 100)
+
+            data.append({
+                "record_id": sub.id,
+                "type": "subscription",
+                "amount_paid": round(amount_paid, 2),
+                "base_amount": plan_price,
+                "status": sub.status,
+                "transaction_id": sub.stripe_subscription_id,
+                "date": sub.created_at,
+                "plan_name": sub.plan.name if sub.plan else None,
+            })
+
+        # =========================
+        # SORT LATEST FIRST
+        # =========================
+        data.sort(key=lambda x: x["date"] or timezone.now(), reverse=True)
+
+        # ======================================================
+        # CSV DOWNLOAD
+        # ======================================================
+        if download == "csv":
+            response = HttpResponse(content_type="text/csv")
+            response["Content-Disposition"] = f'attachment; filename="user_{user_id}_payments.csv"'
+
+            writer = csv.writer(response)
+
+            writer.writerow([
+                "Record ID",
+                "Type",
+                "Amount Paid",
+                "Base Amount",
+                "Status",
+                "Transaction ID",
+                "Date",
+                "Invoice Number",
+                "Job ID",
+                "Plan Name",
+            ])
+
+            for item in data:
+                writer.writerow([
+                    item.get("record_id"),
+                    item.get("type"),
+                    item.get("amount_paid"),
+                    item.get("base_amount"),
+                    item.get("status"),
+                    item.get("transaction_id"),
+                    item.get("date"),
+                    item.get("invoice_number"),
+                    item.get("job_id"),
+                    item.get("plan_name"),
+                ])
+
+            return response
+
+        # ======================================================
+        # PDF DOWNLOAD
+        # ======================================================
+        if download == "pdf":
+            response = HttpResponse(content_type="application/pdf")
+            response["Content-Disposition"] = f'attachment; filename="user_{user_id}_payments.pdf"'
+
+            doc = SimpleDocTemplate(response)
+
+            table_data = [[
+                "Type", "Amount", "Status", "Transaction ID", "Date"
+            ]]
+
+            for item in data:
+                table_data.append([
+                    item.get("type"),
+                    item.get("amount_paid"),
+                    item.get("status"),
+                    item.get("transaction_id"),
+                    str(item.get("date")),
+                ])
+
+            table = Table(table_data)
+
+            table.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
+            ]))
+
+            doc.build([table])
+            return response
+
+        # =========================
+        # NORMAL RESPONSE
+        # =========================
+        return Response({
+            "user_id": user_id,
+            "count": len(data),
+            "results": data
+        })
 
 
 
