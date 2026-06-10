@@ -102,7 +102,9 @@ from decimal import Decimal
 from django.db import transaction
 from rest_framework.response import Response
 from rest_framework import generics, permissions
-
+from django.db import transaction
+from django.db.models import Sum
+from decimal import Decimal
 from jobs.models import Job, JobItem
 from .models import ServiceQuote
 from .serializers import ServiceQuoteSerializer
@@ -1827,7 +1829,6 @@ class ServiceQuoteActionView(generics.UpdateAPIView):
             return Response({"error": "Not allowed"}, status=403)
 
         action = request.data.get("action")
-        job = None
 
         # =========================
         # ACCEPT FLOW
@@ -1837,13 +1838,23 @@ class ServiceQuoteActionView(generics.UpdateAPIView):
             if quote.status == ServiceQuote.Status.CONVERTED:
                 return Response({"error": "Already converted"}, status=400)
 
-            final_price = get_final_price(quote)
+            # =========================
+            # FIX 1: USE ONLY REAL FIELD
+            # =========================
+            final_price = quote.price
 
-            quote.final_price = final_price
+            if not final_price or final_price <= 0:
+                return Response(
+                    {"error": "Quote price is not set by landscaper"},
+                    status=400
+                )
+
             quote.status = ServiceQuote.Status.ACCEPTED
             quote.save()
 
-            # CREATE JOB
+            # =========================
+            # FIX 2: CREATE JOB WITH REAL PRICE
+            # =========================
             job = Job.objects.create(
                 client=quote.client,
                 landscaper=quote.landscaper,
@@ -1854,20 +1865,36 @@ class ServiceQuoteActionView(generics.UpdateAPIView):
                 status=Job.Status.UPCOMING,
             )
 
-            # CREATE JOB ITEM
-            if quote.service:
-                JobItem.objects.create(
-                    job=job,
-                    item_type=JobItem.ItemType.STANDARD_SERVICE,
-                    service=quote.service,
-                    name=quote.service.name,
-                    price=final_price,
-                )
+            # =========================
+            # FIX 3: CREATE JOB ITEM WITH SAME PRICE
+            # =========================
+            JobItem.objects.create(
+                job=job,
+                item_type=JobItem.ItemType.STANDARD_SERVICE,
+                service=quote.service,
+                name=quote.service.name,
+                price=final_price,
+            )
+
+            # =========================
+            # FIX 4: FORCE TOTAL RECHECK (IMPORTANT)
+            # =========================
+            job.total_price = job.items.aggregate(
+                total=Sum("price")
+            )["total"] or Decimal("0.00")
+
+            job.save(update_fields=["total_price"])
 
             # mark converted
             quote.status = ServiceQuote.Status.CONVERTED
             quote.save()
 
+            return Response({
+                "message": "Quote accepted successfully",
+                "quote_id": quote.id,
+                "job_id": job.id,
+                "total_price": str(job.total_price)
+            })
         # =========================
         # REJECT FLOW
         # =========================
@@ -1875,15 +1902,14 @@ class ServiceQuoteActionView(generics.UpdateAPIView):
             quote.status = ServiceQuote.Status.REJECTED
             quote.save()
 
+            return Response({
+                "message": "Quote rejected successfully",
+                "quote_id": quote.id
+            })
+
         else:
             return Response({"error": "Invalid action"}, status=400)
-
-        return Response({
-            "message": f"Quote {action}ed successfully",
-            "quote_id": quote.id,
-            "job_id": job.id if job else None
-        })
-
+        
 
 
 

@@ -267,6 +267,8 @@ class ServiceQuote(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
+
+    
 # # custom service request
 # class ClientCustomService(models.Model):
 #     client = models.ForeignKey(

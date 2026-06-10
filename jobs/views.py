@@ -48,39 +48,6 @@ def job_created(sender, instance, created, **kwargs):
     # do your logic here (notification etc.)
 
 
-# class UpcomingJobsListView(generics.ListAPIView):
-#     serializer_class = JobSerializer
-#     permission_classes = [permissions.IsAuthenticated]
-
-#     def get_queryset(self):
-#         landscaper = getattr(self.request.user, "landscaper_profile", None)
-#         if not landscaper:
-#             return Job.objects.none()
-
-#         today = now().date()
-
-#         jobs = Job.objects.filter(
-#             landscaper=landscaper,
-#             is_active=True
-#         ).prefetch_related("items", "images")
-
-#         for job in jobs:
-#             job.sync_status(save=True)
-
-#         # now filter UPCOMING ONLY
-#         queryset = Job.objects.filter(
-#             landscaper=landscaper,
-#             status=Job.Status.UPCOMING,
-#             is_active=True
-#         )
-
-#         date = self.request.query_params.get("date")
-#         if date:
-#             queryset = queryset.filter(scheduled_date=date)
-
-#         return queryset.order_by("scheduled_date", "scheduled_time")
-
-
 class UpcomingJobsListView(generics.ListAPIView):
 
     serializer_class = JobSerializer
@@ -139,7 +106,6 @@ class ClientUpcomingJobsListView(generics.ListAPIView):
             )
             .order_by("scheduled_date", "scheduled_time")
         )
-
         # 🔹 query params
         selected_date = self.request.query_params.get("date")
         today_flag = self.request.query_params.get("today")
@@ -367,33 +333,6 @@ def toggle_job_item_completion(request, item_id):
     }, status=status.HTTP_200_OK)
 
 
-
-
-# --- Add Job Image ---
-# class JobImageCreateView(generics.CreateAPIView):
-#     serializer_class = JobImageSerializer
-#     permission_classes = [permissions.IsAuthenticated]
-#     parser_classes = [MultiPartParser, FormParser]
-
-#     def perform_create(self, serializer):
-#         job = serializer.validated_data.get("job")
-#         landscaper = getattr(self.request.user, "landscaper_profile", None)
-
-#         if not landscaper:
-#             raise serializers.ValidationError({"error": "Landscaper profile not found."})
-
-#         if not job:
-#             raise serializers.ValidationError({"error": "Job is required."})
-
-#         if job.landscaper != landscaper:
-#             raise serializers.ValidationError({"error": "You cannot upload images for this job."})
-
-#         if job.status != Job.Status.COMPLETED:
-#             raise serializers.ValidationError({
-#                 "error": "Images can only be uploaded after all services are completed."
-#             })
-
-#         serializer.save(uploaded_by=self.request.user)
 
 
 # class JobImageCreateView(generics.CreateAPIView):
