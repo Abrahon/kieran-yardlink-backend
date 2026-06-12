@@ -23,14 +23,33 @@ from subscriptions.helpers import can_add_team_member
 # SEND INVITATION
 # =========================
 
+
+
+
 # class SendInvitationView(CreateAPIView):
 #     serializer_class = SendInvitationSerializer
-#     permission_classes = [IsAuthenticated, IsProLandscaper]
+#     permission_classes = [IsAuthenticated]
 
-#     def perform_create(self, serializer):
-#         user = self.request.user
+#     def create(self, request, *args, **kwargs):
+
+#         user = request.user
 #         landscaper = user.landscaper_profile
-#         email = serializer.validated_data["email"]
+#         email = request.data.get("email")
+
+#         # -------------------------
+#         # LIMIT CHECK (STOP HERE)
+#         # -------------------------
+#         if not can_add_team_member(user):
+#             return Response(
+#                 {
+#                     "success": False,
+#                     "message": "Team member limit reached for your plan"
+#                 },
+#                 status=status.HTTP_403_FORBIDDEN
+#             )
+
+#         serializer = self.get_serializer(data=request.data)
+#         serializer.is_valid(raise_exception=True)
 
 #         invitation = TeamInvitation.objects.create(
 #             inviter=user,
@@ -38,9 +57,11 @@ from subscriptions.helpers import can_add_team_member
 #             email=email
 #         )
 
-#                 # ✅ FIXED LINK (points to HTML page)
 #         invite_link = f"/invitations/accept/{invitation.token}/"
 
+#         # -------------------------
+#         # EMAIL ONLY WHEN SUCCESS
+#         # -------------------------
 #         send_mail(
 #             subject="You're invited to join a landscaper team",
 #             message=f"Accept invitation using this link: {invite_link}",
@@ -48,7 +69,20 @@ from subscriptions.helpers import can_add_team_member
 #             recipient_list=[email],
 #         )
 
+#         return Response(
+#             {
+#                 "success": True,
+#                 "message": "Invitation sent successfully",
+#                 "invite_link": invite_link
+#             },
+#             status=status.HTTP_201_CREATED
+#         )
 
+from django.core.mail import EmailMultiAlternatives
+from rest_framework.generics import CreateAPIView
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
 
 
 class SendInvitationView(CreateAPIView):
@@ -62,7 +96,7 @@ class SendInvitationView(CreateAPIView):
         email = request.data.get("email")
 
         # -------------------------
-        # LIMIT CHECK (STOP HERE)
+        # LIMIT CHECK
         # -------------------------
         if not can_add_team_member(user):
             return Response(
@@ -82,17 +116,49 @@ class SendInvitationView(CreateAPIView):
             email=email
         )
 
-        invite_link = f"/invitations/accept/{invitation.token}/"
-
-        # -------------------------
-        # EMAIL ONLY WHEN SUCCESS
-        # -------------------------
-        send_mail(
-            subject="You're invited to join a landscaper team",
-            message=f"Accept invitation using this link: {invite_link}",
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[email],
+        # Full URL
+        invite_link = request.build_absolute_uri(
+            f"/invitations/accept/{invitation.token}/"
         )
+
+        # HTML Email
+        html_content = f"""
+        <h2>Team Invitation</h2>
+
+        <p>You have been invited to join a landscaper team.</p>
+
+        <p>
+            <a href="{invite_link}"
+               style="
+                    background:#28a745;
+                    color:white;
+                    padding:10px 20px;
+                    text-decoration:none;
+                    border-radius:5px;
+                    display:inline-block;
+               ">
+                Accept Invitation
+            </a>
+        </p>
+
+        <p>If the button does not work, use this URL:</p>
+
+        <p>{invite_link}</p>
+        """
+
+        email_message = EmailMultiAlternatives(
+            subject="You're invited to join a landscaper team",
+            body=f"Accept invitation: {invite_link}",
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[email],
+        )
+
+        email_message.attach_alternative(
+            html_content,
+            "text/html"
+        )
+
+        email_message.send()
 
         return Response(
             {
@@ -102,7 +168,6 @@ class SendInvitationView(CreateAPIView):
             },
             status=status.HTTP_201_CREATED
         )
-
 
 # =========================
 # ACCEPT INVITATION
@@ -152,6 +217,44 @@ class AcceptInvitationView(APIView):
             {"detail": "Invitation accepted successfully"},
             status=status.HTTP_200_OK
         )
+
+
+from django.shortcuts import render, get_object_or_404
+from django.http import HttpResponse
+
+
+def accept_invitation_page(request, token):
+    return HttpResponse("FORM PAGE IS WORKING")
+
+def invitation_success(request):
+    return render(
+        request,
+        "invitations/success.html"
+    )
+
+
+# def accept_invitation_page(request, token):
+#     invitation = get_object_or_404(
+#         TeamInvitation,
+#         token=token,
+#         status="pending"
+#     )
+
+#     return render(
+#         request,
+#         "invitations/accept_invite.html",
+#         {
+#             "invitation": invitation
+#         }
+#     )
+
+
+# def invitation_success(request):
+#     return render(
+#         request,
+#         "invitations/success.html"
+#     )
+
 
 
 # =========================

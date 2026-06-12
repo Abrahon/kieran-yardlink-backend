@@ -26,6 +26,12 @@ from quickbooks.services import (
     create_invoice as qbo_create_invoice,
     create_payment as qbo_create_payment,
 )
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.pagesizes import A4
+from io import BytesIO
+from django.http import HttpResponse
+import json
 
 from rest_framework.views import APIView
 import secrets
@@ -331,6 +337,7 @@ def quickbooks_deposit_accounts(request):
     return Response({"accounts": data}, status=status.HTTP_200_OK)
 
 
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def quickbooks_sync_logs(request):
@@ -352,6 +359,80 @@ def quickbooks_sync_logs(request):
     logs = QuickBooksSyncLog.objects.filter(connection=connection).order_by("-created_at")
     serializer = QuickBooksSyncLogSerializer(logs, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+
+# downlaod quiclbooks invoice
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def quickbooks_sync_log_detail_pdf(request, pk):
+
+    landscaper = getattr(request.user, "landscaper_profile", None)
+    if not landscaper:
+        return Response({"error": "Landscaper profile not found."}, status=403)
+
+    try:
+        connection = QuickBooksConnection.objects.get(landscaper=landscaper)
+    except QuickBooksConnection.DoesNotExist:
+        return Response({"error": "QuickBooks not connected."}, status=404)
+
+    try:
+        log = QuickBooksSyncLog.objects.get(id=pk, connection=connection)
+    except QuickBooksSyncLog.DoesNotExist:
+        return Response({"error": "Log not found."}, status=404)
+
+    # =========================
+    # PDF SETUP
+    # =========================
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+
+    elements = []
+
+    # Title
+    elements.append(Paragraph("QuickBooks Sync Log Detail", styles["Title"]))
+    elements.append(Spacer(1, 12))
+
+    # Basic Info
+    elements.append(Paragraph(f"ID: {log.id}", styles["Normal"]))
+    elements.append(Paragraph(f"Type: {log.object_type}", styles["Normal"]))
+    elements.append(Paragraph(f"Status: {log.status}", styles["Normal"]))
+    elements.append(Paragraph(f"Created: {log.created_at}", styles["Normal"]))
+    elements.append(Spacer(1, 12))
+
+    # =========================
+    # REQUEST PAYLOAD
+    # =========================
+    elements.append(Paragraph("Request Payload:", styles["Heading2"]))
+    elements.append(
+        Paragraph(
+            f"<pre>{json.dumps(log.request_payload, indent=2)}</pre>",
+            styles["Code"]
+        )
+    )
+    elements.append(Spacer(1, 12))
+
+    # =========================
+    # RESPONSE PAYLOAD
+    # =========================
+    elements.append(Paragraph("Response Payload:", styles["Heading2"]))
+    elements.append(
+        Paragraph(
+            f"<pre>{json.dumps(log.response_payload, indent=2)}</pre>",
+            styles["Code"]
+        )
+    )
+
+    doc.build(elements)
+    buffer.seek(0)
+
+    response = HttpResponse(buffer, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="quickbooks_log_{log.id}.pdf"'
+
+    return response
+
+
 
 
 @api_view(["POST"])

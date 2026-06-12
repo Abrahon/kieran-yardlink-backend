@@ -39,6 +39,13 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 
+from payments.enums import PaymentStatus
+from collections import OrderedDict
+
+from django.db.models import Sum, Value, DecimalField
+from django.db.models.functions import TruncMonth, Coalesce
+from django.utils import timezone
+
 from django.core.mail import send_mail
 from profiles.models import ClientProfile
 from rest_framework.permissions import IsAdminUser
@@ -128,8 +135,13 @@ from reportlab.lib.pagesizes import A4
 from django.http import HttpResponse
 from rest_framework.permissions import IsAdminUser
 from rest_framework.views import APIView
+# from payments.stripe import create_stripe_checkout_session 
 
-
+from quickbooks.services import (
+    upsert_customer,
+    create_invoice as qbo_create_invoice,
+    create_payment as qbo_create_payment,
+)
 
 
 
@@ -148,6 +160,7 @@ def payment_success(request):
         notification_type="payment",
         data={"screen": "payment_history"}
     )
+
 
 
 @api_view(["POST"])
@@ -182,9 +195,10 @@ def create_invoice_checkout_session(request):
 
     # ✅ create NEW session every time
     try:
-        session = create_stripe_checkout_session(invoice)
+        session = create_invoice_checkout_session(invoice)
     except Exception as e:
         return Response({"error": str(e)}, status=500)
+    
 
     # ✅ update invoice
     invoice.status = Invoice.Status.PENDING
@@ -300,12 +314,101 @@ class ConfirmCashPaymentAPIView(APIView):
 
 
 # optional QuickBooks imports
+# @csrf_exempt
+# def payment_webhook(request):
+#     payload = request.body
+#     sig_header = request.META.get("HTTP_STRIPE_SIGNATURE")
+#     endpoint_secret = settings.STRIPE_WEBHOOK_SECRET
+
+#     if not sig_header:
+#         return HttpResponse(status=400)
+
+#     try:
+#         event = stripe.Webhook.construct_event(
+#             payload=payload,
+#             sig_header=sig_header,
+#             secret=endpoint_secret
+#         )
+#     except ValueError:
+#         return HttpResponse(status=400)
+#     except stripe.error.SignatureVerificationError:
+#         return HttpResponse(status=400)
+
+#     event_type = event["type"]
+#     data_object = event["data"]["object"]
+
+#     if event_type in ["checkout.session.completed", "checkout.session.async_payment_succeeded"]:
+#         invoice_id = data_object.get("metadata", {}).get("invoice_id")
+#         stripe_session_id = data_object.get("id")
+
+#         if invoice_id:
+#             try:
+#                 invoice = Invoice.objects.select_related(
+#                     "job",
+#                     "job__landscaper",
+#                     "job__client",
+#                     "job__client__user",
+#                     "job__external_client",
+#                 ).get(id=invoice_id)
+
+#                 # avoid duplicate updates
+#                 if invoice.status != Invoice.Status.PAID:
+#                     invoice.status = Invoice.Status.PAID
+#                     invoice.paid_at = timezone.now()
+#                     invoice.stripe_session_id = stripe_session_id
+#                     invoice.save(update_fields=["status", "paid_at", "stripe_session_id", "updated_at"])
+
+#                     if invoice.job:
+#                         invoice.job.payment_status = Job.PaymentStatus.PAID
+#                         invoice.job.save(update_fields=["payment_status", "updated_at"])
+
+#                 # OPTIONAL: auto sync paid invoice to QuickBooks
+#                 try:
+#                     connection = QuickBooksConnection.objects.get(
+#                         landscaper=invoice.job.landscaper,
+#                         is_active=True
+#                     )
+
+#                     # store these in DB/config later instead of hardcoding
+#                     service_item_id = getattr(settings, "QUICKBOOKS_DEFAULT_SERVICE_ITEM_ID", None)
+#                     deposit_to_account_id = getattr(settings, "QUICKBOOKS_DEFAULT_DEPOSIT_ACCOUNT_ID", None)
+
+#                     if service_item_id:
+#                         customer = upsert_customer(connection, invoice)
+#                         qbo_invoice = qbo_create_invoice(connection, invoice, customer["Id"], service_item_id)
+
+#                         if deposit_to_account_id:
+#                             qbo_create_payment(
+#                                 connection,
+#                                 invoice,
+#                                 customer["Id"],
+#                                 qbo_invoice["Id"],
+#                                 deposit_to_account_id,
+#                             )
+
+#                 except QuickBooksConnection.DoesNotExist:
+#                     pass
+#                 except Exception as e:
+#                     # do not fail Stripe webhook because of QuickBooks sync
+#                     print("QuickBooks auto-sync failed:", str(e))
+
+#             except Invoice.DoesNotExist:
+#                 pass
+
+#     return HttpResponse(status=200)
+
+import stripe
+from django.conf import settings
+from django.http import HttpResponse
+from django.utils import timezone
+from django.db import transaction
+from django.views.decorators.csrf import csrf_exempt
+
 
 @csrf_exempt
 def payment_webhook(request):
     payload = request.body
     sig_header = request.META.get("HTTP_STRIPE_SIGNATURE")
-    endpoint_secret = settings.STRIPE_WEBHOOK_SECRET
 
     if not sig_header:
         return HttpResponse(status=400)
@@ -314,22 +417,33 @@ def payment_webhook(request):
         event = stripe.Webhook.construct_event(
             payload=payload,
             sig_header=sig_header,
-            secret=endpoint_secret
+            secret=settings.STRIPE_WEBHOOK_SECRET
         )
-    except ValueError:
-        return HttpResponse(status=400)
-    except stripe.error.SignatureVerificationError:
+    except Exception as e:
+        print("Stripe webhook signature error:", str(e))
         return HttpResponse(status=400)
 
     event_type = event["type"]
     data_object = event["data"]["object"]
 
-    if event_type in ["checkout.session.completed", "checkout.session.async_payment_succeeded"]:
-        invoice_id = data_object.get("metadata", {}).get("invoice_id")
+    # =========================
+    # ONLY PAYMENT SUCCESS EVENTS
+    # =========================
+    if event_type in [
+        "checkout.session.completed",
+        "checkout.session.async_payment_succeeded"
+    ]:
+
+        metadata = data_object.get("metadata") or {}
+        invoice_id = metadata.get("invoice_id")
         stripe_session_id = data_object.get("id")
 
-        if invoice_id:
-            try:
+        if not invoice_id:
+            return HttpResponse(status=200)
+
+        try:
+            with transaction.atomic():
+
                 invoice = Invoice.objects.select_related(
                     "job",
                     "job__landscaper",
@@ -338,31 +452,102 @@ def payment_webhook(request):
                     "job__external_client",
                 ).get(id=invoice_id)
 
-                # avoid duplicate updates
-                if invoice.status != Invoice.Status.PAID:
-                    invoice.status = Invoice.Status.PAID
-                    invoice.paid_at = timezone.now()
-                    invoice.stripe_session_id = stripe_session_id
-                    invoice.save(update_fields=["status", "paid_at", "stripe_session_id", "updated_at"])
+                # =========================
+                # AVOID DUPLICATE PROCESSING
+                # =========================
+                if invoice.status == Invoice.Status.PAID:
+                    return HttpResponse(status=200)
 
-                    if invoice.job:
-                        invoice.job.payment_status = Job.PaymentStatus.PAID
-                        invoice.job.save(update_fields=["payment_status", "updated_at"])
+                invoice.status = Invoice.Status.PAID
+                invoice.paid_at = timezone.now()
+                invoice.stripe_session_id = stripe_session_id
+                invoice.save(update_fields=[
+                    "status",
+                    "paid_at",
+                    "stripe_session_id",
+                    "updated_at"
+                ])
 
-                # OPTIONAL: auto sync paid invoice to QuickBooks
+                # =========================
+                # FIX: SAFE JOB UPDATE
+                # =========================
+                # if invoice.job:
+                #     invoice.job.payment_status = "paid"  # ❗ FIXED HERE
+                #     invoice.job.save(update_fields=[
+                #         "payment_status",
+                #         "updated_at"
+                #     ])
+                
+                # =========================
+                # FIX: SAFE JOB UPDATE
+                # =========================
+                if invoice.job:
+                    invoice.job.payment_status = "paid"
+                    invoice.job.save(update_fields=[
+                        "payment_status",
+                        "updated_at"
+                    ])
+
+                # =========================
+                # PAYMENT NOTIFICATIONS
+                # =========================
+
+                # Notify landscaper
+                if invoice.job and invoice.job.landscaper:
+                    send_push_notification(
+                        user=invoice.job.landscaper.user,
+                        title="Payment Received 💰",
+                        message=f"Payment for Invoice #{invoice.id} has been completed.",
+                        notification_type="payment"
+                    )
+
+                # Notify client
+                if invoice.job:
+                    if invoice.job.client and invoice.job.client.user:
+                        send_push_notification(
+                            user=invoice.job.client.user,
+                            title="Payment Successful 💳",
+                            message=f"Your payment for Invoice #{invoice.id} was successful.",
+                            notification_type="payment"
+                        )
+
+                    elif invoice.job.external_client:
+                        send_push_notification(
+                            user=invoice.job.external_client,
+                            title="Payment Successful 💳",
+                            message=f"Your payment for Invoice #{invoice.id} was successful.",
+                            notification_type="payment"
+                        )
+                        
+                # =========================
+                # QUICKBOOKS AUTO SYNC (SAFE)
+                # =========================
                 try:
                     connection = QuickBooksConnection.objects.get(
-                        landscaper=invoice.job.landscaper,
+                        landscaper=invoice.job.landscaper if invoice.job else None,
                         is_active=True
                     )
 
-                    # store these in DB/config later instead of hardcoding
-                    service_item_id = getattr(settings, "QUICKBOOKS_DEFAULT_SERVICE_ITEM_ID", None)
-                    deposit_to_account_id = getattr(settings, "QUICKBOOKS_DEFAULT_DEPOSIT_ACCOUNT_ID", None)
+                    service_item_id = getattr(
+                        settings,
+                        "QUICKBOOKS_DEFAULT_SERVICE_ITEM_ID",
+                        None
+                    )
+
+                    deposit_to_account_id = getattr(
+                        settings,
+                        "QUICKBOOKS_DEFAULT_DEPOSIT_ACCOUNT_ID",
+                        None
+                    )
 
                     if service_item_id:
                         customer = upsert_customer(connection, invoice)
-                        qbo_invoice = qbo_create_invoice(connection, invoice, customer["Id"], service_item_id)
+                        qbo_invoice = qbo_create_invoice(
+                            connection,
+                            invoice,
+                            customer["Id"],
+                            service_item_id
+                        )
 
                         if deposit_to_account_id:
                             qbo_create_payment(
@@ -375,12 +560,13 @@ def payment_webhook(request):
 
                 except QuickBooksConnection.DoesNotExist:
                     pass
-                except Exception as e:
-                    # do not fail Stripe webhook because of QuickBooks sync
-                    print("QuickBooks auto-sync failed:", str(e))
 
-            except Invoice.DoesNotExist:
-                pass
+                except Exception as e:
+                    # NEVER break Stripe webhook
+                    print("QuickBooks sync failed:", str(e))
+
+        except Invoice.DoesNotExist:
+            return HttpResponse(status=200)
 
     return HttpResponse(status=200)
 
@@ -488,6 +674,8 @@ def landscaper_payment_history(request):
             "total_pending": round(float(total_pending or 0), 2),
         }
     }, status=200)
+
+
 
 
 from jobs.models import JobImage
@@ -1818,8 +2006,6 @@ def delete_user_financial_data(request, user_id):
     )
 
 
-from payments.enums import PaymentStatus
-
 
 class ProLandscaperMonthlyRevenueView(APIView):
     permission_classes = [IsProLandscaper]
@@ -1836,117 +2022,105 @@ class ProLandscaperMonthlyRevenueView(APIView):
 
         current_year = timezone.now().year
 
-        jobs = Job.objects.filter(
-            landscaper=landscaper,
-            is_active=True
+        # ==================================================
+        # INVOICES = SINGLE SOURCE OF TRUTH FOR MONEY
+        # ==================================================
+        invoices = Invoice.objects.filter(
+            job__landscaper=landscaper,
+            status=Invoice.Status.PAID
         )
 
+        money_field = DecimalField(max_digits=12, decimal_places=2)
+
         # =========================
-        # Monthly revenue (paid jobs in current year)
+        # MONTHLY REVENUE
         # =========================
         monthly_revenue_qs = (
-            jobs.filter(
-                payment_status=PaymentStatus.PAID,
-                scheduled_date__year=current_year
-            )
-            .annotate(month=TruncMonth("scheduled_date"))
+            invoices.filter(created_at__year=current_year)
+            .annotate(month=TruncMonth("created_at"))
             .values("month")
             .annotate(
                 total_amount=Coalesce(
-                    Sum("total_price"),
-                    Value(0, output_field=DecimalField(max_digits=12, decimal_places=2))
+                    Sum("total"),
+                    Value(0, output_field=money_field),
+                    output_field=money_field
                 )
             )
             .order_by("month")
         )
 
-        monthly_revenue = OrderedDict()
-        for month in range(1, 13):
-            monthly_revenue[f"{current_year}-{month:02d}"] = 0.0
+        monthly_revenue = OrderedDict(
+            (f"{current_year}-{m:02d}", 0.0) for m in range(1, 13)
+        )
 
         for item in monthly_revenue_qs:
-            month_str = item["month"].strftime("%Y-%m")
-            monthly_revenue[month_str] = round(float(item["total_amount"] or 0), 2)
+            monthly_revenue[item["month"].strftime("%Y-%m")] = float(item["total_amount"] or 0)
 
         # =========================
-        # Yearly revenue
+        # YEARLY REVENUE
         # =========================
-        yearly_revenue = (
-            jobs.filter(
-                payment_status=PaymentStatus.PAID,
-                scheduled_date__year=current_year
+        yearly_revenue = invoices.filter(
+            created_at__year=current_year
+        ).aggregate(
+            total=Coalesce(
+                Sum("total"),
+                Value(0, output_field=money_field),
+                output_field=money_field
             )
-            .aggregate(
-                total=Coalesce(
-                    Sum("total_price"),
-                    Value(0, output_field=DecimalField(max_digits=12, decimal_places=2))
-                )
-            )["total"]
-            or 0
+        )["total"] or 0
+
+        # =========================
+        # TOTAL REVENUE
+        # =========================
+        total_revenue = invoices.aggregate(
+            total=Coalesce(
+                Sum("total"),
+                Value(0, output_field=money_field),
+                output_field=money_field
+            )
+        )["total"] or 0
+
+        # ==================================================
+        # JOB STATS (NON-MONEY ONLY)
+        # ==================================================
+        jobs = Job.objects.filter(
+            landscaper=landscaper,
+            is_active=True
         )
 
-        # =========================
-        # Total revenue (all time)
-        # =========================
-        total_revenue = (
-            jobs.filter(payment_status=PaymentStatus.PAID)
-            .aggregate(
-                total=Coalesce(
-                    Sum("total_price"),
-                    Value(0, output_field=DecimalField(max_digits=12, decimal_places=2))
-                )
-            )["total"]
-            or 0
-        )
+        paid_jobs_count = jobs.filter(payment_status=PaymentStatus.PAID).count()
+        pending_jobs_count = jobs.filter(payment_status=PaymentStatus.PENDING).count()
+        completed_jobs_count = jobs.filter(status=Job.Status.COMPLETED).count()
 
-        # =========================
-        # Pending payments
-        # =========================
-        pending_amount = (
-            jobs.filter(payment_status=PaymentStatus.PENDING)
-            .aggregate(
-                total=Coalesce(
-                    Sum("total_price"),
-                    Value(0, output_field=DecimalField(max_digits=12, decimal_places=2))
-                )
-            )["total"]
-            or 0
-        )
-
-        # =========================
-        # Extra useful stats
-        # =========================
-        paid_jobs_count = jobs.filter(
-            payment_status=PaymentStatus.PAID
-        ).count()
-
-        pending_jobs_count = jobs.filter(
+        # pending money from jobs (fallback only)
+        pending_amount = jobs.filter(
             payment_status=PaymentStatus.PENDING
-        ).count()
+        ).aggregate(
+            total=Coalesce(
+                Sum("total_price"),
+                Value(0, output_field=money_field),
+                output_field=money_field
+            )
+        )["total"] or 0
 
-        completed_jobs_count = jobs.filter(
-            status=Job.Status.COMPLETED
-        ).count()
-
-        data = {
+        return Response({
             "status": "success",
             "data": {
                 "monthly_revenue": [
-                    {"month": month, "total_amount": total}
-                    for month, total in monthly_revenue.items()
+                    {"month": k, "total_amount": v}
+                    for k, v in monthly_revenue.items()
                 ],
                 "yearly_revenue": round(float(yearly_revenue), 2),
                 "total_revenue": round(float(total_revenue), 2),
                 "pending_amount": round(float(pending_amount), 2),
+
                 "paid_jobs_count": paid_jobs_count,
                 "pending_jobs_count": pending_jobs_count,
                 "completed_jobs_count": completed_jobs_count,
             }
-        }
-
-        return Response(data, status=200)
-
-
+        }, status=200)
+    
+    
 # csv export
 class EarningsCSVExportView(APIView):
     permission_classes = [IsProLandscaper]

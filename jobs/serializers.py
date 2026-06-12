@@ -6,7 +6,7 @@ from jobs.models import Job, JobItem
 from landscapers.models import Service, Addon
 from profiles.models import ExternalClient
 from profiles.models import ExternalClient
-
+from payments.enums import PaymentStatus  
 from jobs.models import Job, JobItem, JobImage, JobReschedule
 from rest_framework import serializers
 from profiles.serializers import ClientProfileSerializer,LandscaperProfileSerializer
@@ -260,26 +260,51 @@ class JobSerializer(serializers.ModelSerializer):
     # FIX: ONLY SHOW SELECTED PROPERTY
     # =====================================
     def get_client(self, obj):
-        user = obj.client.user
 
-        return {
-            "id": obj.client.id,
-            "user_id": user.id,
-            "email": user.email,
+        # =========================
+        # NORMAL CLIENT JOB
+        # =========================
+        if obj.client and obj.client.user:
+            user = obj.client.user
 
-            # ✅ ALWAYS from USER (NOT ClientProfile)
-            "name": user.name,
-            "phone": user.phone,
-            "latitude": user.latitude,
-            "longitude": user.longitude,
-            "address": user.address,
+            return {
+                "type": "client",
+                "id": obj.client.id,
+                "user_id": user.id,
+                "email": user.email,
 
-            "image": (
-                obj.client.image.url
-                if getattr(obj.client, "image", None)
-                else None
-            ),
-        }
+                "name": getattr(user, "get_full_name", lambda: None)() or getattr(user, "name", None),
+                "phone": getattr(user, "phone", None),
+                "latitude": getattr(user, "latitude", None),
+                "longitude": getattr(user, "longitude", None),
+                "address": getattr(user, "address", None),
+
+                "image": (
+                    obj.client.image.url
+                    if getattr(obj.client, "image", None)
+                    else None
+                ),
+            }
+
+        # =========================
+        # MANUAL JOB (external client)
+        # =========================
+        if obj.external_client:
+            return {
+                "type": "external_client",
+                "id": obj.external_client.id,
+                "name": obj.external_client.name,
+                "email": obj.external_client.email,
+                "phone": obj.external_client.phone,
+                "latitude": getattr(obj.external_client, "latitude", None),
+                "longitude": getattr(obj.external_client, "longitude", None),
+                "address": getattr(obj.external_client, "address", None),
+                "image": None,
+            }
+
+        return None
+
+
 
     def get_items(self, obj):
         return JobItemSerializer(obj.items.all(), many=True).data
@@ -298,6 +323,7 @@ class JobSerializer(serializers.ModelSerializer):
 class CompletedJobSerializer(serializers.ModelSerializer):
     booking_price = serializers.SerializerMethodField()
     client = ClientProfileSerializer(read_only=True)
+    external_client = serializers.SerializerMethodField() 
     landscaper_info = serializers.SerializerMethodField()
     job_property = serializers.StringRelatedField()
 
@@ -312,6 +338,7 @@ class CompletedJobSerializer(serializers.ModelSerializer):
             "id",
             "booking",
             "client",
+            "external_client", 
             "landscaper_info",
             "job_property",
             "scheduled_date",
@@ -339,6 +366,7 @@ class CompletedJobSerializer(serializers.ModelSerializer):
         if not business:
             return None
 
+
         user = business.user
         personal = getattr(user, "landscaperprofilies", None)
 
@@ -351,7 +379,20 @@ class CompletedJobSerializer(serializers.ModelSerializer):
             "business_email": business.business_email,
             "business_phone": business.business_phone,
         }
+    
+    def get_external_client(self, obj):
+        if not getattr(obj, "external_client", None):
+            return None
 
+        return {
+            "id": obj.external_client.id,
+            "name": obj.external_client.name,
+            "email": obj.external_client.email,
+            "phone": obj.external_client.phone,
+            "company_name": obj.external_client.company_name,
+            "address": obj.external_client.address,
+        }
+    
     def get_completed_items_list(self, obj):
         completed_items = obj.items.filter(is_completed=True).order_by("sort_order", "id")
         return JobItemSerializer(completed_items, many=True).data
@@ -450,20 +491,29 @@ class ManualOneTimeJobCreateSerializer(serializers.Serializer):
             scheduled_time=validated_data["scheduled_time"],
             note=validated_data.get("note"),
             status=Job.Status.UPCOMING,
-            payment_status=Job.PaymentStatus.PENDING,
             is_active=True,
-            total_price=Decimal("0.00"),
+            total_price=Decimal("0.00"),  # temporary
         )
 
+        total = Decimal("0.00")   # 🔥 FIX ADDED
+
         for idx, item in enumerate(items_data):
+            price = Decimal(str(item.get("price")).strip())
+
             JobItem.objects.create(
                 job=job,
                 item_type=JobItem.ItemType.CUSTOM,
                 name=item.get("name"),
                 description=item.get("description", ""),
-                price=Decimal(str(item.get("price")).strip()),
+                price=price,
                 sort_order=idx,
             )
+
+            total += price   # 🔥 FIX ADDED
+
+        # 🔥 FIX: UPDATE JOB TOTAL PRICE
+        job.total_price = total
+        job.save(update_fields=["total_price"])
 
         return job
 

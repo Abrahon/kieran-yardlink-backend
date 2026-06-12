@@ -1,32 +1,12 @@
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework import status
-from .models import Notification, NotificationSettings
-from .serializers import NotificationSerializer, NotificationSettingsSerializer
-from firebase_admin import messaging
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from notifications.models import Notification
-from notifications.serializers import NotificationSerializer
-
-from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework import status
-from notifications.models import Notification
-from notifications.serializers import NotificationSerializer
 # notifications/views.py
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
-from notifications.models import Notification, NotificationSettings
-from notifications.serializers import NotificationSerializer, NotificationSettingsSerializer
-from firebase_admin import messaging  # If you use FCM
 from rest_framework.decorators import api_view, permission_classes
-from .models import Device
+from firebase_admin import messaging
+from notifications.models import Notification, NotificationSettings, Device
+from notifications.serializers import NotificationSerializer, NotificationSettingsSerializer
 
 
 
@@ -36,8 +16,9 @@ class NotificationListView(APIView):
 
     def get(self, request):
         """
-        Get all notifications for the logged-in user.
-        Optional query param: ?unread=true
+        GET /api/notifications/
+        Returns all notifications for the logged-in user.
+        Optional query param: ?unread=true to filter unread only.
         """
         unread = request.query_params.get("unread") == "true"
         notifications = Notification.objects.filter(user=request.user)
@@ -45,6 +26,27 @@ class NotificationListView(APIView):
             notifications = notifications.filter(is_read=False)
         serializer = NotificationSerializer(notifications, many=True)
         return Response({"notifications": serializer.data})
+
+    def post(self, request):
+        """
+        POST /api/notifications/
+        Create a new notification for the authenticated user.
+
+        Body:
+            notification_type  - one of: job, payment, weather
+            title              - notification title
+            message            - notification body text
+
+        Returns the created notification object.
+        """
+        serializer = NotificationSerializer(data=request.data)
+        if serializer.is_valid():
+            notification = serializer.save(user=request.user)
+            return Response(
+                NotificationSerializer(notification).data,
+                status=status.HTTP_201_CREATED
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 
 
@@ -72,45 +74,6 @@ class NotificationSettingsView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-
-
-
-# def send_push_notification(user, title, message, notification_type):
-#     settings = getattr(user, "notification_settings", None)
-#     if settings:
-#         if notification_type == "job" and not settings.job_alert:
-#             return
-#         if notification_type == "payment" and not settings.payment_alert:
-#             return
-#         if notification_type == "weather" and not settings.weather_alert:
-#             return
-
-#     Notification.objects.create(
-#         user=user,
-#         notification_type=notification_type,
-#         title=title,
-#         message=message
-#     )
-
-#     # ✅ USE DEVICE MODEL (FIXED)
-#     from .models import Device
-
-#     devices = Device.objects.filter(user=user, is_active=True)
-
-#     tokens = [d.token for d in devices]
-
-#     if not tokens:
-#         return
-
-#     messaging.send_multicast(
-#         messaging.MulticastMessage(
-#             notification=messaging.Notification(
-#                 title=title,
-#                 body=message
-#             ),
-#             tokens=tokens
-#         )
-#     )
 
 from firebase_admin import messaging
 from .models import Device, Notification
@@ -254,6 +217,21 @@ def save_fcm_token(request):
     return Response({"message": "Token saved"})
 
 
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def remove_fcm_token(request):
+    token = request.data.get("token")
+
+    Device.objects.filter(
+        token=token,
+        user=request.user
+    ).update(
+        is_active=False
+    )
+
+    return Response({
+        "message": "Token removed"
+    })
 
 from notifications.utils import send_push_notification
 

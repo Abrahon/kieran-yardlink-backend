@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Team Invitation</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display:flex;
+            justify-content:center;
+            align-items:center;
+            height:100vh;
+            background:#f4f4f4;
+        }
+
+        .card {
+            background:white;
+            padding:30px;
+            border-radius:10px;
+            box-shadow:0 0 10px rgba(0,0,0,.1);
+            text-align:center;
+            width:400px;
+        }
+
+        .btn {
+            display:inline-block;
+            padding:12px 20px;
+            background:#28a745;
+            color:white;
+            text-decoration:none;
+            border-radius:5px;
+            margin-top:20px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>Team Invitation</h2>
+
+    <p>
+        You have been invited to join
+        <strong>{{ invitation.landscaper.business_name }}</strong>
+    </p>
+
+    <a
+        href="{% url 'accept-invitation-page' token=invitation.token %}"
+        class="btn"
+    >
+        Accept Invitation
+    </a>
+</div>
+
+</body>
+</html>

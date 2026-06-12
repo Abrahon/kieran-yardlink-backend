@@ -310,6 +310,7 @@ QUICKBOOKS_ENVIRONMENT = os.getenv("QUICKBOOKS_ENVIRONMENT", "sandbox")
 QUICKBOOKS_MINOR_VERSION = os.getenv("QUICKBOOKS_MINOR_VERSION", "75")
 QUICKBOOKS_TOKEN_ENCRYPTION_KEY = os.getenv("QUICKBOOKS_TOKEN_ENCRYPTION_KEY")
 
+SITE_URL = "https://yourdomain.com"
 
 # ------------------------------------------------------------------------------
 # EMAIL

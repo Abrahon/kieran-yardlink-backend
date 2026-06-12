@@ -20,7 +20,8 @@ from jobs.views import (
     ProblemJobsListView,
     ClientUpcomingServiceDetailView,
     PendingRescheduleListView,
-    RescheduleActionView
+    RescheduleActionView,
+    complete_job
 )
 
 
@@ -62,5 +63,11 @@ urlpatterns = [
         "reschedule/<int:pk>/action/",
         RescheduleActionView.as_view(),
         name="reschedule-action"
+    ),
+
+    path(
+        "job/<int:job_id>/complete/",
+        complete_job,
+        name="complete-job"
     ),
 ]
