@@ -542,7 +542,8 @@ class ClientJobDetailSerializer(serializers.ModelSerializer):
     before_images = serializers.SerializerMethodField()
     after_images = serializers.SerializerMethodField()
     landscaper_name = serializers.SerializerMethodField() 
-    stripe_pay_url = serializers.SerializerMethodField()   
+    stripe_pay_url = serializers.SerializerMethodField() 
+    payment_status = serializers.SerializerMethodField()  
 
     class Meta:
         model = Job
@@ -567,6 +568,10 @@ class ClientJobDetailSerializer(serializers.ModelSerializer):
     def get_completed_items(self, obj):
         items = obj.items.filter(is_completed=True)
         return JobItemClientSerializer(items, many=True).data
+    
+
+    def get_payment_status(self, obj):
+        return obj.payment_status
 
     def get_before_images(self, obj):
         images = obj.images.filter(image_type="before")
@@ -581,25 +586,44 @@ class ClientJobDetailSerializer(serializers.ModelSerializer):
         landscaper = obj.landscaper
         if not landscaper:
             return None
+        
 
+        
     def get_stripe_pay_url(self, obj):
         invoice = getattr(obj, "invoice", None)
 
-        if invoice and invoice.status != "paid":
-            return {
-                "pay_button": True,
-                "amount": invoice.total,
-                "url": invoice.stripe_checkout_url
-            }
+        if not invoice:
+            return None
 
-        return None
+        if invoice.status == "paid":
+            return None
 
-        profile = getattr(landscaper.user, "landscaperprofilies", None)
+        return {
+            "invoice_id": invoice.id,
+            "amount": str(invoice.total),
+            "can_pay": True,
+            "url": invoice.stripe_checkout_url  # ✅ ADD THIS
+        }
+    
+    def get_landscaper_name(self, obj):
+        user = getattr(obj.landscaper, "user", None)
 
-        if profile and profile.name:
-            return profile.name
+        if not user:
+            return None
 
-        return landscaper.business_name
+        # Best option (Django built-in)
+        name = user.get_full_name()
+
+        if name:
+            return name
+
+        # fallback if full_name is empty
+        if user.first_name or user.last_name:
+            return f"{user.first_name} {user.last_name}".strip()
+
+        # last fallback (optional)
+        return user.username
+    
 
 
 class ProblemJobSerializer(serializers.ModelSerializer):

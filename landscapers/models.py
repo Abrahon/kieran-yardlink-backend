@@ -97,6 +97,18 @@ class BusinessProfile(models.Model):
         # Validation: only one of insurance_doc or license_doc can be uploaded
         if self.insurance_doc and self.license_doc:
             raise ValidationError("You can upload either insurance OR license document, not both.")
+        
+    def save(self, *args, **kwargs):
+        # AUTO PROFILE COMPLETION LOGIC
+        self.is_profile_completed = all([
+            self.business_name,
+            self.business_email,
+            self.business_phone,
+            self.latitude,
+            self.longitude,
+        ])
+
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.business_name

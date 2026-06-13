@@ -1330,6 +1330,7 @@ from landscapers.models import BusinessProfile, WorkingHours
 from jobs.models import Job
 
 
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def get_landscaper_availability(request, landscaper_id):
@@ -1337,14 +1338,17 @@ def get_landscaper_availability(request, landscaper_id):
     # ==========================================
     # GET LANDSCAPER
     # ==========================================
+    # try:
+    #     landscaper = BusinessProfile.objects.get(id=landscaper_id)
+    # except BusinessProfile.DoesNotExist:
+    #     return Response(
+    #         {"error": "Landscaper not found"},
+    #         status=404
+    #     )
     try:
-        landscaper = BusinessProfile.objects.get(id=landscaper_id)
+        landscaper = BusinessProfile.objects.get(user_id=landscaper_id)
     except BusinessProfile.DoesNotExist:
-        return Response(
-            {"error": "Landscaper not found"},
-            status=404
-        )
-
+        return Response({"error": "Landscaper not found"}, status=404)
     # ==========================================
     # GET ACTIVE WORKING HOURS
     # ==========================================

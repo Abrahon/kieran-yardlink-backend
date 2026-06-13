@@ -1002,6 +1002,38 @@ class CompletedJobDetailView(generics.RetrieveAPIView):
 
 
 
+# class ClientUnpaidCompletedJobView(generics.RetrieveAPIView):
+#     serializer_class = ClientJobDetailSerializer
+#     permission_classes = [permissions.IsAuthenticated]
+
+#     def get_object(self):
+#         client = getattr(self.request.user, "clientprofile", None)
+
+#         if not client:
+#             raise NotFound("Client profile not found")
+
+#         job = Job.objects.filter(
+#             client=client,
+#             is_active=True,
+#             status=Job.Status.COMPLETED
+#         ).filter(
+#             Q(invoice__status__in=["pending", "sent", "draft"]) |
+#             Q(invoice__isnull=True)
+#         ).select_related(
+#             "client",
+#             "landscaper",
+#             "landscaper__user",
+#             "invoice"
+#         ).prefetch_related(
+#             "items",
+#             "images"
+#         ).order_by("-completed_at").first()
+
+#         if not job:
+#             raise NotFound("No unpaid completed job found")
+
+#         return job
+
 class ClientUnpaidCompletedJobView(generics.RetrieveAPIView):
     serializer_class = ClientJobDetailSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -1012,31 +1044,32 @@ class ClientUnpaidCompletedJobView(generics.RetrieveAPIView):
         if not client:
             raise NotFound("Client profile not found")
 
-        job = Job.objects.filter(
-            client=client,
-            is_active=True,
-            status=Job.Status.COMPLETED
-        ).filter(
-            # 🔥 FIX: handle both invoice + job payment status
-            Q(payment_status=PaymentStatus.PENDING) |
-            Q(invoice__status__in=["pending", "sent", "draft"]) |
-            Q(invoice__isnull=True)
-        ).select_related(
-            "client",
-            "landscaper",
-            "landscaper__user",
-            "invoice"
-        ).prefetch_related(
-            "items",
-            "images"
-        ).order_by("-completed_at").first()
+        job = (
+            Job.objects.filter(
+                client=client,
+                is_active=True,
+                status=Job.Status.COMPLETED,
+                payment_status="pending"
+            )
+            .select_related(
+                "client",
+                "landscaper",
+                "landscaper__user",
+                "invoice"
+            )
+            .prefetch_related(
+                "items",
+                "images"
+            )
+            .order_by("-completed_at")
+            .first()
+        )
 
         if not job:
-            raise NotFound("No unpaid completed job found")
+            raise NotFound("No completed job found")
 
         return job
-
-
+    
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated])
 def complete_job(request, job_id):

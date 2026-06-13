@@ -400,7 +400,7 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             "id",
-            "name",  # 👈 will now return real name
+            "name", 
             "email",
             "phone",
             "address",
@@ -430,12 +430,22 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
 
     # ✅ REAL NAME LOGIC
     def get_name(self, obj):
-        landscaper_profile = getattr(obj, "landscaperprofilies", None)
+        # 1. If Django user full name exists
+        full_name = obj.get_full_name()
+        if full_name:
+            return full_name
 
-        if landscaper_profile and landscaper_profile.name:
+        # 2. First + last name fallback
+        if obj.first_name or obj.last_name:
+            return f"{obj.first_name} {obj.last_name}".strip()
+
+        # 3. If landscaper profile exists (FIX RELATION NAME)
+        landscaper_profile = getattr(obj, "landscaper_profile", None)
+        if landscaper_profile and getattr(landscaper_profile, "name", None):
             return landscaper_profile.name
 
-        return obj.name or ""
+        # 4. Final fallback (NEVER role)
+        return obj.email
 
     def get_average_rating(self, obj):
         if obj.role != "landscaper":
@@ -449,6 +459,8 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
 
     def get_last_login(self, obj):
         return obj.last_login
+    
+
 
 class AdminUserUpdateSerializer(serializers.Serializer):
 
