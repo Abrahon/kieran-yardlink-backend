@@ -155,6 +155,62 @@ class BookingRequestSerializer(serializers.ModelSerializer):
         except:
             return "Unknown Property"
 
+    # def validate(self, attrs):
+    #     booking_type = attrs.get("booking_type")
+    #     description = attrs.get("description")
+    #     scheduled_date = attrs.get("scheduled_date")
+    #     scheduled_time = attrs.get("scheduled_time")
+    #     recurring_day = attrs.get("recurring_day_of_week")
+
+    #     raw_items = self.initial_data.get("items", [])
+
+    #     if not raw_items:
+    #         raise serializers.ValidationError("At least one booking item is required.")
+
+    #     if booking_type == BookingRequest.BookingType.CUSTOM and not description:
+    #         raise serializers.ValidationError("Custom bookings must include a description.")
+
+    #     if booking_type == BookingRequest.BookingType.ONE_TIME:
+    #         if not scheduled_date or not scheduled_time:
+    #             raise serializers.ValidationError("One-time booking requires date and time.")
+
+    #     if booking_type in [BookingRequest.BookingType.WEEKLY, BookingRequest.BookingType.BIWEEKLY]:
+    #         if not recurring_day:
+    #             raise serializers.ValidationError("Recurring booking requires recurring_day_of_week.")
+
+    #     selected_service_ids = [
+    #         item.get("service")
+    #         for item in raw_items
+    #         if item.get("item_type") == BookingRequestItem.ItemType.STANDARD_SERVICE and item.get("service")
+    #     ]
+
+    #     selected_addon_ids = [
+    #         item.get("addon")
+    #         for item in raw_items
+    #         if item.get("item_type") == BookingRequestItem.ItemType.ADDON and item.get("addon")
+    #     ]
+
+    #     if selected_addon_ids and not selected_service_ids:
+    #         raise serializers.ValidationError("Addon cannot be selected without at least one service.")
+
+    #     if selected_service_ids:
+    #         selected_service_ids = set(selected_service_ids)
+
+    #         for addon_id in selected_addon_ids:
+    #             try:
+    #                 addon = Addon.objects.get(id=addon_id, is_active=True)
+    #             except Addon.DoesNotExist:
+    #                 raise serializers.ValidationError(f"Addon with id {addon_id} not found.")
+
+    #             addon_service_ids = set(addon.applicable_services.values_list("id", flat=True))
+
+    #             if selected_service_ids.isdisjoint(addon_service_ids):
+    #                 raise serializers.ValidationError(
+    #                     f"Addon '{addon.name}' is not applicable to the selected service."
+    #                 )
+
+    #     return attrs
+
     def validate(self, attrs):
         booking_type = attrs.get("booking_type")
         description = attrs.get("description")
@@ -162,8 +218,13 @@ class BookingRequestSerializer(serializers.ModelSerializer):
         scheduled_time = attrs.get("scheduled_time")
         recurring_day = attrs.get("recurring_day_of_week")
 
+        landscaper = attrs.get("landscaper")
+
         raw_items = self.initial_data.get("items", [])
 
+        # =========================
+        # EXISTING VALIDATIONS
+        # =========================
         if not raw_items:
             raise serializers.ValidationError("At least one booking item is required.")
 
@@ -208,6 +269,41 @@ class BookingRequestSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError(
                         f"Addon '{addon.name}' is not applicable to the selected service."
                     )
+
+        # =========================
+        # 🔥 NEW: AVAILABILITY VALIDATION (ADDED)
+        # =========================
+        if scheduled_date and scheduled_time and landscaper:
+
+            weekday = scheduled_date.strftime("%A").upper()
+
+            # 1. CHECK WORKING HOURS
+            working = WorkingHours.objects.filter(
+                landscaper=landscaper,
+                day=weekday,
+                is_active=True,
+                start_time__lte=scheduled_time,
+                end_time__gte=scheduled_time
+            )
+
+            if not working.exists():
+                raise serializers.ValidationError(
+                    "Selected time is not within landscaper working hours."
+                )
+
+            # 2. CHECK DOUBLE BOOKING (JOB CONFLICT)
+            conflict = Job.objects.filter(
+                landscaper=landscaper,
+                scheduled_date=scheduled_date,
+                scheduled_time=scheduled_time,
+                is_active=True,
+                status__in=["upcoming", "in_progress"]
+            )
+
+            if conflict.exists():
+                raise serializers.ValidationError(
+                    "This time slot is already booked."
+                )
 
         return attrs
 

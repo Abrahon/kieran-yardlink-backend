@@ -74,7 +74,6 @@ urlpatterns = [
     path("addons/", AddonListCreateView.as_view(), name="addon-list-create"),
     path("addons/<int:pk>/", AddonDetailView.as_view(), name="addon-detail"),
 
-
     # landscaper search
     path("landscapers/search/", LandscaperFind.as_view(), name="landscaper-search"),
     path('working-hours/', WorkingHoursListCreateView.as_view(), name='working-hours'),
@@ -121,11 +120,5 @@ urlpatterns = [
     path("quotes/<int:pk>/action/", ServiceQuoteActionView.as_view()),
     path("quotes/counter-list/", ClientCounterOfferListView.as_view()),
     # optional
-    path(
-        "quotes/<int:pk>/delete/",
-        ServiceQuoteDeleteView.as_view(),
-        name="quote-delete"
-)
-
-
+    path("quotes/<int:pk>/delete/",ServiceQuoteDeleteView.as_view(),name="quote-delete")
 ]

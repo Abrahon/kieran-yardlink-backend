@@ -27,10 +27,25 @@ from rest_framework import generics, permissions
 from rest_framework.exceptions import NotFound
 from django.db.models import Q
 from payments.enums import PaymentStatus
-
+from rest_framework import generics, permissions
+from .models import JobReschedule
 from rest_framework import generics, permissions
 from rest_framework.exceptions import NotFound
 from django.utils import timezone
+from django.db import transaction
+from django.shortcuts import get_object_or_404
+from django.db import transaction
+from rest_framework import generics, permissions, serializers, status
+from rest_framework.response import Response
+from django.utils import timezone
+from django.db.models import Q
+from rest_framework import generics, permissions
+from .models import JobReschedule
+from rest_framework import generics, permissions
+from rest_framework.response import Response
+from .models import Job, JobItem, JobImage
+
+
 
 
 @receiver(post_save, sender=Job)
@@ -66,6 +81,8 @@ class UpcomingJobsListView(generics.ListAPIView):
             is_active=True,
             status=Job.Status.UPCOMING
         ).order_by("scheduled_date", "scheduled_time")
+
+
 
 
 
@@ -122,6 +139,8 @@ class ClientUpcomingJobsListView(generics.ListAPIView):
 
 
 
+
+
 class ClientUpcomingServiceDetailView(generics.RetrieveAPIView):
     serializer_class = JobSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -168,6 +187,8 @@ class ClientUpcomingServiceDetailView(generics.RetrieveAPIView):
             )
 
 
+
+
 # --- Job Detail ---
 class JobDetailView(generics.RetrieveAPIView):
     serializer_class = JobSerializer
@@ -180,6 +201,7 @@ class JobDetailView(generics.RetrieveAPIView):
         if not landscaper:
             return Job.objects.none()
         return Job.objects.filter(landscaper=landscaper)
+
 
 
 
@@ -227,6 +249,8 @@ class InProgressJobsListView(generics.ListAPIView):
         )
 
 
+
+
         
 # --- In Progress Job Detail ---
 class InProgressJobDetailView(generics.RetrieveAPIView):
@@ -245,6 +269,8 @@ class InProgressJobDetailView(generics.RetrieveAPIView):
             status=Job.Status.IN_PROGRESS,
             is_active=True
         )
+
+
 
 
 class CompletedJobsListView(generics.ListAPIView):
@@ -383,10 +409,6 @@ class JobImageCreateView(generics.CreateAPIView):
 
 
 # --- Add Job Reschedule ---
-from django.db import transaction
-from django.shortcuts import get_object_or_404
-from rest_framework import generics, permissions, serializers
-from rest_framework.response import Response
 
 # class JobRescheduleCreateView(generics.CreateAPIView):
 
@@ -406,7 +428,6 @@ from rest_framework.response import Response
 #         # =====================================
 #         # JOB REQUIRED
 #         # =====================================
-
 #         if not job:
 #             raise serializers.ValidationError({
 #                 "error": "Job is required."
@@ -415,7 +436,6 @@ from rest_framework.response import Response
 #         # =====================================
 #         # BLOCK FINISHED JOBS
 #         # =====================================
-
 #         if job.status in [
 #             Job.Status.COMPLETED,
 #             Job.Status.CANCELLED,
@@ -428,21 +448,15 @@ from rest_framework.response import Response
 #         # =====================================
 #         # VERIFY OWNERSHIP
 #         # =====================================
-
 #         if landscaper and job.landscaper != landscaper:
-#             raise serializers.ValidationError({
-#                 "error": "Not allowed."
-#             })
+#             raise serializers.ValidationError({"error": "Not allowed."})
 
 #         if client and job.client != client:
-#             raise serializers.ValidationError({
-#                 "error": "Not allowed."
-#             })
+#             raise serializers.ValidationError({"error": "Not allowed."})
 
 #         # =====================================
-#         # SAVE RESCHEDULE HISTORY
+#         # CREATE RESCHEDULE RECORD
 #         # =====================================
-
 #         reschedule = serializer.save(
 #             requested_by=user,
 #             old_date=job.scheduled_date,
@@ -450,37 +464,33 @@ from rest_framework.response import Response
 #         )
 
 #         # =====================================
-#         # CLIENT REQUEST ONLY
+#         # CLIENT → REQUEST ONLY (NO JOB UPDATE)
 #         # =====================================
-
 #         if client:
-
-#             # optional:
-#             # reschedule.status = "pending"
-
-#             return
+#             reschedule.status = "pending"
+#             reschedule.save(update_fields=["status"])
+#             return reschedule
 
 #         # =====================================
-#         # LANDSCAPER DIRECT APPROVE
+#         # LANDSCAPER → DIRECT APPROVE + UPDATE JOB
 #         # =====================================
+#         if landscaper:
 
-#         job.scheduled_date = reschedule.new_date
-#         job.scheduled_time = reschedule.new_time
+#             reschedule.status = "approved"
+#             reschedule.save(update_fields=["status"])
 
-#         # IMPORTANT:
-#         # KEEP UPCOMING
-#         job.status = Job.Status.UPCOMING
+#             job.scheduled_date = reschedule.new_date
+#             job.scheduled_time = reschedule.new_time
+#             job.status = Job.Status.UPCOMING
 
-#         job.save(update_fields=[
-#             "scheduled_date",
-#             "scheduled_time",
-#             "status",
-#             "updated_at",
-#         ])
+#             job.save(update_fields=[
+#                 "scheduled_date",
+#                 "scheduled_time",
+#                 "status",
+#                 "updated_at",
+#             ])
 
-
-
-from .serializers import JobRescheduleSerializer
+#             return reschedule
 
 
 class JobRescheduleCreateView(generics.CreateAPIView):
@@ -488,27 +498,29 @@ class JobRescheduleCreateView(generics.CreateAPIView):
     serializer_class = JobRescheduleSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-    @transaction.atomic
-    def perform_create(self, serializer):
+    def create(self, request, *args, **kwargs):
 
-        user = self.request.user
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = request.user
 
         landscaper = getattr(user, "landscaper_profile", None)
         client = getattr(user, "clientprofile", None)
 
         job = serializer.validated_data.get("job")
 
-        # =====================================
+        # ============================
         # JOB REQUIRED
-        # =====================================
+        # ============================
         if not job:
             raise serializers.ValidationError({
                 "error": "Job is required."
             })
 
-        # =====================================
+        # ============================
         # BLOCK FINISHED JOBS
-        # =====================================
+        # ============================
         if job.status in [
             Job.Status.COMPLETED,
             Job.Status.CANCELLED,
@@ -518,61 +530,100 @@ class JobRescheduleCreateView(generics.CreateAPIView):
                 "error": "This job cannot be rescheduled."
             })
 
-        # =====================================
+        # ============================
         # VERIFY OWNERSHIP
-        # =====================================
+        # ============================
         if landscaper and job.landscaper != landscaper:
             raise serializers.ValidationError({"error": "Not allowed."})
 
         if client and job.client != client:
             raise serializers.ValidationError({"error": "Not allowed."})
 
-        # =====================================
-        # CREATE RESCHEDULE RECORD
-        # =====================================
-        reschedule = serializer.save(
-            requested_by=user,
-            old_date=job.scheduled_date,
-            old_time=job.scheduled_time,
-        )
+        # ============================
+        # CREATE RESCHEDULE
+        # ============================
+        with transaction.atomic():
 
-        # =====================================
-        # CLIENT → REQUEST ONLY (NO JOB UPDATE)
-        # =====================================
-        if client:
-            reschedule.status = "pending"
-            reschedule.save(update_fields=["status"])
-            return reschedule
+            reschedule = serializer.save(
+                requested_by=user,
+                old_date=job.scheduled_date,
+                old_time=job.scheduled_time,
+            )
 
-        # =====================================
-        # LANDSCAPER → DIRECT APPROVE + UPDATE JOB
-        # =====================================
-        if landscaper:
+            # =========================
+            # CLIENT FLOW
+            # =========================
+            if client:
 
-            reschedule.status = "approved"
-            reschedule.save(update_fields=["status"])
+                reschedule.status = JobReschedule.Status.PENDING
+                reschedule.save(update_fields=["status"])
 
-            job.scheduled_date = reschedule.new_date
-            job.scheduled_time = reschedule.new_time
-            job.status = Job.Status.UPCOMING
+                # 🔔 NOTIFY LANDSCAPER
+                try:
+                    send_push_notification(
+                        user=job.landscaper.user,
+                        title="Reschedule Request 📅",
+                        message=f"{job.client_name} requested to reschedule Job #{job.id}",
+                        notification_type="job",
+                        data={
+                            "job_id": job.id,
+                            "reschedule_id": reschedule.id,
+                            "type": "reschedule_request"
+                        }
+                    )
+                except Exception as e:
+                    print("Notification error (landscaper):", str(e))
 
-            job.save(update_fields=[
-                "scheduled_date",
-                "scheduled_time",
-                "status",
-                "updated_at",
-            ])
+            # =========================
+            # LANDSCAPER FLOW
+            # =========================
+            elif landscaper:
 
-            return reschedule
+                reschedule.status = JobReschedule.Status.APPROVED
+                reschedule.save(update_fields=["status"])
+
+                job.scheduled_date = reschedule.new_date
+                job.scheduled_time = reschedule.new_time
+                job.status = Job.Status.UPCOMING
+
+                job.save(update_fields=[
+                    "scheduled_date",
+                    "scheduled_time",
+                    "status",
+                    "updated_at",
+                ])
+
+                # 🔔 NOTIFY CLIENT
+                try:
+                    # internal client
+                    if job.client and job.client.user:
+                        notify_user = job.client.user
+
+                    # external client
+                    elif job.external_client:
+                        notify_user = job.external_client  
+                    else:
+                        notify_user = None
+
+                    if notify_user:
+                        send_push_notification(
+                            user=notify_user,
+                            title="Reschedule Approved ✅",
+                            message=f"Your job #{job.id} has been rescheduled by landscaper",
+                            notification_type="job",
+                            data={
+                                "job_id": job.id,
+                                "reschedule_id": reschedule.id,
+                                "type": "reschedule_approved"
+                            }
+                        )
+
+                except Exception as e:
+                    print("Notification error (client):", str(e))
+
 
 
 # landscaper approval and client requested reschedule list
-
-from rest_framework import generics, permissions
-from .models import JobReschedule
-from .serializers import JobRescheduleSerializer
-
-
 class PendingRescheduleListView(generics.ListAPIView):
     serializer_class = JobRescheduleSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -590,12 +641,6 @@ class PendingRescheduleListView(generics.ListAPIView):
         ).select_related("job", "requested_by").order_by("-created_at")
 
 
-from django.db import transaction
-from django.shortcuts import get_object_or_404
-from rest_framework import generics, permissions, serializers, status
-from rest_framework.response import Response
-
-from .models import JobReschedule
 
 
 class RescheduleActionView(generics.GenericAPIView):
@@ -683,10 +728,6 @@ class RescheduleActionView(generics.GenericAPIView):
         )
 
 
-
-
-
-
 @api_view(["PATCH"])
 @permission_classes([permissions.IsAuthenticated])
 def add_job_note(request, job_id):
@@ -764,7 +805,7 @@ def update_job_status(request, job_id):
         return Response({"error": "Not allowed"}, status=403)
 
     action = request.data.get("action")
-    note = request.data.get("note")  # ✅ ADDED
+    note = request.data.get("note")  
 
     if action and action not in ["cancel", "skip"]:
         return Response({"error": "Invalid action"}, status=400)
@@ -798,9 +839,7 @@ def update_job_status(request, job_id):
 
 
 
-from django.utils import timezone
-from django.db.models import Q
-from rest_framework import generics, permissions
+
 
 class ProblemJobsListView(generics.ListAPIView):
 
@@ -848,11 +887,6 @@ class ManualOneTimeJobCreateView(generics.CreateAPIView):
 
 
 
-from rest_framework import generics, permissions
-from rest_framework.response import Response
-from django.shortcuts import get_object_or_404
-
-from .models import Job, JobItem, JobImage
 
 
 class CompletedJobDetailView(generics.RetrieveAPIView):
@@ -1002,38 +1036,6 @@ class CompletedJobDetailView(generics.RetrieveAPIView):
 
 
 
-# class ClientUnpaidCompletedJobView(generics.RetrieveAPIView):
-#     serializer_class = ClientJobDetailSerializer
-#     permission_classes = [permissions.IsAuthenticated]
-
-#     def get_object(self):
-#         client = getattr(self.request.user, "clientprofile", None)
-
-#         if not client:
-#             raise NotFound("Client profile not found")
-
-#         job = Job.objects.filter(
-#             client=client,
-#             is_active=True,
-#             status=Job.Status.COMPLETED
-#         ).filter(
-#             Q(invoice__status__in=["pending", "sent", "draft"]) |
-#             Q(invoice__isnull=True)
-#         ).select_related(
-#             "client",
-#             "landscaper",
-#             "landscaper__user",
-#             "invoice"
-#         ).prefetch_related(
-#             "items",
-#             "images"
-#         ).order_by("-completed_at").first()
-
-#         if not job:
-#             raise NotFound("No unpaid completed job found")
-
-#         return job
-
 class ClientUnpaidCompletedJobView(generics.RetrieveAPIView):
     serializer_class = ClientJobDetailSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -1069,6 +1071,8 @@ class ClientUnpaidCompletedJobView(generics.RetrieveAPIView):
             raise NotFound("No completed job found")
 
         return job
+
+
     
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated])

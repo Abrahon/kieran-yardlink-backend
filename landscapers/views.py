@@ -1317,6 +1317,8 @@ def get_landscaper_available_slots(request, landscaper_id):
         "available_slots": available_slots
     })
 
+
+
 # landscaper availability for client booking
 from datetime import date, timedelta
 from collections import defaultdict

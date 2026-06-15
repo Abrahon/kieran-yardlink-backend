@@ -10,6 +10,7 @@ from django.utils import timezone
 
 from invoice.models import Invoice, InvoiceLineItem
 from payments.stripe_service import create_invoice_checkout_session
+from invoice.utils import get_invoice_recipient
 
 
 

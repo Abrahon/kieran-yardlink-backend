@@ -2,6 +2,20 @@ from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 
 
+def get_invoice_recipient(invoice):
+    job = invoice.job
+
+    # external client FIRST (because they pay from email)
+    if job.external_client and job.external_client.email:
+        return job.external_client.email, True
+
+    # internal client
+    if job.client and job.client.user and job.client.user.email:
+        return job.client.user.email, False
+
+    return None, False
+
+    
 def get_job_recipient_name(job):
     if not job:
         return "Client"
@@ -38,8 +52,10 @@ def get_job_recipient_name(job):
     return "Client"
 
 
+
 def send_invoice_email(invoice, frontend_invoice_url=None):
-    client_email = invoice.sent_to_email
+    client_email, is_external = get_invoice_recipient(invoice)
+
     if not client_email:
         raise ValueError("Client email not found.")
 
@@ -52,8 +68,9 @@ def send_invoice_email(invoice, frontend_invoice_url=None):
         "job": invoice.job,
         "recipient_name": recipient_name,
         "line_items": invoice.line_items.all(),
-        "pay_url": invoice.stripe_checkout_url,
+        "pay_url": invoice.stripe_checkout_url if is_external else None,
         "frontend_invoice_url": frontend_invoice_url,
+        "is_external_client": is_external,
     }
 
     text_body = render_to_string("emails/invoice_email.txt", context)
@@ -66,4 +83,3 @@ def send_invoice_email(invoice, frontend_invoice_url=None):
     )
     msg.attach_alternative(html_body, "text/html")
     msg.send()
-

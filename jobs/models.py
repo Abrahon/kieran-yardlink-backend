@@ -17,6 +17,15 @@ from landscapers.models import Service, Addon, BusinessProfile
 from profiles.models import ClientProfile
 from property.models import Property
 from payments.enums import PaymentStatus
+from decimal import Decimal
+
+from django.conf import settings
+from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator
+from django.db import models
+from django.db.models import Sum
+from django.utils import timezone
+
 
 
 
@@ -26,18 +35,6 @@ class TimeStampedModel(models.Model):
 
     class Meta:
         abstract = True
-
-
-
-
-from decimal import Decimal
-
-from django.conf import settings
-from django.core.exceptions import ValidationError
-from django.core.validators import MinValueValidator
-from django.db import models
-from django.db.models import Sum
-from django.utils import timezone
 
 
 class Job(TimeStampedModel):
@@ -124,86 +121,6 @@ class Job(TimeStampedModel):
     class Meta:
         ordering = ["-created_at"]
 
-    # ======================================================
-    # STATUS ENGINE
-    # ======================================================
-
-    # def sync_status(self, save=True):
-
-    #     total_items = self.items.count()
-
-    #     completed_items = self.items.filter(
-    #         is_completed=True
-    #     ).count()
-
-    #     has_before = self.images.filter(
-    #         image_type=JobImage.ImageType.BEFORE
-    #     ).exists()
-
-    #     has_after = self.images.filter(
-    #         image_type=JobImage.ImageType.AFTER
-    #     ).exists()
-
-    #     # =====================================
-    #     # COMPLETED
-    #     # =====================================
-    #     # all items completed
-    #     # + before image uploaded
-    #     # + after image uploaded
-    #     # =====================================
-
-    #     if (
-    #         total_items > 0
-    #         and completed_items == total_items
-    #         and has_before
-    #         and has_after
-    #     ):
-
-    #         new_status = self.Status.COMPLETED
-
-    #     # =====================================
-    #     # IN PROGRESS
-    #     # =====================================
-    #     # work started
-    #     # OR any image uploaded
-    #     # =====================================
-
-    #     elif (
-    #         completed_items > 0
-    #         or has_before
-    #         or has_after
-    #     ):
-
-    #         new_status = self.Status.IN_PROGRESS
-
-    #     # =====================================
-    #     # UPCOMING
-    #     # =====================================
-
-    #     else:
-
-    #         new_status = self.Status.UPCOMING
-
-    #     # save only if changed
-    #     if self.status != new_status:
-
-    #         self.status = new_status
-
-    #         if new_status == self.Status.COMPLETED:
-    #             self.completed_at = timezone.now()
-    #         else:
-    #             self.completed_at = None
-
-    #         if save:
-    #             self.save(
-    #                 update_fields=[
-    #                     "status",
-    #                     "completed_at",
-    #                     "updated_at"
-    #                 ]
-    #             )
-
-    #     return self.status
     def sync_status(self, save=True):
 
         # ❗ NEVER override manual states
@@ -216,7 +133,9 @@ class Job(TimeStampedModel):
             return self.status
 
         total_items = self.items.count()
-        completed_items = self.items.filter(is_completed=True).count()
+        completed_items = self.items.filter(
+            is_completed=True
+        ).count()
 
         has_before = self.images.filter(
             image_type=JobImage.ImageType.BEFORE
@@ -226,14 +145,19 @@ class Job(TimeStampedModel):
             image_type=JobImage.ImageType.AFTER
         ).exists()
 
+        # =====================================
+        # COMPLETED
+        # Images are OPTIONAL
+        # =====================================
         if (
             total_items > 0
             and completed_items == total_items
-            and has_before
-            and has_after
         ):
             new_status = self.Status.COMPLETED
 
+        # =====================================
+        # IN PROGRESS
+        # =====================================
         elif (
             completed_items > 0
             or has_before
@@ -241,6 +165,9 @@ class Job(TimeStampedModel):
         ):
             new_status = self.Status.IN_PROGRESS
 
+        # =====================================
+        # UPCOMING
+        # =====================================
         else:
             new_status = self.Status.UPCOMING
 
@@ -255,9 +182,17 @@ class Job(TimeStampedModel):
             )
 
             if save:
-                self.save(update_fields=["status", "completed_at", "updated_at"])
+                self.save(
+                    update_fields=[
+                        "status",
+                        "completed_at",
+                        "updated_at"
+                    ]
+                )
 
-        return self.status
+        return self.status  
+
+        
     # ======================================================
     # HELPERS
     # ======================================================

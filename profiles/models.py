@@ -22,8 +22,7 @@ class AdminProfile(models.Model):
         return f"{self.user.name}"
 
 
-
-    # profiles/models.py
+# profiles/models.py
 class WorkerProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     pro_landscaper = models.ForeignKey(

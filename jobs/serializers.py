@@ -98,95 +98,70 @@ class JobRescheduleSerializer(serializers.ModelSerializer):
             "status",       
         ]
 
+
     def validate(self, attrs):
 
         new_date = attrs.get("new_date")
+        new_time = attrs.get("new_time")
+        job = attrs.get("job")
 
         if not new_date:
             raise serializers.ValidationError({
                 "new_date": "This field is required."
             })
 
-        # block past date
+        if not new_time:
+            raise serializers.ValidationError({
+                "new_time": "This field is required."
+            })
+
+        # -----------------------------
+        # 1. block past date
+        # -----------------------------
         if new_date < timezone.now().date():
             raise serializers.ValidationError({
                 "new_date": "Cannot reschedule to past date."
             })
 
+        # -----------------------------
+        # 2. check working hours
+        # -----------------------------
+        landscaper = job.landscaper
+
+        weekday = new_date.strftime("%A").upper()
+
+        working = WorkingHours.objects.filter(
+            landscaper=landscaper,
+            day=weekday,
+            is_active=True,
+            start_time__lte=new_time,
+            end_time__gte=new_time
+        )
+
+        if not working.exists():
+            raise serializers.ValidationError({
+                "new_time": "Selected time is outside landscaper working hours."
+            })
+
+        # -----------------------------
+        # 3. prevent double booking
+        # -----------------------------
+        conflict = Job.objects.filter(
+            landscaper=landscaper,
+            scheduled_date=new_date,
+            scheduled_time=new_time,
+            is_active=True,
+            status__in=["upcoming", "in_progress"]
+        ).exclude(id=job.id)
+
+        if conflict.exists():
+            raise serializers.ValidationError({
+                "new_time": "This time slot is already booked."
+            })
+
         return attrs
-        
 
-# class JobSerializer(serializers.ModelSerializer):
-#     total_price = serializers.SerializerMethodField()
-#     booking_price = serializers.SerializerMethodField()
-#     items = serializers.SerializerMethodField()
-#     images = serializers.SerializerMethodField()
-#     reschedules = serializers.SerializerMethodField()
-#     client = ClientProfileSerializer(read_only=True)
-#     landscaper_info = serializers.SerializerMethodField()
-#     job_property = PropertySerializer(read_only=True)
-#     external_client = ExternalClientSerializer(read_only=True)
-
-#     class Meta:
-#         model = Job
-#         fields = [
-#             "id",
-#             "booking",
-#             "client",
-#             "external_client",
-#             "landscaper_info",
-#             "job_property",
-#             "scheduled_date",
-#             "scheduled_time",
-#             "booking_price",
-#             "total_price",
-#             "note",
-#             "status",
-#             "is_active",
-#             "completed_at",
-#             "items",
-#             "images",
-#             "reschedules",
-#         ]
-
-#     def get_booking_price(self, obj):
-#         if obj.booking and obj.booking.price is not None:
-#             return str(obj.booking.price)
-#         return "0.00"
-
-#     def get_total_price(self, obj):
-#         if obj.total_price is None or obj.total_price == 0:
-#             if obj.booking and obj.booking.price is not None:
-#                 return str(obj.booking.price)
-#             return "0.00"
-#         return str(obj.total_price)
-
-#     def get_landscaper_info(self, obj):
-#         business = obj.landscaper
-#         if not business:
-#             return None
-
-#         user = business.user
-#         personal = getattr(user, "landscaperprofilies", None)
-
-#         return {
-#             "id": business.id,
-#             "name": personal.name if personal else None,
-#             "phone": personal.phone if personal else None,
-#             "image": personal.image.url if personal and personal.image else None,
-#             "business_name": business.business_name,
-#             "business_email": business.business_email,
-#             "business_phone": business.business_phone,
-#         }
-
-#     def get_items(self, obj):
-#         return JobItemSerializer(obj.items.all(), many=True).data
-
-#     def get_images(self, obj):
-#         return JobImageSerializer(obj.images.all(), many=True).data
-
-#     def get_reschedules(self, obj):
-#         return JobRescheduleSerializer(obj.reschedules.all(), many=True).data
+    
 
 
 

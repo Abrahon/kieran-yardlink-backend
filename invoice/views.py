@@ -21,6 +21,15 @@ from django.shortcuts import get_object_or_404
 from invoice.models import Invoice
 from profiles.models import LandscaperProfilies
 
+from notifications.services import send_push_notification
+from django.shortcuts import get_object_or_404
+from django.db import transaction
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+
+
 
 class ClientInvoiceListView(generics.ListAPIView):
     serializer_class = InvoiceSerializer
@@ -117,93 +126,131 @@ def regenerate_invoice_checkout(request, invoice_id):
 
 
 
-
-
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def send_job_invoice(request, invoice_id):
 
-    landscaper = getattr(request.user, "landscaper_profile", None)
-    if not landscaper:
-        return Response(
-            {"error": "Landscaper profile not found."},
-            status=status.HTTP_403_FORBIDDEN
+    try:
+        landscaper = getattr(request.user, "landscaper_profile", None)
+        if not landscaper:
+            return Response({"error": "Landscaper profile not found."}, status=403)
+
+        # -------------------------
+        # GET INVOICE
+        # -------------------------
+        invoice = get_object_or_404(
+            Invoice.objects.select_related(
+                "job",
+                "job__landscaper",
+                "job__client__user"
+            ),
+            id=invoice_id
         )
 
-    # ✅ STEP 1: GET INVOICE (NO FILTER FIRST)
-    invoice = get_object_or_404(
-        Invoice.objects.select_related("job", "job__landscaper"),
-        id=invoice_id
-    )
+        # -------------------------
+        # OWNERSHIP CHECK
+        # -------------------------
+        if invoice.job.landscaper_id != landscaper.id:
+            return Response({"error": "Not allowed"}, status=403)
 
-    # ❌ STEP 2: VERIFY OWNERSHIP PROPERLY
-    if invoice.job.landscaper_id != landscaper.id:
-        return Response(
-            {
-                "error": "Invoice does not belong to this landscaper.",
-                "debug": {
-                    "invoice_job_landscaper_id": invoice.job.landscaper_id,
-                    "request_landscaper_id": landscaper.id
-                }
-            },
-            status=status.HTTP_403_FORBIDDEN
-        )
+        import stripe
+        from django.conf import settings
 
-    # 🚨 Stripe setup
-    import stripe
-    from django.conf import settings
+        stripe.api_key = settings.STRIPE_SECRET_KEY
 
-    stripe.api_key = settings.STRIPE_SECRET_KEY
+        # expire old session safely
+        if invoice.stripe_session_id:
+            try:
+                stripe.checkout.Session.expire(invoice.stripe_session_id)
+            except Exception as e:
+                print("Stripe expire error:", str(e))
 
-    # expire old session safely
-    if invoice.stripe_session_id:
+        # create new session
         try:
-            stripe.checkout.Session.expire(invoice.stripe_session_id)
-        except Exception:
-            pass
+            session = create_invoice_checkout_session(invoice)
+        except Exception as e:
+            return Response(
+                {"error": f"Stripe session creation failed: {str(e)}"},
+                status=400
+            )
 
-    # create new session
-    try:
-        session = create_invoice_checkout_session(invoice)
+        # save invoice
+        invoice.stripe_session_id = session.id
+        invoice.stripe_checkout_url = session.url
+        invoice.status = Invoice.Status.SENT
+        invoice.save(update_fields=[
+            "stripe_session_id",
+            "stripe_checkout_url",
+            "status",
+            "updated_at"
+        ])
+
+        # -------------------------
+        # SEND EMAIL (SAFE)
+        # -------------------------
+        try:
+            send_invoice_email(
+                invoice,
+                frontend_invoice_url=request.data.get("frontend_invoice_url")
+            )
+        except Exception as e:
+            print("Email error:", str(e))
+
+        # =========================
+        # NOTIFY CLIENT (SAFE)
+        # =========================
+        try:
+            job = invoice.job
+            client_user = None
+
+            if job:
+                if getattr(job, "client", None) and getattr(job.client, "user", None):
+                    client_user = job.client.user
+
+                elif getattr(job, "external_client", None):
+                    client_user = getattr(job.external_client, "user", None) or job.external_client
+
+            if client_user:
+
+                print("🔔 Sending notification to:", client_user)
+
+                send_push_notification(
+                    user=client_user,
+                    title="New Invoice Received 💳",
+                    message=f"You have received invoice #{invoice.invoice_number}. Please complete payment.",
+                    notification_type="payment",
+                    data={
+                        "invoice_id": invoice.id,
+                        "job_id": job.id if job else None,
+                        "type": "invoice"
+                    }
+                )
+
+                print("✅ Notification sent")
+
+            else:
+                print("❌ No valid client user found")
+
+        except Exception as e:
+            print("Notification system error:", str(e))
+
+        return Response({
+            "message": "Invoice sent successfully.",
+            "invoice_id": invoice.id,
+            "invoice_number": invoice.invoice_number,
+            "sent_to": invoice.sent_to_email,
+            "stripe_checkout_url": session.url,
+        }, status=200)
+
     except Exception as e:
+        # 🔥 GLOBAL SAFETY NET (IMPORTANT)
+        print("🔥 UNEXPECTED ERROR:", str(e))
         return Response(
-            {"error": str(e)},
-            status=status.HTTP_400_BAD_REQUEST
+            {"error": "Something went wrong while sending invoice."},
+            status=500
         )
 
-    # save invoice
-    invoice.stripe_session_id = session.id
-    invoice.stripe_checkout_url = session.url
-    invoice.status = Invoice.Status.SENT
-    invoice.save(update_fields=[
-        "stripe_session_id",
-        "stripe_checkout_url",
-        "status",
-        "updated_at"
-    ])
 
-    # send email
-    try:
-        send_invoice_email(
-            invoice,
-            frontend_invoice_url=request.data.get("frontend_invoice_url")
-        )
-    except Exception as e:
-        return Response(
-            {"error": f"Email send failed: {str(e)}"},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-    return Response({
-        "message": "Invoice sent successfully.",
-        "invoice_id": invoice.id,
-        "invoice_number": invoice.invoice_number,
-        "sent_to": invoice.sent_to_email,
-        "stripe_checkout_url": session.url,
-    }, status=status.HTTP_200_OK)
-
-
-    
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def mark_invoice_paid(request, invoice_id):

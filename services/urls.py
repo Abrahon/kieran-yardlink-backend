@@ -18,7 +18,6 @@ from .views import (
 
 urlpatterns = [
 
-
     # ================= CLIENT =================
 
     path(

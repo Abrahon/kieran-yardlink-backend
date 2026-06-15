@@ -25,12 +25,17 @@
         {% endfor %}
     </ul>
 
-    {% if pay_url %}
-        <p>
-            <a href="{{ pay_url }}" style="background:#28a745;color:#fff;padding:10px 16px;text-decoration:none;border-radius:6px;display:inline-block;">
-                Pay now
-            </a>
-        </p>
+    {% if is_external_client and pay_url %}
+    <p>
+        <a href="{{ pay_url }}"
+        style="background:#28a745;color:#fff;padding:10px 16px;text-decoration:none;border-radius:6px;display:inline-block;">
+            Pay now
+        </a>
+    </p>
+    {% else %}
+    <p>
+        Please open the app to review and pay your invoice.
+    </p>
     {% endif %}
 
     {% if frontend_invoice_url %}
