@@ -11,6 +11,8 @@ from bookings.models import BookingRequestItem
 from landscapers.models import Service, Addon
 from property.models import Property
 from property.serializers import PropertySerializer
+from landscapers.models import WorkingHours
+from jobs.models import Job
 
 
 class BookingRequestItemSerializer(serializers.ModelSerializer):

@@ -492,9 +492,17 @@ class JobImageCreateView(generics.CreateAPIView):
 
 #             return reschedule
 
+from django.db import transaction
+from rest_framework import generics, permissions, serializers, status
+from rest_framework.response import Response
+
+from jobs.models import Job
+from .models import JobReschedule
+from .serializers import JobRescheduleSerializer
+from notifications.utils import send_push_notification
+
 
 class JobRescheduleCreateView(generics.CreateAPIView):
-
     serializer_class = JobRescheduleSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -504,7 +512,6 @@ class JobRescheduleCreateView(generics.CreateAPIView):
         serializer.is_valid(raise_exception=True)
 
         user = request.user
-
         landscaper = getattr(user, "landscaper_profile", None)
         client = getattr(user, "clientprofile", None)
 
@@ -514,9 +521,7 @@ class JobRescheduleCreateView(generics.CreateAPIView):
         # JOB REQUIRED
         # ============================
         if not job:
-            raise serializers.ValidationError({
-                "error": "Job is required."
-            })
+            raise serializers.ValidationError({"error": "Job is required."})
 
         # ============================
         # BLOCK FINISHED JOBS
@@ -526,9 +531,9 @@ class JobRescheduleCreateView(generics.CreateAPIView):
             Job.Status.CANCELLED,
             Job.Status.SKIPPED,
         ]:
-            raise serializers.ValidationError({
-                "error": "This job cannot be rescheduled."
-            })
+            raise serializers.ValidationError(
+                {"error": "This job cannot be rescheduled."}
+            )
 
         # ============================
         # VERIFY OWNERSHIP
@@ -568,8 +573,8 @@ class JobRescheduleCreateView(generics.CreateAPIView):
                         data={
                             "job_id": job.id,
                             "reschedule_id": reschedule.id,
-                            "type": "reschedule_request"
-                        }
+                            "type": "reschedule_request",
+                        },
                     )
                 except Exception as e:
                     print("Notification error (landscaper):", str(e))
@@ -586,24 +591,24 @@ class JobRescheduleCreateView(generics.CreateAPIView):
                 job.scheduled_time = reschedule.new_time
                 job.status = Job.Status.UPCOMING
 
-                job.save(update_fields=[
-                    "scheduled_date",
-                    "scheduled_time",
-                    "status",
-                    "updated_at",
-                ])
+                job.save(
+                    update_fields=[
+                        "scheduled_date",
+                        "scheduled_time",
+                        "status",
+                        "updated_at",
+                    ]
+                )
 
                 # 🔔 NOTIFY CLIENT
                 try:
-                    # internal client
+                    notify_user = None
+
                     if job.client and job.client.user:
                         notify_user = job.client.user
 
-                    # external client
                     elif job.external_client:
-                        notify_user = job.external_client  
-                    else:
-                        notify_user = None
+                        notify_user = job.external_client
 
                     if notify_user:
                         send_push_notification(
@@ -614,14 +619,25 @@ class JobRescheduleCreateView(generics.CreateAPIView):
                             data={
                                 "job_id": job.id,
                                 "reschedule_id": reschedule.id,
-                                "type": "reschedule_approved"
-                            }
+                                "type": "reschedule_approved",
+                            },
                         )
 
                 except Exception as e:
                     print("Notification error (client):", str(e))
 
-
+        # ============================
+        # FINAL RESPONSE (IMPORTANT FIX)
+        # ============================
+        return Response(
+            {
+                "message": "Job rescheduled successfully",
+                "reschedule_id": reschedule.id,
+                "job_id": job.id,
+                "status": reschedule.status,
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 # landscaper approval and client requested reschedule list
 class PendingRescheduleListView(generics.ListAPIView):
@@ -1063,6 +1079,7 @@ class ClientUnpaidCompletedJobView(generics.RetrieveAPIView):
                 "items",
                 "images"
             )
+
             .order_by("-completed_at")
             .first()
         )

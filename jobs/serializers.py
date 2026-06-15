@@ -26,6 +26,7 @@ from jobs.models import Job, JobItem
 
 from django.utils import timezone
 from rest_framework import serializers
+from landscapers.models import WorkingHours
 
 
 

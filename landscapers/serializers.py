@@ -22,6 +22,9 @@ from cloudinary.models import CloudinaryField
 from rest_framework import serializers
 from .models import ServiceQuote
 from property.serializers import PropertySerializer
+# from profiles.serializers import ClientProfileMiniSerializer
+from landscapers.models import BusinessProfile
+
 
 
 

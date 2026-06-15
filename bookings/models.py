@@ -101,6 +101,7 @@ class BookingRequest(models.Model):
         ONE_TIME = "one_time", "One-Time"
         WEEKLY = "weekly", "Weekly"
         BIWEEKLY = "biweekly", "Biweekly"
+        MONTHLY = "monthly", "Monthly"
         CUSTOM = "custom", "Custom"
 
     class Status(models.TextChoices):
