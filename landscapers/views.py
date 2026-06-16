@@ -210,49 +210,7 @@ class GetBusinessProfileView(generics.RetrieveAPIView):
 
 
 
-# class ServiceListCreateView(generics.ListCreateAPIView):
-#     serializer_class = ServiceSerializer
-#     permission_classes = [IsLandscaper]
 
-#     def get_queryset(self):
-#         business = getattr(self.request.user, "landscaper_profile", None)
-
-#         if not business:
-#             return Service.objects.none()
-
-#         queryset = Service.objects.filter(business=business)
-
-#         # ✅ SEARCH PARAMS
-#         search = self.request.query_params.get("search")
-#         min_price = self.request.query_params.get("min_price")
-#         max_price = self.request.query_params.get("max_price")
-
-#         # =========================
-#         # NAME SEARCH
-#         # =========================
-#         if search:
-#             queryset = queryset.filter(
-#                 Q(name__icontains=search)
-#             )
-
-#         # =========================
-#         # PRICE FILTER
-#         # =========================
-#         if min_price:
-#             queryset = queryset.filter(price__gte=min_price)
-
-#         if max_price:
-#             queryset = queryset.filter(price__lte=max_price)
-
-#         return queryset
-
-#     def perform_create(self, serializer):
-#         business = getattr(self.request.user, "landscaper_profile", None)
-
-#         if not business:
-#             raise PermissionDenied("You must have a business profile to create services.")
-
-#         serializer.save(business=business)
 
 class ServiceListCreateView(generics.ListCreateAPIView):
     serializer_class = ServiceSerializer
@@ -369,7 +327,40 @@ class ServiceDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 
 
+# select clinet landscaper service 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_landscaper_services(request, landscaper_id):
 
+    # -----------------------------
+    # GET LANDSCAPER BUSINESS PROFILE
+    # -----------------------------
+    business = get_object_or_404(
+        BusinessProfile,
+        user_id=landscaper_id
+    )
+
+    # -----------------------------
+    # GET SERVICES
+    # -----------------------------
+    services = Service.objects.filter(
+        business=business,
+        is_active=True
+    ).order_by("-is_pinned", "-created_at")
+
+    serializer = ServiceSerializer(
+        services,
+        many=True,
+        context={"request": request}
+    )
+
+    return Response({
+        "landscaper_id": landscaper_id,
+        "business_id": business.id,
+        "business_name": business.business_name,
+        "count": services.count(),
+        "services": serializer.data
+    })
 
 
 

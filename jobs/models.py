@@ -121,78 +121,108 @@ class Job(TimeStampedModel):
     class Meta:
         ordering = ["-created_at"]
 
+    # def sync_status(self, save=True):
+
+    #     # ❗ NEVER override manual states
+    #     if self.status in [
+    #         self.Status.CANCELLED,
+    #         self.Status.SKIPPED,
+    #         self.Status.MISSED,
+    #         self.Status.RESCHEDULED,
+    #     ]:
+    #         return self.status
+
+    #     total_items = self.items.count()
+    #     completed_items = self.items.filter(
+    #         is_completed=True
+    #     ).count()
+
+    #     has_before = self.images.filter(
+    #         image_type=JobImage.ImageType.BEFORE
+    #     ).exists()
+
+    #     has_after = self.images.filter(
+    #         image_type=JobImage.ImageType.AFTER
+    #     ).exists()
+
+    #     # =====================================
+    #     # COMPLETED
+    #     # Images are OPTIONAL
+    #     # =====================================
+    #     if (
+    #         total_items > 0
+    #         and completed_items == total_items
+    #     ):
+    #         new_status = self.Status.COMPLETED
+
+    #     # =====================================
+    #     # IN PROGRESS
+    #     # =====================================
+    #     elif (
+    #         completed_items > 0
+    #         or has_before
+    #         or has_after
+    #     ):
+    #         new_status = self.Status.IN_PROGRESS
+
+    #     # =====================================
+    #     # UPCOMING
+    #     # =====================================
+    #     else:
+    #         new_status = self.Status.UPCOMING
+
+    #     if self.status != new_status:
+
+    #         self.status = new_status
+
+    #         self.completed_at = (
+    #             timezone.now()
+    #             if new_status == self.Status.COMPLETED
+    #             else None
+    #         )
+
+    #         if save:
+    #             self.save(
+    #                 update_fields=[
+    #                     "status",
+    #                     "completed_at",
+    #                     "updated_at"
+    #                 ]
+    #             )
+
+    #     return self.status  
+
+
+    # it is for extra api
     def sync_status(self, save=True):
 
-        # ❗ NEVER override manual states
         if self.status in [
             self.Status.CANCELLED,
             self.Status.SKIPPED,
             self.Status.MISSED,
             self.Status.RESCHEDULED,
+            self.Status.COMPLETED,
         ]:
             return self.status
 
-        total_items = self.items.count()
-        completed_items = self.items.filter(
-            is_completed=True
-        ).count()
+        completed_items = self.items.filter(is_completed=True).exists()
+        has_images = self.images.exists()
+        has_note = bool(self.note)
 
-        has_before = self.images.filter(
-            image_type=JobImage.ImageType.BEFORE
-        ).exists()
-
-        has_after = self.images.filter(
-            image_type=JobImage.ImageType.AFTER
-        ).exists()
-
-        # =====================================
-        # COMPLETED
-        # Images are OPTIONAL
-        # =====================================
-        if (
-            total_items > 0
-            and completed_items == total_items
-        ):
-            new_status = self.Status.COMPLETED
-
-        # =====================================
-        # IN PROGRESS
-        # =====================================
-        elif (
-            completed_items > 0
-            or has_before
-            or has_after
-        ):
+        # 🔥 ONCE ACTIVITY STARTS → LOCK IN_PROGRESS
+        if completed_items or has_images or has_note:
             new_status = self.Status.IN_PROGRESS
-
-        # =====================================
-        # UPCOMING
-        # =====================================
         else:
             new_status = self.Status.UPCOMING
 
         if self.status != new_status:
-
             self.status = new_status
 
-            self.completed_at = (
-                timezone.now()
-                if new_status == self.Status.COMPLETED
-                else None
-            )
-
             if save:
-                self.save(
-                    update_fields=[
-                        "status",
-                        "completed_at",
-                        "updated_at"
-                    ]
-                )
+                self.save(update_fields=["status", "updated_at"])
 
-        return self.status  
+        return self.status
 
-        
     # ======================================================
     # HELPERS
     # ======================================================

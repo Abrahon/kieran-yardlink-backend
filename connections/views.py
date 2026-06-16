@@ -474,6 +474,8 @@ class AcceptedConnectionsAPIView(APIView):
                 "email": user.email,
                 "role": user.role,
                 "type": "landscaper",
+                "business_id": business.id,
+
 
                 "business_name": business.business_name,
                 "business_email": business.business_email,

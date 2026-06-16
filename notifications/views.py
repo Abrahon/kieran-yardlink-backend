@@ -48,7 +48,30 @@ class NotificationListView(APIView):
             )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def mark_notification_read(request, id):
+    try:
+        notification = Notification.objects.get(id=id, user=request.user)
+    except Notification.DoesNotExist:
+        return Response({"error": "Not found"}, status=404)
 
+    notification.is_read = True
+    notification.save(update_fields=["is_read"])
+
+    return Response({"message": "Marked as read"})
+
+
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def mark_all_notifications_read(request):
+    Notification.objects.filter(
+        user=request.user,
+        is_read=False
+    ).update(is_read=True)
+
+    return Response({"message": "All notifications marked as read"})
 
 
 class NotificationSettingsView(APIView):

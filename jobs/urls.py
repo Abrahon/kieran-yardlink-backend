@@ -40,34 +40,20 @@ urlpatterns = [
 
     # manual job created external client
     path("landscaper/manual-jobs/create/", ManualOneTimeJobCreateView.as_view(), name="manual-job-create"),
-        # 🔹 Get single job details (items + images + price)
+    # 🔹 Get single job details (items + images + price)
     path("client/job-history/",ClientUnpaidCompletedJobView.as_view(),name="client-job-detail"),
 
     # 🔹 Pay for completed job
-    # path("client/jobs/<int:job_id>/pay/",client_pay_job,name="client-pay-job"),
     path("client/upcoming-service/", ClientUpcomingJobsListView.as_view()),
     # Upcoming service detail
     path("client/upcoming-services/<int:id>/",ClientUpcomingServiceDetailView.as_view(),name="client-upcoming-service-detail"),
-    # path("jobs/reschedule/<int:pk>/approve/",ApproveJobRescheduleView.as_view(),name="job-reschedule-approve"),
     path("landscaper/jobs/<int:job_id>/status/", update_job_status, name="job-status-update"),
     path("landscaper/jobs/problem/", ProblemJobsListView.as_view(), name="problem-jobs"),
-        # 📌 Pending reschedule list (landscaper dashboard)
-    path(
-        "reschedule/pending/",
-        PendingRescheduleListView.as_view(),
-        name="reschedule-pending-list"
-    ),
+    # Pending reschedule list (landscaper dashboard)
+    path("reschedule/pending/",PendingRescheduleListView.as_view(),name="reschedule-pending-list"),
 
-    # 📌 Approve / Reject (single unified endpoint)
-    path(
-        "reschedule/<int:pk>/action/",
-        RescheduleActionView.as_view(),
-        name="reschedule-action"
-    ),
+    # Approve / Reject (single unified endpoint)
+    path("reschedule/<int:pk>/action/",RescheduleActionView.as_view(),name="reschedule-action"),
 
-    path(
-        "job/<int:job_id>/complete/",
-        complete_job,
-        name="complete-job"
-    ),
+    path("job/<int:job_id>/complete/",complete_job, name="complete-job"),
 ]

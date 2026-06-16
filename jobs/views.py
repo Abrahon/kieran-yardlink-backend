@@ -45,6 +45,13 @@ from rest_framework import generics, permissions
 from rest_framework.response import Response
 from .models import Job, JobItem, JobImage
 
+from django.db import transaction
+from rest_framework import generics, permissions, serializers, status
+from rest_framework.response import Response
+
+from .serializers import JobRescheduleSerializer
+
+
 
 
 
@@ -355,6 +362,57 @@ def toggle_job_item_completion(request, item_id):
 
 
 
+# class JobImageCreateView(generics.CreateAPIView):
+#     serializer_class = JobImageSerializer
+#     permission_classes = [permissions.IsAuthenticated]
+#     parser_classes = [MultiPartParser, FormParser]
+
+#     def perform_create(self, serializer):
+
+#         landscaper = getattr(self.request.user, "landscaper_profile", None)
+
+#         if not landscaper:
+#             raise serializers.ValidationError({
+#                 "error": "Landscaper profile not found."
+#             })
+
+#         job_id = self.request.data.get("job")
+
+#         if not job_id:
+#             raise serializers.ValidationError({
+#                 "error": "Job is required."
+#             })
+
+#         try:
+#             job = Job.objects.get(id=job_id)
+#         except Job.DoesNotExist:
+#             raise serializers.ValidationError({
+#                 "error": "Job not found."
+#             })
+
+#         if job.landscaper != landscaper:
+#             raise serializers.ValidationError({
+#                 "error": "You cannot upload images for this job."
+#             })
+
+#         if job.status == Job.Status.UPCOMING:
+#             raise serializers.ValidationError({
+#                 "error": "Images cannot be uploaded before job starts."
+#             })
+
+#         # =========================
+#         # SAVE IMAGE
+#         # =========================
+#         instance = serializer.save(
+#             job=job,
+#             uploaded_by=self.request.user
+#         )
+
+#         # =========================
+#         # FIX 1: FORCE STATUS RECALCULATION
+#         # =========================
+#         job.sync_status()
+
 class JobImageCreateView(generics.CreateAPIView):
     serializer_class = JobImageSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -362,146 +420,102 @@ class JobImageCreateView(generics.CreateAPIView):
 
     def perform_create(self, serializer):
 
-        landscaper = getattr(self.request.user, "landscaper_profile", None)
+        user = self.request.user
+        landscaper = getattr(user, "landscaper_profile", None)
 
         if not landscaper:
-            raise serializers.ValidationError({
-                "error": "Landscaper profile not found."
-            })
+            raise serializers.ValidationError({"error": "Landscaper profile not found."})
 
         job_id = self.request.data.get("job")
 
         if not job_id:
-            raise serializers.ValidationError({
-                "error": "Job is required."
-            })
+            raise serializers.ValidationError({"error": "Job is required."})
 
         try:
             job = Job.objects.get(id=job_id)
         except Job.DoesNotExist:
-            raise serializers.ValidationError({
-                "error": "Job not found."
-            })
+            raise serializers.ValidationError({"error": "Job not found."})
 
         if job.landscaper != landscaper:
-            raise serializers.ValidationError({
-                "error": "You cannot upload images for this job."
-            })
+            raise serializers.ValidationError({"error": "Not allowed."})
 
-        if job.status == Job.Status.UPCOMING:
-            raise serializers.ValidationError({
-                "error": "Images cannot be uploaded before job starts."
-            })
+        # ❌ REMOVE THIS STRICT CHECK
+        # if job.status == Job.Status.UPCOMING:
+        #     raise serializers.ValidationError("Images cannot be uploaded before job starts.")
 
         # =========================
         # SAVE IMAGE
         # =========================
-        instance = serializer.save(
+        serializer.save(
             job=job,
-            uploaded_by=self.request.user
+            uploaded_by=user
         )
 
-        # =========================
-        # FIX 1: FORCE STATUS RECALCULATION
-        # =========================
+        # 🔥 FIX: always sync status after image upload
         job.sync_status()
 
 
 
+
+@api_view(["PATCH"])
+@permission_classes([permissions.IsAuthenticated])
+def add_job_note(request, job_id):
+
+    user = request.user
+
+    landscaper = getattr(user, "landscaper_profile", None)
+    client = getattr(user, "clientprofile", None)
+
+    try:
+        job = Job.objects.get(id=job_id)
+    except Job.DoesNotExist:
+        return Response({"error": "Job not found"}, status=404)
+
+    # permission check
+    if landscaper and job.landscaper != landscaper:
+        return Response({"error": "Not allowed"}, status=403)
+
+    if client and job.client != client:
+        return Response({"error": "Not allowed"}, status=403)
+
+    action = request.data.get("action")
+    note = request.data.get("note")
+
+    # =========================
+    # UPDATE STATUS ACTIONS
+    # =========================
+    if action == "cancel":
+        job.status = Job.Status.CANCELLED
+
+    elif action == "skip":
+        job.status = Job.Status.SKIPPED
+
+    elif action == "reschedule":
+        job.status = Job.Status.RESCHEDULED
+
+    elif action is not None:
+        return Response({"error": "Invalid action"}, status=400)
+
+    # =========================
+    # NOTE UPDATE
+    # =========================
+    if note is not None:
+        job.note = note
+
+    job.save(update_fields=["status", "note", "updated_at"])
+
+    #  IMPORTANT FIX
+    job.sync_status()
+
+    return Response({
+        "message": "Job updated successfully",
+        "job_id": job.id,
+        "status": job.status,
+        "note": job.note
+    }, status=200)
+
+
 # --- Add Job Reschedule ---
-
-# class JobRescheduleCreateView(generics.CreateAPIView):
-
-#     serializer_class = JobRescheduleSerializer
-#     permission_classes = [permissions.IsAuthenticated]
-
-#     @transaction.atomic
-#     def perform_create(self, serializer):
-
-#         user = self.request.user
-
-#         landscaper = getattr(user, "landscaper_profile", None)
-#         client = getattr(user, "clientprofile", None)
-
-#         job = serializer.validated_data.get("job")
-
-#         # =====================================
-#         # JOB REQUIRED
-#         # =====================================
-#         if not job:
-#             raise serializers.ValidationError({
-#                 "error": "Job is required."
-#             })
-
-#         # =====================================
-#         # BLOCK FINISHED JOBS
-#         # =====================================
-#         if job.status in [
-#             Job.Status.COMPLETED,
-#             Job.Status.CANCELLED,
-#             Job.Status.SKIPPED,
-#         ]:
-#             raise serializers.ValidationError({
-#                 "error": "This job cannot be rescheduled."
-#             })
-
-#         # =====================================
-#         # VERIFY OWNERSHIP
-#         # =====================================
-#         if landscaper and job.landscaper != landscaper:
-#             raise serializers.ValidationError({"error": "Not allowed."})
-
-#         if client and job.client != client:
-#             raise serializers.ValidationError({"error": "Not allowed."})
-
-#         # =====================================
-#         # CREATE RESCHEDULE RECORD
-#         # =====================================
-#         reschedule = serializer.save(
-#             requested_by=user,
-#             old_date=job.scheduled_date,
-#             old_time=job.scheduled_time,
-#         )
-
-#         # =====================================
-#         # CLIENT → REQUEST ONLY (NO JOB UPDATE)
-#         # =====================================
-#         if client:
-#             reschedule.status = "pending"
-#             reschedule.save(update_fields=["status"])
-#             return reschedule
-
-#         # =====================================
-#         # LANDSCAPER → DIRECT APPROVE + UPDATE JOB
-#         # =====================================
-#         if landscaper:
-
-#             reschedule.status = "approved"
-#             reschedule.save(update_fields=["status"])
-
-#             job.scheduled_date = reschedule.new_date
-#             job.scheduled_time = reschedule.new_time
-#             job.status = Job.Status.UPCOMING
-
-#             job.save(update_fields=[
-#                 "scheduled_date",
-#                 "scheduled_time",
-#                 "status",
-#                 "updated_at",
-#             ])
-
-#             return reschedule
-
-from django.db import transaction
-from rest_framework import generics, permissions, serializers, status
-from rest_framework.response import Response
-
-from jobs.models import Job
-from .models import JobReschedule
-from .serializers import JobRescheduleSerializer
-from notifications.utils import send_push_notification
-
-
 class JobRescheduleCreateView(generics.CreateAPIView):
     serializer_class = JobRescheduleSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -639,6 +653,8 @@ class JobRescheduleCreateView(generics.CreateAPIView):
             status=status.HTTP_201_CREATED,
         )
 
+
+
 # landscaper approval and client requested reschedule list
 class PendingRescheduleListView(generics.ListAPIView):
     serializer_class = JobRescheduleSerializer
@@ -655,7 +671,6 @@ class PendingRescheduleListView(generics.ListAPIView):
             job__landscaper=landscaper,
             status="pending"
         ).select_related("job", "requested_by").order_by("-created_at")
-
 
 
 
@@ -742,61 +757,6 @@ class RescheduleActionView(generics.GenericAPIView):
             {"error": "Invalid action. Use 'approve' or 'reject'."},
             status=400
         )
-
-
-@api_view(["PATCH"])
-@permission_classes([permissions.IsAuthenticated])
-def add_job_note(request, job_id):
-    user = request.user
-
-    landscaper = getattr(user, "landscaper_profile", None)
-    client = getattr(user, "clientprofile", None)
-
-    try:
-        job = Job.objects.get(id=job_id)
-    except Job.DoesNotExist:
-        return Response({"error": "Job not found"}, status=404)
-
-    # permission check
-    if landscaper and job.landscaper != landscaper:
-        return Response({"error": "Not allowed"}, status=403)
-
-    if client and job.client != client:
-        return Response({"error": "Not allowed"}, status=403)
-
-    action = request.data.get("action", None)
-    note = request.data.get("note", None)
-
-    # =========================
-    # STATUS UPDATE (OPTIONAL)
-    # =========================
-    if action:
-        if action == "cancel":
-            job.status = Job.Status.CANCELLED
-
-        elif action == "skip":
-            job.status = Job.Status.SKIPPED
-
-        elif action == "reschedule":
-            job.status = Job.Status.RESCHEDULED
-
-        else:
-            return Response({"error": "Invalid action"}, status=400)
-
-    # =========================
-    # NOTE (ALWAYS ALLOWED)
-    # =========================
-    if note is not None:
-        job.note = note
-
-    job.save(update_fields=["status", "note", "updated_at"])
-
-    return Response({
-        "message": "Job updated successfully",
-        "job_id": job.id,
-        "status": job.status,
-        "note": job.note
-    }, status=200)
 
 
 
@@ -1051,12 +1011,13 @@ class CompletedJobDetailView(generics.RetrieveAPIView):
         })
 
 
-
 class ClientUnpaidCompletedJobView(generics.RetrieveAPIView):
+
     serializer_class = ClientJobDetailSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self):
+
         client = getattr(self.request.user, "clientprofile", None)
 
         if not client:
@@ -1079,17 +1040,29 @@ class ClientUnpaidCompletedJobView(generics.RetrieveAPIView):
                 "items",
                 "images"
             )
-
             .order_by("-completed_at")
             .first()
         )
 
         if not job:
-            raise NotFound("No completed job found")
+            raise NotFound("No completed unpaid job found")
+
+        # 🔥 SAFETY: ensure invoice exists before Stripe link usage
+        if hasattr(job, "invoice") and job.invoice:
+            if not job.invoice.stripe_checkout_url:
+                from payments.stripe_service import create_invoice_checkout_session
+
+                session = create_invoice_checkout_session(job.invoice)
+
+                job.invoice.stripe_checkout_url = session.url
+                job.invoice.stripe_session_id = session.id
+                job.invoice.save(update_fields=[
+                    "stripe_checkout_url",
+                    "stripe_session_id",
+                    "updated_at"
+                ])
 
         return job
-
-
     
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated])

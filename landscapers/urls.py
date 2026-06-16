@@ -34,7 +34,8 @@ from .views import (
     ServiceQuoteListForLandscaper,
     ClientCounterOfferListView,
     get_landscaper_availability,
-    ServiceQuoteDeleteView
+    ServiceQuoteDeleteView,
+    get_landscaper_services
 
 )
 
@@ -52,7 +53,7 @@ urlpatterns = [
     path("services/", ServiceListCreateView.as_view(), name="service-list-create"),
     path("services/<int:pk>/", ServiceDetailView.as_view(), name="service-detail"),
      # Client booking selection
-
+    path("landscapers/<int:landscaper_id>/services/", get_landscaper_services, name="landscaper-services"),
     path("services/<int:service_id>/addons/", ServiceAddonListView.as_view(), name="service-addons"),
 
     # taggle 

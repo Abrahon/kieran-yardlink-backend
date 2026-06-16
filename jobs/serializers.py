@@ -513,20 +513,108 @@ class JobItemClientSerializer(serializers.ModelSerializer):
 
 
 
+# class ClientJobDetailSerializer(serializers.ModelSerializer):
+#     completed_items = serializers.SerializerMethodField()
+#     before_images = serializers.SerializerMethodField()
+#     after_images = serializers.SerializerMethodField()
+#     landscaper_name = serializers.SerializerMethodField() 
+#     stripe_pay_url = serializers.SerializerMethodField() 
+#     payment_status = serializers.SerializerMethodField()  
+
+#     class Meta:
+#         model = Job
+#         fields = [
+#             "id",
+#             "client_name",
+#             "landscaper_name", 
+#             "scheduled_date",
+#             "scheduled_time",
+#             "status",
+#             "payment_status",
+#             "total_price",
+#             "note",
+#             "stripe_pay_url",
+
+#             # custom
+#             "completed_items",
+#             "before_images",
+#             "after_images",
+#         ]
+
+#     def get_completed_items(self, obj):
+#         items = obj.items.filter(is_completed=True)
+#         return JobItemClientSerializer(items, many=True).data
+    
+
+#     def get_payment_status(self, obj):
+#         return obj.payment_status
+
+#     def get_before_images(self, obj):
+#         images = obj.images.filter(image_type="before")
+#         return JobImageSerializer(images, many=True).data
+
+#     def get_after_images(self, obj):
+#         images = obj.images.filter(image_type="after")
+#         return JobImageSerializer(images, many=True).data
+
+#     # ✅ NEW METHOD
+#     def get_landscaper_name(self, obj):
+#         landscaper = obj.landscaper
+#         if not landscaper:
+#             return None
+        
+
+        
+#     def get_stripe_pay_url(self, obj):
+#         invoice = getattr(obj, "invoice", None)
+
+#         if not invoice:
+#             return None
+
+#         if invoice.status == "paid":
+#             return None
+
+#         return {
+#             "invoice_id": invoice.id,
+#             "amount": str(invoice.total),
+#             "can_pay": True,
+#             "url": invoice.stripe_checkout_url  # ✅ ADD THIS
+#         }
+    
+#     def get_landscaper_name(self, obj):
+#         user = getattr(obj.landscaper, "user", None)
+
+#         if not user:
+#             return None
+
+#         # Best option (Django built-in)
+#         name = user.get_full_name()
+
+#         if name:
+#             return name
+
+#         # fallback if full_name is empty
+#         if user.first_name or user.last_name:
+#             return f"{user.first_name} {user.last_name}".strip()
+
+#         # last fallback (optional)
+#         return user.username
+    
 class ClientJobDetailSerializer(serializers.ModelSerializer):
+
     completed_items = serializers.SerializerMethodField()
     before_images = serializers.SerializerMethodField()
     after_images = serializers.SerializerMethodField()
-    landscaper_name = serializers.SerializerMethodField() 
-    stripe_pay_url = serializers.SerializerMethodField() 
-    payment_status = serializers.SerializerMethodField()  
+    landscaper_name = serializers.SerializerMethodField()
+    stripe_pay_url = serializers.SerializerMethodField()
+    payment_status = serializers.SerializerMethodField()
 
     class Meta:
         model = Job
         fields = [
             "id",
             "client_name",
-            "landscaper_name", 
+            "landscaper_name",
             "scheduled_date",
             "scheduled_time",
             "status",
@@ -534,8 +622,6 @@ class ClientJobDetailSerializer(serializers.ModelSerializer):
             "total_price",
             "note",
             "stripe_pay_url",
-
-            # custom
             "completed_items",
             "before_images",
             "after_images",
@@ -544,7 +630,6 @@ class ClientJobDetailSerializer(serializers.ModelSerializer):
     def get_completed_items(self, obj):
         items = obj.items.filter(is_completed=True)
         return JobItemClientSerializer(items, many=True).data
-    
 
     def get_payment_status(self, obj):
         return obj.payment_status
@@ -557,49 +642,52 @@ class ClientJobDetailSerializer(serializers.ModelSerializer):
         images = obj.images.filter(image_type="after")
         return JobImageSerializer(images, many=True).data
 
-    # ✅ NEW METHOD
-    def get_landscaper_name(self, obj):
-        landscaper = obj.landscaper
-        if not landscaper:
-            return None
-        
-
-        
-    def get_stripe_pay_url(self, obj):
-        invoice = getattr(obj, "invoice", None)
-
-        if not invoice:
-            return None
-
-        if invoice.status == "paid":
-            return None
-
-        return {
-            "invoice_id": invoice.id,
-            "amount": str(invoice.total),
-            "can_pay": True,
-            "url": invoice.stripe_checkout_url  # ✅ ADD THIS
-        }
-    
+    # ✅ FIXED landscaper name (ONLY ONE METHOD)
     def get_landscaper_name(self, obj):
         user = getattr(obj.landscaper, "user", None)
 
         if not user:
             return None
 
-        # Best option (Django built-in)
         name = user.get_full_name()
 
         if name:
             return name
 
-        # fallback if full_name is empty
         if user.first_name or user.last_name:
             return f"{user.first_name} {user.last_name}".strip()
 
-        # last fallback (optional)
         return user.username
-    
+
+    # ✅ FIXED Stripe (IMPORTANT)
+    def get_stripe_pay_url(self, obj):
+
+        invoice = getattr(obj, "invoice", None)
+
+        if not invoice:
+            return None
+
+        # 🔥 auto-recover missing stripe session
+        if not invoice.stripe_checkout_url:
+
+            try:
+                from payments.stripe_service import create_invoice_checkout_session
+
+                session = create_invoice_checkout_session(invoice)
+
+                invoice.stripe_checkout_url = session.url
+                invoice.stripe_session_id = session.id
+                invoice.save(update_fields=[
+                    "stripe_checkout_url",
+                    "stripe_session_id",
+                    "updated_at"
+                ])
+
+            except Exception as e:
+                print("Stripe error:", str(e))
+                return None
+
+        return invoice.stripe_checkout_url
 
 
 class ProblemJobSerializer(serializers.ModelSerializer):
