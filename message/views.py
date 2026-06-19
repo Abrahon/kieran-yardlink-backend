@@ -2,14 +2,12 @@
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
 from message.serializers import ChatThreadSerializer, MessageSerializer
 from .models import ChatThread, Message
 from accounts.models import User
 from django.db.models.functions import Lower, Trim
 from rest_framework import status
 from .models import ChatThread
-
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -58,6 +56,8 @@ class ConversationListAPIView(APIView):
             })
 
         return Response(data)
+
+
 
 class ConversationDetailAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -130,6 +130,8 @@ class DeleteMultipleConversationsAPIView(APIView):
             status=status.HTTP_200_OK
         )
 
+
+
 #coversation
 class StartConversationAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -170,6 +172,7 @@ class StartConversationAPIView(APIView):
         }, status=status.HTTP_200_OK)
 
 
+
 class AdminTagConversationAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -199,6 +202,7 @@ class AdminTagConversationAPIView(APIView):
             "tag": thread.tag
         })
     
+
 # admin
 class AdminConversationListAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -237,7 +241,24 @@ class AdminConversationListAPIView(APIView):
         data = []
 
         for thread in threads:
-            last_message = thread.messages.order_by("-created_at").first()
+            messages = thread.messages.select_related("sender").order_by("created_at")
+
+            message_list = [
+                {
+                    "id": msg.id,
+                    "sender_id": msg.sender.id if msg.sender else None,
+                    "sender_name": msg.sender.get_full_name() or msg.sender.email if msg.sender else "Unknown",
+                    "text": msg.text,
+                    "file_url": msg.file.url if msg.file else None,
+                    "message_type": msg.message_type,
+                    "seen_at": msg.seen_at,
+                    "delivered_at": msg.delivered_at,
+                    "created_at": msg.created_at,
+                }
+                for msg in messages
+            ]
+
+            last_message = messages.last()
 
             data.append({
                 "thread_id": thread.id,
@@ -256,25 +277,27 @@ class AdminConversationListAPIView(APIView):
                 "tag": thread.tag,
                 "created_at": thread.created_at,
                 "updated_at": thread.updated_at,
+
+                # ALL messages
+                "messages": message_list,
+
+                # last message
                 "last_message": {
                     "id": last_message.id,
-                    "sender_id": last_message.sender.id,
-                    "sender_name": last_message.sender.get_full_name() or last_message.sender.email,
+                    "sender_id": last_message.sender.id if last_message.sender else None,
+                    "sender_name": last_message.sender.get_full_name() or last_message.sender.email if last_message.sender else "Unknown",
                     "text": last_message.text,
                     "file_url": last_message.file.url if last_message.file else None,
                     "created_at": last_message.created_at,
                 } if last_message else None,
-                "messages_count": thread.messages.count(),
+
+                "messages_count": len(message_list),
             })
 
-        return Response(
-            {
-                "count": len(data),
-                "results": data,
-            },
-            status=status.HTTP_200_OK
-        )
-
+        return Response({
+            "count": len(data),
+            "results": data
+        })
 
 # old
 class AdminConversationDetailAPIView(APIView):

@@ -11,11 +11,13 @@ from quickbooks.views import (
     quickbooks_sync_invoice,
     quickbooks_success,
     QuickBooksDisconnectAPIView,
-    quickbooks_sync_log_detail_pdf
+    quickbooks_sync_log_detail_pdf,
+    quickbooks_status_view
 )
 
 
 urlpatterns = [
+    path("quickbooks/status/",quickbooks_status_view,name="quickbooks-status"),
     path("quickbooks/connect/", quickbooks_connect, name="quickbooks-connect"),
     path("quickbooks/callback/", quickbooks_callback, name="quickbooks-callback"),
     path("quickbooks-connected-success/",quickbooks_success,name="quickbooks_success"),

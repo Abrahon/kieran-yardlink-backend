@@ -10,47 +10,6 @@ User = get_user_model()
 from decimal import Decimal
 
 
-# class PlanSerializer(serializers.ModelSerializer):
-
-#     class Meta:
-#         model = Plan
-#         fields = [
-#             "id",
-#             "name",
-#             "description",
-#             "price",
-#             "discount",
-#             "duration",
-#             "is_active",
-#             "created_at",
-#             "updated_at",
-#         ]
-#         read_only_fields = ("id", "is_active","created_at", "updated_at")
-
-#     # Validate discount
-#     def validate_discount(self, value):
-#         if value < 0 or value > 100:
-#             raise serializers.ValidationError(
-#                 "Discount must be between 0 and 100."
-#             )
-#         return value
-
-#     # Add computed field in response
-#     def to_representation(self, instance):
-#         data = super().to_representation(instance)
-
-#         price = instance.price        # Decimal
-#         discount = instance.discount  # Decimal
-
-#         final_price = price - (price * discount / Decimal("100"))
-
-#         data["final_price"] = float(final_price)
-#         return data
-
-# serializers.py
-
-
-
 class PlanSerializer(serializers.ModelSerializer):
 
     final_price = serializers.SerializerMethodField()

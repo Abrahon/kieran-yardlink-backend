@@ -30,7 +30,7 @@ class ChatThread(models.Model):
 
 class Message(models.Model):
     thread = models.ForeignKey(
-        "message.ChatThread",  # STRING REFERENCE to avoid import issues
+        "message.ChatThread",  
         on_delete=models.CASCADE,
         related_name="messages"
     )

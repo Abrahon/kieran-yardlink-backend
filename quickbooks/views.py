@@ -43,7 +43,7 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework import status
-
+from quickbooks.helpers import get_active_qb_connection
 from landscapers.models import BusinessProfile
 from quickbooks.crypto import encrypt_text
 from quickbooks.models import QuickBooksConnection,QuickBooksOAuthState,QuickBooksSyncLog
@@ -51,6 +51,50 @@ from quickbooks.services import build_authorization_url, exchange_code_for_token
 from subscriptions.helpers import can_use_quickbooks 
 from django.shortcuts import render
 
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def quickbooks_status_view(request):
+
+    user = request.user
+
+    connection = QuickBooksConnection.objects.filter(
+        user=user,
+        is_active=True
+    ).first()
+
+    # NOT CONNECTED
+    if not connection:
+        return Response({
+            "connected": False,
+            "company_name": None,
+            "realm_id": None,
+            "last_sync": None,
+            "sync_status": "not_connected",
+            "total_synced_invoices": 0
+        })
+
+    # last sync log
+    last_log = QuickBooksSyncLog.objects.filter(
+        user=user
+    ).order_by("-created_at").first()
+
+    total_synced = QuickBooksSyncLog.objects.filter(
+        user=user,
+        status="success"
+    ).count()
+
+    return Response({
+        "connected": True,
+        "company_name": connection.company_name,
+        "realm_id": connection.realm_id,
+        "sync_enabled": connection.sync_enabled,
+        "created_at": connection.created_at,
+        "last_sync": last_log.created_at if last_log else None,
+        "last_sync_status": last_log.status if last_log else None,
+        "total_synced_invoices": total_synced
+    })
 
 
 
@@ -222,12 +266,9 @@ def quickbooks_update_config(request):
             status=status.HTTP_403_FORBIDDEN
         )
 
-    try:
-        connection = QuickBooksConnection.objects.get(
-            landscaper=landscaper,
-            is_active=True
-        )
-    except QuickBooksConnection.DoesNotExist:
+    connection = get_active_qb_connection(request.user)
+
+    if not connection:
         return Response(
             {"error": "QuickBooks not connected."},
             status=status.HTTP_404_NOT_FOUND
@@ -247,9 +288,12 @@ def quickbooks_update_config(request):
     }, status=status.HTTP_200_OK)
 
 
+# @api_view(["GET"])
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def quickbooks_service_items(request):
+
     landscaper = getattr(request.user, "landscaper_profile", None)
     if not landscaper:
         return Response(
@@ -257,17 +301,21 @@ def quickbooks_service_items(request):
             status=status.HTTP_403_FORBIDDEN
         )
 
-    try:
-        connection = QuickBooksConnection.objects.get(
-            landscaper=landscaper,
-            is_active=True
-        )
-    except QuickBooksConnection.DoesNotExist:
+    # =====================================
+    # FIXED CONNECTION HANDLING (NEW)
+    # =====================================
+    connection = get_active_qb_connection(request.user)
+
+    if not connection:
         return Response(
             {"error": "QuickBooks not connected."},
             status=status.HTTP_404_NOT_FOUND
         )
+    connection = get_valid_connection(connection)  
 
+    # =====================================
+    # QUICKBOOKS QUERY
+    # =====================================
     query = "select * from Item where Type = 'Service'"
     resp = qbo_query(connection, query)
 
@@ -278,6 +326,7 @@ def quickbooks_service_items(request):
         )
 
     items = resp.json().get("QueryResponse", {}).get("Item", [])
+
     data = [
         {
             "id": item.get("Id"),
@@ -291,6 +340,7 @@ def quickbooks_service_items(request):
     return Response({"items": data}, status=status.HTTP_200_OK)
 
 
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def quickbooks_deposit_accounts(request):
@@ -301,16 +351,14 @@ def quickbooks_deposit_accounts(request):
             status=status.HTTP_403_FORBIDDEN
         )
 
-    try:
-        connection = QuickBooksConnection.objects.get(
-            landscaper=landscaper,
-            is_active=True
-        )
-    except QuickBooksConnection.DoesNotExist:
+    connection = get_active_qb_connection(request.user)
+
+    if not connection:
         return Response(
             {"error": "QuickBooks not connected."},
             status=status.HTTP_404_NOT_FOUND
         )
+    connection = get_valid_connection(connection)  # ✅ ADD HERE
 
     query = "select * from Account"
     resp = qbo_query(connection, query)
@@ -371,10 +419,13 @@ def quickbooks_sync_log_detail_pdf(request, pk):
     if not landscaper:
         return Response({"error": "Landscaper profile not found."}, status=403)
 
-    try:
-        connection = QuickBooksConnection.objects.get(landscaper=landscaper)
-    except QuickBooksConnection.DoesNotExist:
-        return Response({"error": "QuickBooks not connected."}, status=404)
+    connection = get_active_qb_connection(request.user)
+
+    if not connection:
+        return Response(
+            {"error": "QuickBooks not connected."},
+            status=status.HTTP_404_NOT_FOUND
+        )
 
     try:
         log = QuickBooksSyncLog.objects.get(id=pk, connection=connection)
@@ -438,6 +489,7 @@ def quickbooks_sync_log_detail_pdf(request, pk):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def quickbooks_sync_invoice(request, invoice_id):
+
     landscaper = getattr(request.user, "landscaper_profile", None)
     if not landscaper:
         return Response(
@@ -461,17 +513,14 @@ def quickbooks_sync_invoice(request, invoice_id):
             {"error": "Invoice not found."},
             status=status.HTTP_404_NOT_FOUND
         )
+    connection = get_active_qb_connection(request.user)
 
-    try:
-        connection = QuickBooksConnection.objects.get(
-            landscaper=landscaper,
-            is_active=True
-        )
-    except QuickBooksConnection.DoesNotExist:
+    if not connection:
         return Response(
-            {"error": "QuickBooks is not connected."},
-            status=status.HTTP_400_BAD_REQUEST
+            {"error": "QuickBooks not connected."},
+            status=status.HTTP_404_NOT_FOUND
         )
+    connection = get_valid_connection(connection)  # ✅ ADD HERE
 
     # use request data first, fallback to saved defaults
     service_item_id = request.data.get("service_item_id") or connection.default_service_item_id

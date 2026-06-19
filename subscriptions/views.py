@@ -639,8 +639,9 @@ class AdminDashboardStatsView(APIView):
         })
     
 
-# admin plan delete
 
+
+# admin plan delete
 class AdminPlanDeleteView(generics.DestroyAPIView):
     queryset = Plan.objects.all()
     permission_classes = [IsAuthenticated, IsAdmin]
@@ -721,6 +722,8 @@ class AdminSubscriptionDeleteView(APIView):
         )
 
 
+
+
 # extend
 class ExtendSubscriptionView(APIView):
     permission_classes = [IsAuthenticated, IsAdmin]
@@ -766,7 +769,6 @@ class ExtendSubscriptionView(APIView):
 
 
 # subscriptions/views.py
-
 class SubscriptionListAPIView(APIView):
     """
     Admin-only API to list subscriptions with:
@@ -802,6 +804,7 @@ class SubscriptionListAPIView(APIView):
             "count": queryset.count(),
             "subscriptions": serializer.data
         }, status=status.HTTP_200_OK)
+
 
 
 
@@ -868,6 +871,7 @@ def confirm_subscription(request):
 
 
 
+
 class MySubscriptionAPIView(APIView):
     """
     API to view the logged-in user's subscriptions,
@@ -899,6 +903,8 @@ class MySubscriptionAPIView(APIView):
             "subscriptions": subscriptions_data
         }, status=status.HTTP_200_OK)
         
+
+
 
 
 # subscriptions/views.py
@@ -938,6 +944,8 @@ class CancelOwnSubscriptionAPIView(APIView):
         )
 
 
+
+
 class ToggleAutoRenewAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -970,6 +978,7 @@ class ToggleAutoRenewAPIView(APIView):
             "auto_renew": subscription.auto_renew,
             "current_end_date": subscription.end_date
         })
+
 
 
 

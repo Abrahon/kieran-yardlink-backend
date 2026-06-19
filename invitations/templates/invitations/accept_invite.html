@@ -45,6 +45,7 @@
         }
     </style>
 </head>
+
 <body>
 
 <div class="box">
@@ -54,6 +55,8 @@
     <p>Email: {{ invitation.email }}</p>
 
     <form id="accept-form">
+
+        {% csrf_token %}
 
         <input
             type="text"
@@ -83,26 +86,47 @@
 
 const token = "{{ invitation.token }}";
 
-document
-.getElementById("accept-form")
+/* -------------------------
+   GET CSRF TOKEN
+------------------------- */
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+const csrftoken = getCookie('csrftoken');
+
+
+/* -------------------------
+   FORM SUBMIT
+------------------------- */
+document.getElementById("accept-form")
 .addEventListener("submit", async (e) => {
 
     e.preventDefault();
 
-    const name =
-        document.getElementById("name").value;
-
-    const password =
-        document.getElementById("password").value;
+    const name = document.getElementById("name").value;
+    const password = document.getElementById("password").value;
 
     const response = await fetch(
-        `/api/accept-invite-api/${token}/`,
+        `/api/invitations/accept/${token}/`,
         {
-            method:"POST",
-            headers:{
-                "Content-Type":"application/json"
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": csrftoken
             },
-            body:JSON.stringify({
+            body: JSON.stringify({
                 name,
                 password
             })
@@ -111,29 +135,19 @@ document
 
     const data = await response.json();
 
-    const message =
-        document.getElementById("message");
+    const message = document.getElementById("message");
 
     if(response.ok){
-
         message.style.color = "green";
-        message.innerText =
-            "Invitation accepted successfully";
+        message.innerText = "Invitation accepted successfully";
 
         setTimeout(() => {
+            window.location.href = "/invitation-success/";
+        }, 1500);
 
-            window.location.href =
-                "/invitation-success/";
-
-        },1500);
-
-    }else{
-
+    } else {
         message.style.color = "red";
-
-        message.innerText =
-            data.detail ||
-            "Something went wrong";
+        message.innerText = data.detail || "Something went wrong";
     }
 });
 </script>

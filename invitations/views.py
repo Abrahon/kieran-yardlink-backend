@@ -117,9 +117,7 @@ class SendInvitationView(CreateAPIView):
         )
 
         # Full URL
-        invite_link = request.build_absolute_uri(
-            f"/invitations/accept/{invitation.token}/"
-        )
+        invite_link = f"http://127.0.0.1:8000/invitations/accept/{invitation.token}/"
 
         # HTML Email
         html_content = f"""
@@ -223,8 +221,17 @@ from django.shortcuts import render, get_object_or_404
 from django.http import HttpResponse
 
 
+from django.shortcuts import render, get_object_or_404
+from .models import TeamInvitation
+
+
 def accept_invitation_page(request, token):
-    return HttpResponse("FORM PAGE IS WORKING")
+    invitation = get_object_or_404(TeamInvitation, token=token)
+
+    return render(request, "invitations/accept.html", {
+        "invitation": invitation
+    })
+
 
 def invitation_success(request):
     return render(
@@ -233,27 +240,6 @@ def invitation_success(request):
     )
 
 
-# def accept_invitation_page(request, token):
-#     invitation = get_object_or_404(
-#         TeamInvitation,
-#         token=token,
-#         status="pending"
-#     )
-
-#     return render(
-#         request,
-#         "invitations/accept_invite.html",
-#         {
-#             "invitation": invitation
-#         }
-#     )
-
-
-# def invitation_success(request):
-#     return render(
-#         request,
-#         "invitations/success.html"
-#     )
 
 
 

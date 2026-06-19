@@ -22,16 +22,8 @@ urlpatterns = [
     path("delete/<int:invitation_id>/", DeleteInvitationView.as_view(), name="delete-invitation"),
     # invitations/urls.py
     path("accept-invite/<uuid:token>/",AcceptInvitationView.as_view(),name="accept-invite-api"),
-    path(
-        "invitations/accept/<uuid:token>/",
-        accept_invitation_page,
-        name="accept-invitation-page"
-    ),
-    path(
-        "invitation-success/",
-        invitation_success,
-        name="invitation-success"
-    ),
+    path("invitations/accept/<uuid:token>/",accept_invitation_page, name="accept-invitation-page"),
+    path("invitation-success/",invitation_success,name="invitation-success"),
 
     path("workers/<int:worker_id>/block-toggle/", WorkerBlockToggleView.as_view(), name="worker-block-toggle"),
     path("invitations/accepted/", AcceptedInvitationListView.as_view(), name="accepted-invitations"),

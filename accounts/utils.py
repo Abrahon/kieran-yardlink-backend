@@ -26,7 +26,7 @@ def send_otp_email(to_email, otp_code, name="User"):
             Your One-Time Password (OTP) for account verification is:
         </p>
         <div style="text-align:center;margin:20px 0;">
-            <span style="display:inline-block;background-color:#007bff;color:#fff;
+            <span style="display:inline-block;background-color:#28a745;color:#fff;
                         font-size:24px;font-weight:bold;padding:10px 20px;border-radius:8px;">
                 {otp_code}
             </span>
@@ -51,7 +51,7 @@ def send_otp_email(to_email, otp_code, name="User"):
             body=plain_text,
             from_email=from_email,
             to=[to_email],
-            headers={"Reply-To": from_email}  # option: you can set reply-to to another
+            reply_to = [settings.DEFAULT_FROM_EMAIL]
         )
         msg.attach_alternative(html_content, "text/html")
         # fail_silently=False will raise exceptions, we catch them below

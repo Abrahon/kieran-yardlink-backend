@@ -128,6 +128,7 @@ from landscapers.models import Addon, BusinessProfile
 
 
 
+
 # =========================
 # CREATE BUSINESS PROFILE
 # =========================
@@ -833,59 +834,158 @@ class AddonDetailView(generics.RetrieveUpdateDestroyAPIView):
         )
 
 
+from haversine import haversine
+
+from django.db.models import Avg, Count
+
+
+
 class LandscaperFind(generics.ListAPIView):
-    """
-    Search and filter landscapers (BUSINESS PROFILES)
-    Optional query params:
-    - name: business name (partial match)
-    - city: filter by city
-    - service: filter by service ID
-    - previous_work: 'true' → landscapers client worked with
-    """
     serializer_class = BusinessLandscaperProfileSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        queryset = LandscaperProfile.objects.all()
+        print("=" * 50)
+        print("LANDSCAPER SEARCH VIEW HIT")
+        print("Query Params:", self.request.query_params)
+        print("=" * 50)
+
+        queryset = (
+            BusinessProfile.objects
+            .select_related("user")
+            .prefetch_related("services")
+            .annotate(
+                avg_rating=Avg("user__received_reviews__rating"),
+                review_count=Count("user__received_reviews")
+            )
+        )
+
         user = self.request.user
         params = self.request.query_params
 
-        #  Filter by BUSINESS NAME
+        # --------------------------------
+        # Business Name
+        # --------------------------------
         name = params.get("name")
         if name:
             queryset = queryset.filter(
                 business_name__icontains=name
             )
 
-        #  Filter by city
-        city = params.get("city")
-        if city:
-            queryset = queryset.filter(
-                city__icontains=city
-            )
-
-        # 🛠 Filter by service ID
+        # --------------------------------
+        # Service
+        # --------------------------------
         service_id = params.get("service")
         if service_id:
             queryset = queryset.filter(
                 services__id=service_id
             )
 
-        #  Filter by previous work
-        prev_work = params.get("previous_work")
-        if prev_work and prev_work.lower() == "true":
-            worked_landscaper_ids = ServiceBooking.objects.filter(
-                client=user,
-                status=BookingStatus.COMPLETED
-            ).values_list("landscaper_id", flat=True)
+        # --------------------------------
+        # Previous Work
+        # --------------------------------
+        previous_work = params.get("previous_work")
+
+        if previous_work and previous_work.lower() == "true":
+
+            worked_landscaper_ids = (
+                ServiceBooking.objects
+                .filter(
+                    client=user,
+                    status=BookingStatus.COMPLETED
+                )
+                .values_list(
+                    "landscaper_id",
+                    flat=True
+                )
+            )
 
             queryset = queryset.filter(
-                id__in=worked_landscaper_ids
+                user_id__in=worked_landscaper_ids
+            )
+
+        # --------------------------------
+        # Minimum Rating
+        # --------------------------------
+        min_rating = params.get("rating")
+
+        if min_rating:
+            queryset = queryset.filter(
+                avg_rating__gte=float(min_rating)
+            )
+
+        # --------------------------------
+        # Distance Search
+        # --------------------------------
+        latitude = params.get("latitude")
+        longitude = params.get("longitude")
+        radius = params.get("radius")
+
+        print("Latitude:", latitude)
+        print("Longitude:", longitude)
+        print("Radius:", radius)
+
+        if latitude and longitude and radius:
+
+            client_location = (
+                float(latitude),
+                float(longitude)
+            )
+
+            radius = float(radius)
+
+            landscaper_ids = []
+
+            for landscaper in queryset:
+
+                print(
+                    f"Checking Business ID={landscaper.id}"
+                )
+
+                if (
+                    landscaper.latitude is None
+                    or landscaper.longitude is None
+                ):
+                    print(
+                        f"Business ID={landscaper.id} skipped (no coordinates)"
+                    )
+                    continue
+
+                landscaper_location = (
+                    float(landscaper.latitude),
+                    float(landscaper.longitude)
+                )
+
+                distance = haversine(
+                    client_location,
+                    landscaper_location
+                )
+
+                print(
+                    f"Business ID={landscaper.id} "
+                    f"Distance={distance:.2f} KM"
+                )
+
+                if distance <= radius:
+                    print(
+                        f"Business ID={landscaper.id} MATCHED"
+                    )
+                    landscaper_ids.append(
+                        landscaper.id
+                    )
+
+            print("Matched IDs:", landscaper_ids)
+
+            queryset = queryset.filter(
+                id__in=landscaper_ids
+            )
+
+            print(
+                "Final queryset count:",
+                queryset.count()
             )
 
         return queryset.distinct()
-
-
 # # set working hours for landscapers
 
 

@@ -9,17 +9,36 @@ from .models import ContactMessage, MessageStatus
 from .serializers import ContactMessageSerializer,AdminUpdateSerializer,AdminUpdateSerializer
 from rest_framework import generics, permissions
 from django.db.models import Q
+from chat.email_service import send_email
+# from core.email_services import send_email
+
 
 
 # ---------------------------
 # User sends message
 # ---------------------------
+from chat.email_service import send_email
+
 class ContactMessageCreateAPIView(generics.CreateAPIView):
     serializer_class = ContactMessageSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
     def perform_create(self, serializer):
-        serializer.save()  
+        instance = serializer.save()
+
+        # =========================
+        # SEND EMAIL AFTER SAVE
+        # =========================
+        send_email(
+            subject="New Contact Message",
+            html_content=f"""
+                <h2>New Message Received</h2>
+                <p><b>Name:</b> {instance.name}</p>
+                <p><b>Email:</b> {instance.user.email}</p>
+                <p><b>Message:</b><br>{instance.message}</p>
+            """,
+            to_email="admin@gmail.com"   
+        )
 
 
 # ---------------------------
@@ -53,8 +72,6 @@ class AdminContactMessageListAPIView(generics.ListAPIView):
 # ---------------------------
 # Admin replies to user email
 # ---------------------------
-
-
 
 class AdminReplyAPIView(generics.UpdateAPIView):
     serializer_class = AdminUpdateSerializer

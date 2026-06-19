@@ -17,40 +17,21 @@ urlpatterns = [
     # admin dashyboard
     path("admin/dashboard-stats/", views.AdminDashboardStatsView.as_view()),
     path("admin/plans/<int:pk>/delete/", views.AdminPlanDeleteView.as_view()),
-    path(
-        "admin/subscriptions/<int:subscription_id>/delete/",
-        views.AdminSubscriptionDeleteView.as_view(),
-        name="admin-subscription-delete"
-    ),
+    path("admin/subscriptions/<int:subscription_id>/delete/",views.AdminSubscriptionDeleteView.as_view(),name="admin-subscription-delete"),
         
     # path("admin/subscriptions/<int:pk>/extend/", views.ExtendSubscriptionView.as_view()),
     path("admin/subscriptions/",views.SubscriptionListAPIView.as_view(),name="admin-subscriptions"),
     path("confirm-subscription/", views.confirm_subscription, name="confirm-subscription"),
-    path(
-        "admin/subscriptions/<int:pk>/extend/",views.ExtendSubscriptionView.as_view(),
-        name="extend-subscription"
-    ),
+    path("admin/subscriptions/<int:pk>/extend/",views.ExtendSubscriptionView.as_view(),name="extend-subscription"),
     path("subscription/cancel/<int:subscription_id>/",views.CancelOwnSubscriptionAPIView.as_view(), name="cancel-subscription"),
-
-    path(
-        "my-subscriptions/",
-        views.MySubscriptionAPIView.as_view(),
-        name="my-subscriptions"),
+    path("my-subscriptions/",views.MySubscriptionAPIView.as_view(),name="my-subscriptions"),
     
-    path(
-        "subscriptions/toggle-auto-renew/<int:subscription_id>/",
-        views.ToggleAutoRenewAPIView.as_view(),
-        name="toggle-auto-renew"
-    ),
+    path("subscriptions/toggle-auto-renew/<int:subscription_id>/",views.ToggleAutoRenewAPIView.as_view(),name="toggle-auto-renew" ),
     path('admin/subscriptions/ratio/',views. SubscriptionRatioAPIView.as_view(), name='admin-subscription-ratio'),
     path("subscription/upgrade/", views.UpgradePlanAPIView.as_view(), name="upgrade-plan"),
     path('admin/subscription/<int:subscription_id>/pause/',views. AdminPauseSubscriptionAPIView.as_view(), name='admin-pause-subscription'),
 
-    path(
-        "admin/subscription-users/",
-        views.AdminAllSubscriptionUsersBillingView.as_view(),
-        name="admin-all-subscription-users-billing"
-    ),
+    path("admin/subscription-users/",views.AdminAllSubscriptionUsersBillingView.as_view(),name="admin-all-subscription-users-billing"),
     path(
         "admin/users/<int:user_id>/billing-summary/",
         views.AdminUserBillingSummaryView.as_view(),
