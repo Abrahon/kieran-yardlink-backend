@@ -97,7 +97,7 @@ class UpcomingJobsListView(generics.ListAPIView):
 class ClientUpcomingJobsListView(generics.ListAPIView):
     serializer_class = JobSerializer
     permission_classes = [permissions.IsAuthenticated]
-
+    
     def get_queryset(self):
         client_profile = getattr(self.request.user, "clientprofile", None)
 
@@ -107,10 +107,18 @@ class ClientUpcomingJobsListView(generics.ListAPIView):
         today = now().date()
         current_time = now().time()
 
-        return (
+        queryset = (
             Job.objects.filter(
                 client=client_profile,
                 is_active=True,
+            )
+            .exclude(
+                status__in=[
+                    Job.Status.COMPLETED,
+                    Job.Status.CANCELLED,
+                    Job.Status.SKIPPED,
+                    Job.Status.MISSED,
+                ]
             )
             .select_related(
                 "client",
@@ -130,21 +138,18 @@ class ClientUpcomingJobsListView(generics.ListAPIView):
             )
             .order_by("scheduled_date", "scheduled_time")
         )
+
         # 🔹 query params
         selected_date = self.request.query_params.get("date")
         today_flag = self.request.query_params.get("today")
 
-        # ✅ filter by specific date
         if selected_date:
             queryset = queryset.filter(scheduled_date=selected_date)
 
-        # ✅ filter today only
         elif today_flag == "true":
             queryset = queryset.filter(scheduled_date=today)
 
-        return queryset.order_by("scheduled_date", "scheduled_time")
-
-
+        return queryset
 
 
 

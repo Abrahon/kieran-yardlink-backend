@@ -214,19 +214,40 @@ class JobSerializer(serializers.ModelSerializer):
             return "0.00"
         return str(obj.total_price)
 
+    # def get_landscaper_info(self, obj):
+    #     business = obj.landscaper
+    #     if not business:
+    #         return None
+
+    #     user = business.user
+    #     personal = getattr(user, "landscaperprofilies", None)
+
+    #     return {
+    #         "id": business.id,
+    #         "name": personal.name if personal else None,
+    #         "phone": personal.phone if personal else None,
+    #         "image": personal.image.url if personal and personal.image else None,
+    #         "business_name": business.business_name,
+    #         "business_email": business.business_email,
+    #         "business_phone": business.business_phone,
+    #     }
     def get_landscaper_info(self, obj):
         business = obj.landscaper
         if not business:
             return None
 
         user = business.user
+
         personal = getattr(user, "landscaperprofilies", None)
 
         return {
-            "id": business.id,
+            "user_id": user.id,   # ✅ ADD THIS (IMPORTANT)
+            "business_id": business.id,  # optional but useful
+
             "name": personal.name if personal else None,
             "phone": personal.phone if personal else None,
             "image": personal.image.url if personal and personal.image else None,
+
             "business_name": business.business_name,
             "business_email": business.business_email,
             "business_phone": business.business_phone,
