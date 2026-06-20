@@ -29,7 +29,7 @@ urlpatterns = [
     path("quickbooks/deposit-accounts/", quickbooks_deposit_accounts, name="quickbooks-deposit-accounts"),
 
     path("quickbooks/logs/", quickbooks_sync_logs, name="quickbooks-sync-logs"),
-    path("api/quickbooks/sync-logs/pdf/",quickbooks_sync_log_detail_pdf,name="quickbooks-sync-logs-pdf"),
+    path("quickbooks/sync-logs/pdf/<int:pk>/",quickbooks_sync_log_detail_pdf,name="quickbooks-sync-logs-pdf"),
 
     path("quickbooks/invoices/<int:invoice_id>/sync/", quickbooks_sync_invoice, name="quickbooks-sync-invoice"),
     

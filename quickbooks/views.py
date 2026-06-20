@@ -50,6 +50,11 @@ from quickbooks.models import QuickBooksConnection,QuickBooksOAuthState,QuickBoo
 from quickbooks.services import build_authorization_url, exchange_code_for_tokens
 from subscriptions.helpers import can_use_quickbooks 
 from django.shortcuts import render
+from django.urls import reverse
+from django.shortcuts import redirect
+from .helpers import get_active_qb_connection, get_valid_connection
+
+
 
 
 
@@ -58,9 +63,16 @@ from django.shortcuts import render
 def quickbooks_status_view(request):
 
     user = request.user
+    landscaper = getattr(user, "landscaper_profile", None)
+
+    if not landscaper:
+        return Response({
+            "connected": False,
+            "message": "Landscaper profile not found"
+        })
 
     connection = QuickBooksConnection.objects.filter(
-        user=user,
+        landscaper=landscaper,
         is_active=True
     ).first()
 
@@ -77,11 +89,11 @@ def quickbooks_status_view(request):
 
     # last sync log
     last_log = QuickBooksSyncLog.objects.filter(
-        user=user
+        connection=connection
     ).order_by("-created_at").first()
 
     total_synced = QuickBooksSyncLog.objects.filter(
-        user=user,
+        connection=connection,
         status="success"
     ).count()
 
@@ -89,13 +101,12 @@ def quickbooks_status_view(request):
         "connected": True,
         "company_name": connection.company_name,
         "realm_id": connection.realm_id,
-        "sync_enabled": connection.sync_enabled,
-        "created_at": connection.created_at,
+        "sync_enabled": connection.is_active,
+        "created_at": connection.connected_at,
         "last_sync": last_log.created_at if last_log else None,
         "last_sync_status": last_log.status if last_log else None,
         "total_synced_invoices": total_synced
     })
-
 
 
 @api_view(["GET"])
@@ -196,7 +207,8 @@ def quickbooks_callback(request):
     oauth_state.is_used = True
     oauth_state.save(update_fields=["is_used"])
 
-    return redirect("/api/quickbooks-connected-success/")
+    return redirect(reverse("quickbooks_success"))
+
 
 # disconnect quickboos
 

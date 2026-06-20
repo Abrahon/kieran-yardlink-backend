@@ -91,13 +91,10 @@ class UpcomingJobsListView(generics.ListAPIView):
 
 
 
-
-
-
 class ClientUpcomingJobsListView(generics.ListAPIView):
     serializer_class = JobSerializer
     permission_classes = [permissions.IsAuthenticated]
-    
+
     def get_queryset(self):
         client_profile = getattr(self.request.user, "clientprofile", None)
 

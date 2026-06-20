@@ -22,3 +22,13 @@ def get_active_qb_connection(user):
         landscaper=landscaper,
         is_active=True
     ).first()
+
+
+def get_valid_connection(connection):
+    if not connection:
+        raise Exception("No QuickBooks connection found")
+
+    if not connection.is_active:
+        raise Exception("QuickBooks connection is inactive")
+
+    return connection

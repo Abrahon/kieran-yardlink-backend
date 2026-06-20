@@ -25,15 +25,33 @@ def _basic_auth_header():
     return {"Authorization": f"Basic {encoded}"}
 
 
+# def build_authorization_url(state: str) -> str:
+#     params = {
+#         "client_id": settings.QUICKBOOKS_CLIENT_ID,
+#         "response_type": "code",
+#         "scope": "com.intuit.quickbooks.accounting",
+#         "redirect_uri": settings.QUICKBOOKS_REDIRECT_URI,
+#         "state": state,
+#     }
+#     return f"{QBO_AUTH_URL}?{urlencode(params)}"
+
 def build_authorization_url(state: str) -> str:
-    params = {
-        "client_id": settings.QUICKBOOKS_CLIENT_ID,
-        "response_type": "code",
-        "scope": "com.intuit.quickbooks.accounting",
-        "redirect_uri": settings.QUICKBOOKS_REDIRECT_URI,
-        "state": state,
-    }
-    return f"{QBO_AUTH_URL}?{urlencode(params)}"
+    base = QBO_AUTH_URL
+
+    redirect_uri = settings.QUICKBOOKS_REDIRECT_URI
+
+    url = (
+        f"{base}"
+        f"?client_id={settings.QUICKBOOKS_CLIENT_ID}"
+        
+        f"&response_type=code"
+        f"&scope=com.intuit.quickbooks.accounting"
+        f"&redirect_uri={quote(redirect_uri, safe='')}"
+        f"&state={state}"
+    )
+    print(repr(settings.QUICKBOOKS_REDIRECT_URI)),
+
+    return url
 
 
 def exchange_code_for_tokens(code: str) -> dict:
