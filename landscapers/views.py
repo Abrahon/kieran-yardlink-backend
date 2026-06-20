@@ -986,6 +986,9 @@ class LandscaperFind(generics.ListAPIView):
             )
 
         return queryset.distinct()
+    
+
+    
 # # set working hours for landscapers
 
 

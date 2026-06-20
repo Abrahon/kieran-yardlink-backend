@@ -346,9 +346,67 @@ class ChangePasswordAPIView(generics.UpdateAPIView):
 
 # # ---------------- All Landscapers ----------------
 
-from django.db.models import Exists, OuterRef, Prefetch
-from landscapers.models import Service, WorkingHours
-from reviews.models import LandscaperReview
+# from django.db.models import Exists, OuterRef, Prefetch
+# from landscapers.models import Service, WorkingHours
+# from reviews.models import LandscaperReview
+
+# class AllLandscapersListView(generics.ListAPIView):
+#     serializer_class = LandscaperProfileSerializer
+#     permission_classes = [permissions.IsAuthenticated]
+
+#     def get_queryset(self):
+
+#         active_sub = Subscription.objects.filter(
+#             user=OuterRef("user"),
+#             is_active=True,
+#             status=SubscriptionStatus.ACTIVE
+#         )
+
+
+#         services_qs = Service.objects.only(
+#             "id", "name", "pricing_type", "base_price", "business_id"
+#         ).order_by("-id")
+
+#         working_hours_qs = WorkingHours.objects.only(
+#             "id", "day", "start_time", "end_time"
+#         ).order_by("-id")
+
+#         reviews_qs = LandscaperReview.objects.only(
+#             "id", "rating", "comment", "client_id", "created_at", "landscaper_id"
+#         ).order_by("-created_at")
+
+#         return BusinessProfile.objects.annotate(
+#             has_active_sub=Exists(active_sub)
+            
+#         ).select_related(
+#             "user"
+#         ).prefetch_related(
+
+#             Prefetch(
+#                 "services",
+#                 queryset=services_qs,
+#                 to_attr="pref_services"
+#             ),
+
+#             Prefetch(
+#                 "working_hours",
+#                 queryset=working_hours_qs,
+#                 to_attr="pref_working_hours"
+#             ),
+
+#             Prefetch(
+#                 "user__received_reviews",
+#                 queryset=reviews_qs,
+#                 to_attr="pref_received_reviews"
+#             ),
+#         ).order_by("-id")
+
+from django.db.models import Exists, OuterRef, Prefetch, Avg
+from rest_framework import generics, permissions
+from landscapers.models import BusinessProfile, Service, WorkingHours
+import math
+from django.db.models import F, FloatField, ExpressionWrapper
+from django.db.models.functions import Power, Sqrt
 
 class AllLandscapersListView(generics.ListAPIView):
     serializer_class = LandscaperProfileSerializer
@@ -356,52 +414,87 @@ class AllLandscapersListView(generics.ListAPIView):
 
     def get_queryset(self):
 
-        active_sub = Subscription.objects.filter(
-            user=OuterRef("user"),
-            is_active=True,
-            status=SubscriptionStatus.ACTIVE
-        )
-
-
-        services_qs = Service.objects.only(
-            "id", "name", "pricing_type", "base_price", "business_id"
-        ).order_by("-id")
-
-        working_hours_qs = WorkingHours.objects.only(
-            "id", "day", "start_time", "end_time"
-        ).order_by("-id")
-
-        reviews_qs = LandscaperReview.objects.only(
-            "id", "rating", "comment", "client_id", "created_at", "landscaper_id"
-        ).order_by("-created_at")
-
-        return BusinessProfile.objects.annotate(
-            has_active_sub=Exists(active_sub)
-            
+        queryset = BusinessProfile.objects.annotate(
+            has_active_sub=Exists(
+                Subscription.objects.filter(
+                    user=OuterRef("user"),
+                    is_active=True,
+                    status=SubscriptionStatus.ACTIVE
+                )
+            ),
+            average_rating=Avg("user__received_reviews__rating")
         ).select_related(
             "user"
         ).prefetch_related(
-
             Prefetch(
                 "services",
-                queryset=services_qs,
+                queryset=Service.objects.only(
+                    "id",
+                    "name",
+                    "pricing_type",
+                    "base_price",
+                    "business_id"
+                ).order_by("-id"),
                 to_attr="pref_services"
             ),
-
             Prefetch(
                 "working_hours",
-                queryset=working_hours_qs,
+                queryset=WorkingHours.objects.only(
+                    "id",
+                    "day",
+                    "start_time",
+                    "end_time"
+                ).order_by("-id"),
                 to_attr="pref_working_hours"
             ),
-
             Prefetch(
                 "user__received_reviews",
-                queryset=reviews_qs,
+                queryset=LandscaperReview.objects.order_by("-created_at"),
                 to_attr="pref_received_reviews"
             ),
-        ).order_by("-id")
+        )
 
-        
+        # =========================
+        # SEARCH
+        # =========================
+        # SEARCH
+        search = self.request.query_params.get("search")
+        if search:
+            queryset = queryset.filter(
+                business_name__icontains=search
+            )
+
+        # RATING
+        rating = self.request.query_params.get("rating")
+        if rating:
+            queryset = queryset.filter(
+                average_rating__gte=rating
+            )
+
+        # DISTANCE FILTER (NEW)
+        lat = self.request.query_params.get("lat")
+        lng = self.request.query_params.get("lng")
+        radius = self.request.query_params.get("radius")
+
+        if lat and lng and radius:
+            lat = float(lat)
+            lng = float(lng)
+            radius = float(radius)
+
+            queryset = queryset.annotate(
+                distance=ExpressionWrapper(
+                    6371 * 2 * Sqrt(
+                        Power(Sin((F("latitude") - lat) * 3.1416 / 180 / 2), 2) +
+                        Cos(lat * 3.1416 / 180) *
+                        Cos(F("latitude") * 3.1416 / 180) *
+                        Power(Sin((F("longitude") - lng) * 3.1416 / 180 / 2), 2)
+                    ),
+                    output_field=FloatField()
+                )
+            ).filter(distance__lte=radius)
+
+        return queryset.order_by("-id")
+                
 
 # ---------------- All Clients ----------------
 
