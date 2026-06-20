@@ -64,6 +64,13 @@ from landscapers.models import BusinessProfile
 from subscriptions.models import Subscription, SubscriptionStatus
 from .serializers import LandscaperProfileSerializer
 
+from django.db.models import Exists, OuterRef, Prefetch, Avg
+from rest_framework import generics, permissions
+from landscapers.models import BusinessProfile, Service, WorkingHours
+import math
+from django.db.models import F, FloatField, ExpressionWrapper
+from django.db.models.functions import Power, Sqrt
+
 
 
 
@@ -346,67 +353,7 @@ class ChangePasswordAPIView(generics.UpdateAPIView):
 
 # # ---------------- All Landscapers ----------------
 
-# from django.db.models import Exists, OuterRef, Prefetch
-# from landscapers.models import Service, WorkingHours
-# from reviews.models import LandscaperReview
 
-# class AllLandscapersListView(generics.ListAPIView):
-#     serializer_class = LandscaperProfileSerializer
-#     permission_classes = [permissions.IsAuthenticated]
-
-#     def get_queryset(self):
-
-#         active_sub = Subscription.objects.filter(
-#             user=OuterRef("user"),
-#             is_active=True,
-#             status=SubscriptionStatus.ACTIVE
-#         )
-
-
-#         services_qs = Service.objects.only(
-#             "id", "name", "pricing_type", "base_price", "business_id"
-#         ).order_by("-id")
-
-#         working_hours_qs = WorkingHours.objects.only(
-#             "id", "day", "start_time", "end_time"
-#         ).order_by("-id")
-
-#         reviews_qs = LandscaperReview.objects.only(
-#             "id", "rating", "comment", "client_id", "created_at", "landscaper_id"
-#         ).order_by("-created_at")
-
-#         return BusinessProfile.objects.annotate(
-#             has_active_sub=Exists(active_sub)
-            
-#         ).select_related(
-#             "user"
-#         ).prefetch_related(
-
-#             Prefetch(
-#                 "services",
-#                 queryset=services_qs,
-#                 to_attr="pref_services"
-#             ),
-
-#             Prefetch(
-#                 "working_hours",
-#                 queryset=working_hours_qs,
-#                 to_attr="pref_working_hours"
-#             ),
-
-#             Prefetch(
-#                 "user__received_reviews",
-#                 queryset=reviews_qs,
-#                 to_attr="pref_received_reviews"
-#             ),
-#         ).order_by("-id")
-
-from django.db.models import Exists, OuterRef, Prefetch, Avg
-from rest_framework import generics, permissions
-from landscapers.models import BusinessProfile, Service, WorkingHours
-import math
-from django.db.models import F, FloatField, ExpressionWrapper
-from django.db.models.functions import Power, Sqrt
 
 class AllLandscapersListView(generics.ListAPIView):
     serializer_class = LandscaperProfileSerializer

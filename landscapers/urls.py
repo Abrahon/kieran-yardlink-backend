@@ -2,7 +2,6 @@ from django.urls import path
 from .views import (
     CompleteLandscaperProfileView,
     GetBusinessProfileView,
-    LandscaperFind,
     WorkingHoursListCreateView,
     ServiceListCreateView,
     ServiceDetailView,
@@ -76,7 +75,6 @@ urlpatterns = [
     path("addons/<int:pk>/", AddonDetailView.as_view(), name="addon-detail"),
 
     # landscaper search
-    path("landscapers/search/", LandscaperFind.as_view(), name="landscaper-search"),
     path('working-hours/', WorkingHoursListCreateView.as_view(), name='working-hours'),
 
     path(
