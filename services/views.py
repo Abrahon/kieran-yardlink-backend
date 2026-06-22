@@ -42,44 +42,6 @@ from property.models import Property
 
 
 
-class LandscaperUpdateAddOnsAPIView(APIView):
-    """
-    PATCH: Update add-ons for a scheduled service
-    """
-    permission_classes = [IsAuthenticated]
-
-    def patch(self, request, schedule_id):
-        schedule = get_object_or_404(ServiceSchedule, id=schedule_id)
-
-        # Optional: restrict update to assigned landscaper
-        if schedule.landscaper and schedule.landscaper.user != request.user:
-            return Response(
-                {"detail": "You are not allowed to update this schedule."},
-                status=status.HTTP_403_FORBIDDEN
-            )
-
-        serializer = JobSerializer(
-            schedule, data=request.data, partial=True
-        )
-
-        if serializer.is_valid():
-            serializer.save()
-
-            # Prepare response: show only add-ons with name, price, total
-            add_ons = [
-                {"id": a.id, "name": a.name, "price": float(a.price)}
-                for a in schedule.add_ons.all()
-            ]
-
-            total_add_ons = sum(a["price"] for a in add_ons)
-
-            return Response({
-                "message": "Add-ons updated successfully",
-                "add_ons": add_ons,
-                "total_add_ons": total_add_ons
-            }, status=status.HTTP_200_OK)
-
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 

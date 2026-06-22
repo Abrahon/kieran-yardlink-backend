@@ -71,6 +71,22 @@ import math
 from django.db.models import F, FloatField, ExpressionWrapper
 from django.db.models.functions import Power, Sqrt
 
+import math
+from django.db.models import (
+    F, FloatField, ExpressionWrapper, Avg, Exists, OuterRef, Q
+)
+from django.db.models.functions import Sin, Cos, Sqrt, Power, Cast
+from django.db.models import Prefetch
+from rest_framework import generics, permissions
+from django.db.models.functions import Concat
+from django.db.models import Value, CharField
+import math
+from django.db.models import (
+    F, FloatField, ExpressionWrapper, Avg, Exists, OuterRef, Q, Value, CharField
+)
+from django.db.models.functions import Sin, Cos, Sqrt, Power, Cast, Concat
+from django.db.models import Prefetch
+
 
 
 
@@ -354,109 +370,17 @@ class ChangePasswordAPIView(generics.UpdateAPIView):
 # # ---------------- All Landscapers ----------------
 
 
-# class AllLandscapersListView(generics.ListAPIView):
-#     serializer_class = LandscaperProfileSerializer
-#     permission_classes = [permissions.IsAuthenticated]
-
-#     def get_queryset(self):
-
-#         queryset = BusinessProfile.objects.annotate(
-#             has_active_sub=Exists(
-#                 Subscription.objects.filter(
-#                     user=OuterRef("user"),
-#                     is_active=True,
-#                     status=SubscriptionStatus.ACTIVE
-#                 )
-#             ),
-#             average_rating=Avg("user__received_reviews__rating")
-#         ).select_related(
-#             "user"
-#         ).prefetch_related(
-#             Prefetch(
-#                 "services",
-#                 queryset=Service.objects.only(
-#                     "id",
-#                     "name",
-#                     "pricing_type",
-#                     "base_price",
-#                     "business_id"
-#                 ).order_by("-id"),
-#                 to_attr="pref_services"
-#             ),
-#             Prefetch(
-#                 "working_hours",
-#                 queryset=WorkingHours.objects.only(
-#                     "id",
-#                     "day",
-#                     "start_time",
-#                     "end_time"
-#                 ).order_by("-id"),
-#                 to_attr="pref_working_hours"
-#             ),
-#             Prefetch(
-#                 "user__received_reviews",
-#                 queryset=LandscaperReview.objects.order_by("-created_at"),
-#                 to_attr="pref_received_reviews"
-#             ),
-#         )
-
-#         # =========================
-#         # SEARCH
-#         # =========================
-#         # SEARCH
-#         search = self.request.query_params.get("search")
-#         if search:
-#             queryset = queryset.filter(
-#                 business_name__icontains=search
-#             )
-
-#         # RATING
-#         rating = self.request.query_params.get("rating")
-#         if rating:
-#             queryset = queryset.filter(
-#                 average_rating__gte=rating
-#             )
-
-#         # DISTANCE FILTER (NEW)
-#         lat = self.request.query_params.get("lat")
-#         lng = self.request.query_params.get("lng")
-#         radius = self.request.query_params.get("radius")
-
-#         if lat and lng and radius:
-#             lat = float(lat)
-#             lng = float(lng)
-#             radius = float(radius)
-
-#             queryset = queryset.annotate(
-#                 distance=ExpressionWrapper(
-#                     6371 * 2 * Sqrt(
-#                         Power(Sin((F("latitude") - lat) * 3.1416 / 180 / 2), 2) +
-#                         Cos(lat * 3.1416 / 180) *
-#                         Cos(F("latitude") * 3.1416 / 180) *
-#                         Power(Sin((F("longitude") - lng) * 3.1416 / 180 / 2), 2)
-#                     ),
-#                     output_field=FloatField()
-#                 )
-#             ).filter(distance__lte=radius)
-
-#         return queryset.order_by("-id")
-                
-import math
-from django.db.models import (
-    F, FloatField, ExpressionWrapper, Avg, Exists, OuterRef
-)
-from django.db.models.functions import Sin, Cos, Sqrt, Power
-from django.db.models import Prefetch
-from rest_framework import generics, permissions
-
-
 class AllLandscapersListView(generics.ListAPIView):
     serializer_class = LandscaperProfileSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+
     def get_queryset(self):
 
         queryset = BusinessProfile.objects.annotate(
+            # =========================
+            # SUBSCRIPTION CHECK
+            # =========================
             has_active_sub=Exists(
                 Subscription.objects.filter(
                     user=OuterRef("user"),
@@ -464,7 +388,12 @@ class AllLandscapersListView(generics.ListAPIView):
                     status=SubscriptionStatus.ACTIVE
                 )
             ),
-            average_rating=Avg("user__received_reviews__rating")
+
+            # =========================
+            # AVERAGE RATING
+            # =========================
+            average_rating=Avg("user__received_reviews__rating"),
+
         ).select_related(
             "user"
         ).prefetch_related(
@@ -490,31 +419,41 @@ class AllLandscapersListView(generics.ListAPIView):
         )
 
         # =========================
-        # SEARCH
+        # SEARCH (NAME + SERVICE + USER)
         # =========================
         search = self.request.query_params.get("search")
+
         if search:
             queryset = queryset.filter(
-                business_name__icontains=search
-            )
+                Q(business_name__icontains=search) |
+                Q(tagline__icontains=search) |
+                Q(user__name__icontains=search) |
+                Q(user__email__icontains=search) |
+                Q(services__name__icontains=search)
+            ).distinct()
 
         # =========================
         # RATING FILTER
         # =========================
         rating = self.request.query_params.get("rating")
+
         if rating:
             queryset = queryset.filter(
                 average_rating__gte=float(rating)
             )
 
         # =========================
-        # DISTANCE FILTER (FIXED)
+        # DISTANCE FILTER (KM)
         # =========================
         lat = self.request.query_params.get("lat")
         lng = self.request.query_params.get("lng")
         radius = self.request.query_params.get("radius", 20)
 
+        has_location = False
+
         if lat and lng:
+            has_location = True
+
             lat = float(lat)
             lng = float(lng)
             radius = float(radius)
@@ -522,23 +461,33 @@ class AllLandscapersListView(generics.ListAPIView):
             queryset = queryset.filter(
                 latitude__isnull=False,
                 longitude__isnull=False
-            )
-
-            queryset = queryset.annotate(
+            ).annotate(
+                lat_f=Cast("latitude", FloatField()),
+                lng_f=Cast("longitude", FloatField())
+            ).annotate(
                 distance=ExpressionWrapper(
                     6371 * 2 * Sqrt(
-                        Power(Sin((F("latitude") - lat) * 3.1416 / 180 / 2), 2) +
-                        Cos(lat * 3.1416 / 180) *
-                        Cos(F("latitude") * 3.1416 / 180) *
-                        Power(Sin((F("longitude") - lng) * 3.1416 / 180 / 2), 2)
+                        Power(Sin((F("lat_f") - lat) * math.pi / 180 / 2), 2) +
+                        Cos(lat * math.pi / 180) *
+                        Cos(F("lat_f") * math.pi / 180) *
+                        Power(Sin((F("lng_f") - lng) * math.pi / 180 / 2), 2)
                     ),
                     output_field=FloatField()
                 )
             ).filter(distance__lte=radius)
 
-        return queryset.order_by("-id")
-    
-    
+        # =========================
+        # ORDERING (SAFE)
+        # =========================
+        if has_location:
+            return queryset.order_by("distance", "-average_rating", "-id")
+
+        return queryset.order_by("-average_rating", "-id")
+
+
+
+
+
 
 # ---------------- All Clients ----------------
 
