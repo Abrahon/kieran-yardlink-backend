@@ -354,7 +354,6 @@ class ChangePasswordAPIView(generics.UpdateAPIView):
 # # ---------------- All Landscapers ----------------
 
 
-
 class AllLandscapersListView(generics.ListAPIView):
     serializer_class = LandscaperProfileSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -561,66 +560,8 @@ class ClientDetailView(generics.RetrieveAPIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-# profiles/views.py
-from rest_framework import generics, permissions
-from django.db.models import Q, F, FloatField
-from django.db.models.functions import ACos, Cos, Sin, Radians, Cast
-from django.db.models import Avg
-from profiles.models import LandscaperProfilies
-from profiles.serializers import LandscaperProfileSerializer
 
-class LandscaperSearchByKMAPIView(generics.ListAPIView):
-    serializer_class = LandscaperProfileSerializer
-    permission_classes = [permissions.IsAuthenticated]
 
-    def get_queryset(self):
-        queryset = LandscaperProfilies.objects.all()
-        request = self.request
-        q = request.GET.get("q", "").strip()
-        min_rating = request.GET.get("min_rating")
-        lat = request.GET.get("lat")
-        lng = request.GET.get("lng")
-        km = request.GET.get("km", 10)
-
-        # Filter by name/email
-        if q:
-            queryset = queryset.filter(
-                Q(name__icontains=q) |
-                Q(user__email__icontains=q)
-            )
-
-        # Filter by min_rating
-        if min_rating:
-            try:
-                min_rating = float(min_rating)
-                queryset = queryset.annotate(
-                    avg_rating=Avg("user__received_reviews__rating")
-                ).filter(avg_rating__gte=min_rating)
-            except ValueError:
-                pass
-
-        # Filter by distance if lat/lng provided
-        if lat and lng:
-            try:
-                lat = float(lat)
-                lng = float(lng)
-                km = float(km)
-                EARTH_RADIUS = 6371
-
-                queryset = queryset.annotate(
-                    distance=EARTH_RADIUS * ACos(
-                        Cos(Radians(lat)) *
-                        Cos(Radians(Cast(F("user__landscaper_profile__latitude"), FloatField()))) *
-                        Cos(Radians(Cast(F("user__landscaper_profile__longitude"), FloatField())) - Radians(lng)) +
-                        Sin(Radians(lat)) *
-                        Sin(Radians(Cast(F("user__landscaper_profile__latitude"), FloatField())))
-                    )
-                ).filter(distance__lte=km).order_by("distance")
-
-            except ValueError:
-                pass
-
-        return queryset.distinct()
 
 
 

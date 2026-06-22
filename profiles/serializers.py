@@ -98,6 +98,7 @@ class WorkerProfileSerializer(serializers.ModelSerializer):
 
 class LandscaperPersonalProfileSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(source="user.email", read_only=True)
+    name = serializers.CharField(source="user.name", required=False)
 
     profile_image = serializers.ImageField(
         source="image",
@@ -121,6 +122,10 @@ class LandscaperPersonalProfileSerializer(serializers.ModelSerializer):
             "subscription",
         ]
 
+
+    def get_name(self, obj):
+        user = obj.user
+        return getattr(user, "name", None) or user.email
 
     def get_subscription(self, obj):
         user = getattr(obj, "user", obj)
@@ -157,7 +162,14 @@ class LandscaperPersonalProfileSerializer(serializers.ModelSerializer):
     # UPDATE
     # -------------------------
     def update(self, instance, validated_data):
-        instance.name = validated_data.get("name", instance.name)
+
+        user_data = validated_data.pop("user", {})
+
+        # update user name
+        if "name" in user_data:
+            instance.user.name = user_data["name"]
+            instance.user.save()
+
         instance.phone = validated_data.get("phone", instance.phone)
 
         if "image" in validated_data:

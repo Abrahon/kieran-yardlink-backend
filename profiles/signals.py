@@ -9,6 +9,8 @@ from django.contrib.auth import get_user_model
 from .models import LandscaperProfilies
 User = apps.get_model(settings.AUTH_USER_MODEL)
 
+
+
 @receiver(post_save, sender=User)
 def create_admin_profile(sender, instance, created, **kwargs):
     if created:

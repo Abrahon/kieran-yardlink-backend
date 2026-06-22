@@ -13,7 +13,6 @@ from .views import (
     ChangePasswordAPIView,
     AllLandscapersListView,
     ClientProfileListView,
-    LandscaperSearchByKMAPIView,
     ClientSearchByKMAPIView,
     LandscaperDetailWithChatView,
     ClientDetailWithChatView,
@@ -47,7 +46,7 @@ urlpatterns = [
     # -------------------- Lists -------------------- #
     path("landscapers-list/", AllLandscapersListView.as_view()),
     path("clients-list/", ClientProfileListView.as_view(), name="client-list"),
-    # path("landscapers/search/", LandscaperSearchByKMAPIView.as_view()),
+
     path("clients/search/", ClientSearchByKMAPIView.as_view()),
     # user details
     path("landscaper/profile/<int:id>/", LandscaperDetailWithChatView.as_view(), name="landscaper_detail_chat"),

@@ -21,11 +21,18 @@ class BookingRequestCreateView(generics.CreateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def perform_create(self, serializer):
+        print("REQUEST DATA:", self.request.data)
 
-        client = getattr(self.request.user, "clientprofile", None)
+        client = getattr(
+            self.request.user,
+            "clientprofile",
+            None
+        )
 
         if not client:
-            raise PermissionDenied("Client profile not found.")
+            raise PermissionDenied(
+                "Client profile not found."
+            )
 
         serializer.save(
             client=client,
@@ -33,7 +40,6 @@ class BookingRequestCreateView(generics.CreateAPIView):
             job_created=False,
             is_active=True
         )
-
 
 # -----------------------------
 # Client booking list
@@ -117,17 +123,25 @@ class LandscaperPendingBookingListView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        landscaper = getattr(self.request.user, "landscaper_profile", None)
-        if not landscaper:
+        business_profile = getattr(
+            self.request.user,
+            "landscaper_profile",
+            None
+        )
+
+        if not business_profile:
             return BookingRequest.objects.none()
 
-        return BookingRequest.objects.filter(
-            landscaper=landscaper,
-            status=BookingRequest.Status.PENDING,
-            is_active=True
-        ).order_by("-created_at")
-
-
+        return (
+            BookingRequest.objects
+            .filter(
+                landscaper_id=business_profile.id,
+                status=BookingRequest.Status.PENDING,
+                is_active=True
+            )
+            .order_by("-created_at")
+        )
+    
 # -----------------------------
 # Landscaper accepts booking
 # Creates Job + JobItems from BookingRequestItem

@@ -50,6 +50,7 @@ from rest_framework import generics, permissions, serializers, status
 from rest_framework.response import Response
 
 from .serializers import JobRescheduleSerializer
+from notifications.models import Notification
 
 
 
@@ -167,14 +168,14 @@ class ClientUpcomingServiceDetailView(generics.RetrieveAPIView):
 
         today = now().date()
 
-        # ✅ AUTO MARK EXPIRED UPCOMING JOBS AS MISSED
+        #  AUTO MARK EXPIRED UPCOMING JOBS AS MISSED
         Job.objects.filter(
             client=client_profile,
             status=Job.Status.UPCOMING,
             scheduled_date__lt=today
         ).update(status=Job.Status.MISSED)
 
-        # ✅ ONLY FUTURE/TODAY UPCOMING JOBS
+        #  ONLY FUTURE/TODAY UPCOMING JOBS
         return Job.objects.filter(
             client=client_profile,
             status=Job.Status.UPCOMING,
@@ -364,56 +365,6 @@ def toggle_job_item_completion(request, item_id):
 
 
 
-# class JobImageCreateView(generics.CreateAPIView):
-#     serializer_class = JobImageSerializer
-#     permission_classes = [permissions.IsAuthenticated]
-#     parser_classes = [MultiPartParser, FormParser]
-
-#     def perform_create(self, serializer):
-
-#         landscaper = getattr(self.request.user, "landscaper_profile", None)
-
-#         if not landscaper:
-#             raise serializers.ValidationError({
-#                 "error": "Landscaper profile not found."
-#             })
-
-#         job_id = self.request.data.get("job")
-
-#         if not job_id:
-#             raise serializers.ValidationError({
-#                 "error": "Job is required."
-#             })
-
-#         try:
-#             job = Job.objects.get(id=job_id)
-#         except Job.DoesNotExist:
-#             raise serializers.ValidationError({
-#                 "error": "Job not found."
-#             })
-
-#         if job.landscaper != landscaper:
-#             raise serializers.ValidationError({
-#                 "error": "You cannot upload images for this job."
-#             })
-
-#         if job.status == Job.Status.UPCOMING:
-#             raise serializers.ValidationError({
-#                 "error": "Images cannot be uploaded before job starts."
-#             })
-
-#         # =========================
-#         # SAVE IMAGE
-#         # =========================
-#         instance = serializer.save(
-#             job=job,
-#             uploaded_by=self.request.user
-#         )
-
-#         # =========================
-#         # FIX 1: FORCE STATUS RECALCULATION
-#         # =========================
-#         job.sync_status()
 
 class JobImageCreateView(generics.CreateAPIView):
     serializer_class = JobImageSerializer
@@ -808,12 +759,40 @@ def update_job_status(request, job_id):
     # =========================
     job.save(update_fields=["status", "note", "updated_at"])
 
+    # =========================
+    # NOTIFY CLIENT ONLY WHEN
+    # LANDSCAPER CANCELS JOB
+    # =========================
+    if landscaper and action == "cancel":
+
+        if job.client and job.client.user:
+
+            Notification.objects.create(
+                user=job.client.user,
+                notification_type="job",
+                title="Job Cancelled ❌",
+                message=f"Your Job #{job.id} has been cancelled by the landscaper."
+            )
+
+            send_push_notification(
+                user=job.client.user,
+                title="Job Cancelled ❌",
+                message=f"Your Job #{job.id} has been cancelled by the landscaper.",
+                notification_type="job",
+                data={
+                    "job_id": str(job.id),
+                    "status": job.status,
+                    "type": "job_cancelled"
+                }
+            )
+
     return Response({
         "message": "Job updated successfully",
         "job_id": job.id,
         "status": job.status,
         "note": job.note
     })
+
 
 
 

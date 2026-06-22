@@ -1,3 +1,5 @@
+
+
 from firebase_admin import messaging
 from notifications.models import Notification, Device
 
@@ -7,7 +9,7 @@ def send_push_notification(user, title, message, notification_type="job", data=N
     print("🔥 send_push_notification CALLED")
 
     # -----------------------------
-    # FIX: ensure real User object
+    # FIX USER OBJECT
     # -----------------------------
     if hasattr(user, "user"):
         user = user.user
@@ -19,7 +21,7 @@ def send_push_notification(user, title, message, notification_type="job", data=N
     print("✅ FINAL USER:", user)
 
     # -----------------------------
-    # 1. Notification Settings Check
+    # NOTIFICATION SETTINGS CHECK
     # -----------------------------
     settings = getattr(user, "notification_settings", None)
 
@@ -33,9 +35,22 @@ def send_push_notification(user, title, message, notification_type="job", data=N
         if notification_type == "weather" and not settings.weather_alert:
             print("❌ BLOCKED BY SETTINGS (weather)")
             return None
+    # -----------------------------
+    # DUPLICATE CHECK (ADD THIS)
+    # -----------------------------
+    exists = Notification.objects.filter(
+        user=user,
+        notification_type=notification_type,
+        title=title,
+        message=message
+    ).exists()
+
+    if exists:
+        print("⚠️ DUPLICATE NOTIFICATION BLOCKED")
+        return None
 
     # -----------------------------
-    # 2. SAVE NOTIFICATION (DB)
+    # SAVE NOTIFICATION
     # -----------------------------
     notification = Notification.objects.create(
         user=user,
@@ -47,30 +62,40 @@ def send_push_notification(user, title, message, notification_type="job", data=N
     print("💾 NOTIFICATION SAVED:", notification.id)
 
     # -----------------------------
-    # 3. GET DEVICES
+    # DEVICES
     # -----------------------------
-    devices = Device.objects.filter(user=user, is_active=True)
+    tokens = list(
+        Device.objects.filter(user=user, is_active=True)
+        .exclude(token__isnull=True)
+        .exclude(token__exact="")
+        .values_list("token", flat=True)
+    )
 
-    if not devices.exists():
+    if not tokens:
         print("❌ NO DEVICES FOUND")
         return notification
 
-    tokens = [d.token for d in devices]
+    print("📱 TOKENS:", len(tokens))
 
     # -----------------------------
-    # 4. FIREBASE PUSH
+    # FIREBASE MESSAGE
     # -----------------------------
-    message_obj = messaging.MulticastMessage(
-        notification=messaging.Notification(
-            title=title,
-            body=message,
-        ),
-        tokens=tokens,
-        data={k: str(v) for k, v in (data or {}).items()}
-    )
+    try:
+        multicast_message = messaging.MulticastMessage(
+            notification=messaging.Notification(
+                title=title,
+                body=message,
+            ),
+            tokens=tokens,
+            data={k: str(v) for k, v in (data or {}).items()}
+        )
 
-    response = messaging.send_multicast(message_obj)
+        response = messaging.send_each_for_multicast(multicast_message)
 
-    print("📡 FCM SENT:", response.success_count)
+        print("📡 FCM SENT SUCCESS:", response.success_count)
+        print("📡 FCM FAILED:", response.failure_count)
+
+    except Exception as e:
+        print("🔥 FCM ERROR:", str(e))
 
     return notification

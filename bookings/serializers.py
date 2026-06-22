@@ -84,6 +84,8 @@ class BookingRequestItemSerializer(serializers.ModelSerializer):
 
         return attrs
 
+
+
 class BookingRequestSerializer(serializers.ModelSerializer):
     items = BookingRequestItemSerializer(many=True, write_only=True)
     booking_items = BookingRequestItemSerializer(source="items", many=True, read_only=True)
