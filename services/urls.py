@@ -1,24 +1,17 @@
 from django.urls import path
 from .views import (
 
-    # -------- Client --------
     ClientServicePreferenceAPIView,
     ClientPreferenceNoteUpdateAPIView,
-    # ClientServiceOverviewAPIView,
     ClientJobHistoryAPIView,
 
-    # -------- Schedule / Job --------
-    LandscaperCompleteJobAPIView,
-    RescheduleServiceAPIView,
     ServiceOverviewAPIView,
     RecentActivityAPIView,
-    # RecentJobCompletionAPIView
+
 )
 
 
 urlpatterns = [
-
-    # ================= CLIENT =================
 
     path(
         "client/service-preference/",
@@ -30,14 +23,6 @@ urlpatterns = [
         ClientPreferenceNoteUpdateAPIView.as_view(),
         name="client-service-note"
     ),
-
-    # Client dashboard overview (next schedule, previous job, payment)
-    # path(
-    #     "client/service-overview/",
-    #     ClientServiceOverviewAPIView.as_view(),
-    #     name="client-service-overview"
-    # )
-
 
     path("service-overview/", ServiceOverviewAPIView.as_view()),
 

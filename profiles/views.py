@@ -180,17 +180,6 @@ class ProLandscaperWorkersView(generics.ListAPIView):
         )
 
 
-# prolandscaer profile views
-# class LandScaperProfileView(generics.RetrieveUpdateAPIView):
-#     serializer_class = LandscaperProfileSerializer
-#     permission_classes = [IsAuthenticated, IsLandscaper]
-
-#     def get_object(self):
-#         profile, created = BusinessProfile.objects.get_or_create(
-#             user=self.request.user
-#         )
-#         return profile
-
 
 
 
