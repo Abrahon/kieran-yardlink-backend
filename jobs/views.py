@@ -56,19 +56,6 @@ from notifications.models import Notification
 
 
 
-@receiver(post_save, sender=Job)
-def job_created(sender, instance, created, **kwargs):
-    if not created:
-        return
-
-    if instance.client:
-        user = instance.client.user
-    elif instance.external_client:
-        user = instance.external_client
-    else:
-        return
-
-    # do your logic here (notification etc.)
 
 
 class UpcomingJobsListView(generics.ListAPIView):

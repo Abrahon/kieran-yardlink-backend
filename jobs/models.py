@@ -381,6 +381,8 @@ class JobItem(TimeStampedModel):
         null=True
     )
 
+    reminder_sent = models.BooleanField(default=False)
+
     sort_order = models.PositiveIntegerField(default=0)
 
     class Meta:
