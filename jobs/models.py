@@ -312,7 +312,7 @@ class JobItem(TimeStampedModel):
         null=True
     )
 
-    reminder_sent = models.BooleanField(default=False)
+    reminder_sent_at = models.JSONField(default=dict, blank=True)
 
     sort_order = models.PositiveIntegerField(default=0)
 

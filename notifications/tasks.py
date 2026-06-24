@@ -7,6 +7,8 @@ from profiles.models import LandscaperProfilies, ClientProfile
 from notifications.utils import send_push_notification
 from subscriptions.models import Subscription
 from accounts.models import User
+from jobs.models import JobItem
+from datetime import datetime, timedelta
 
 
 
@@ -21,25 +23,56 @@ def test_task():
 # ------------------------
 # Job Reminder (Landscaper)
 # ------------------------
-
 @shared_task
 def send_job_reminders():
     now = timezone.now()
-    upcoming_time = now + timedelta(hours=1)
 
     jobs = Job.objects.filter(
-        status="accepted",
-        scheduled_date__gte=now,
-        scheduled_date__lte=upcoming_time
-    )
+        status=Job.Status.UPCOMING,
+        scheduled_date=now.date()
+    ).select_related("landscaper__user", "client")
 
     for job in jobs:
-        send_push_notification(
-            user=job.landscaper.user,
-            title="Job Reminder ⏰",
-            message=f"You have a job at {job.scheduled_date}",
-            notification_type="job"
+
+        if not job.scheduled_date or not job.scheduled_time:
+            continue
+
+        job_datetime = timezone.make_aware(
+            datetime.combine(job.scheduled_date, job.scheduled_time),
+            timezone.get_current_timezone()
         )
+
+        diff = job_datetime - now
+
+        # ------------------
+        # 1 HOUR REMINDER
+        # ------------------
+        if timedelta(hours=0, minutes=55) <= diff <= timedelta(hours=1, minutes=5):
+
+            if not job.reminder_sent_at:
+                send_push_notification(
+                    user=job.landscaper.user,
+                    title="⏰ Job in 1 hour",
+                    message=f"Job #{job.id} starts at {job.scheduled_time}",
+                    notification_type="job"
+                )
+
+                job.reminder_sent_at = now
+                job.save(update_fields=["reminder_sent_at"])
+
+
+        # ------------------
+        # 30 MIN REMINDER
+        # ------------------
+        elif timedelta(minutes=25) <= diff <= timedelta(minutes=35):
+
+            if job.reminder_sent_at:  # already 1h sent
+                send_push_notification(
+                    user=job.landscaper.user,
+                    title="⏰ Job in 30 minutes",
+                    message=f"Job #{job.id} starting soon",
+                    notification_type="job"
+                )
 
 # ------------------------
 # Client Service Reminder
@@ -47,19 +80,34 @@ def send_job_reminders():
 @shared_task
 def send_client_service_reminders():
     now = timezone.now()
-    upcoming_services = Job.objects.filter(
-        is_completed=False,
-        scheduled_date=now.date(),
-        scheduled_time__gte=now.time(),
-        scheduled_time__lte=(now + timedelta(hours=1)).time()
-    )
 
-    for job in upcoming_services:
-        client_profile = getattr(job.client, "clientprofile", None)
-        if client_profile and client_profile.service_reminder:
-            title = "Service Reminder"
-            message = f"Reminder: Your service '{job.service.name}' is scheduled at {job.scheduled_time} today."
-            send_push_notification(job.client, title, message, notification_type="service")
+    upcoming_jobs = Job.objects.filter(
+        status=Job.Status.UPCOMING,
+        scheduled_date=now.date()
+    ).select_related("client__user")
+
+    for job in upcoming_jobs:
+
+        has_incomplete = job.items.filter(is_completed=False).exists()
+
+        if not has_incomplete:
+            continue
+
+        first_item = job.items.filter(is_completed=False).first()
+
+        service_name = (
+            first_item.service.name
+            if first_item and first_item.service
+            else "Service"
+        )
+
+        send_push_notification(
+            user=job.client.user,   # ✅ FIXED
+            title="Service Reminder",
+            message=f"Reminder: '{service_name}' at {job.scheduled_time}",
+            notification_type="service"
+        )
+
 
 # ------------------------
 # Completed Service Notification
@@ -67,10 +115,10 @@ def send_client_service_reminders():
 @shared_task
 def send_completed_service_notifications():
     now = timezone.now()
-    recent_completed = Job.objects.filter(
+    recent_completed = JobItem.objects.filter(
         is_completed=True,
-        completed_at__gte=now - timedelta(minutes=5)  # last 5 minutes
-    )
+        completed_at__gte=now - timedelta(minutes=5)
+    ).select_related("job", "job__client", "job__landscaper")
 
     for job in recent_completed:
         # Client notification

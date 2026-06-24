@@ -52,11 +52,40 @@ from rest_framework.response import Response
 from .serializers import JobRescheduleSerializer
 from notifications.models import Notification
 
+from django.utils import timezone
+from datetime import datetime
+from django.db.models import Q
 
 
 
 
 
+
+# class UpcomingJobsListView(generics.ListAPIView):
+
+#     serializer_class = JobSerializer
+#     permission_classes = [permissions.IsAuthenticated]
+
+#     def get_queryset(self):
+
+#         user = self.request.user
+#         landscaper = getattr(user, "landscaper_profile", None)
+
+#         if not landscaper:
+#             return Job.objects.none()
+
+#         now = timezone.now()
+
+#         return Job.objects.filter(
+#             landscaper=landscaper,
+#             is_active=True,
+#             status=Job.Status.UPCOMING
+#         ).filter(
+#             Q(scheduled_date__gt=now.date()) |
+#             Q(scheduled_date=now.date(), scheduled_time__gte=now.time())
+#         ).order_by("scheduled_date", "scheduled_time")
+
+from django.utils import timezone
 
 class UpcomingJobsListView(generics.ListAPIView):
 
@@ -71,11 +100,35 @@ class UpcomingJobsListView(generics.ListAPIView):
         if not landscaper:
             return Job.objects.none()
 
+        now = timezone.now()
+        today = now.date()
+        current_time = now.time()
+
+        # 🔥 STEP 1: auto mark missed jobs (important fix)
+        Job.objects.filter(
+            landscaper=landscaper,
+            status=Job.Status.UPCOMING,
+            scheduled_date__lt=today
+        ).update(status=Job.Status.MISSED)
+
+        # same day but past time
+        Job.objects.filter(
+            landscaper=landscaper,
+            status=Job.Status.UPCOMING,
+            scheduled_date=today,
+            scheduled_time__lt=current_time
+        ).update(status=Job.Status.MISSED)
+
+        # 🔥 STEP 2: return only valid upcoming jobs
         return Job.objects.filter(
             landscaper=landscaper,
             is_active=True,
             status=Job.Status.UPCOMING
+        ).filter(
+            Q(scheduled_date__gt=today) |
+            Q(scheduled_date=today, scheduled_time__gte=current_time)
         ).order_by("scheduled_date", "scheduled_time")
+    
 
 
 
@@ -798,7 +851,10 @@ class ProblemJobsListView(generics.ListAPIView):
         client = getattr(user, "clientprofile", None)
 
         qs = Job.objects.filter(
-            status=Job.Status.CANCELLED
+            status__in=[
+                Job.Status.CANCELLED,
+                Job.Status.MISSED
+            ]
         ).select_related(
             "booking__property",
             "job_property",
