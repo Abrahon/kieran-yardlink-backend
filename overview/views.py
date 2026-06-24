@@ -1466,3 +1466,61 @@ class AdminStripeFeeRevenueAnalyticsView(APIView):
                 }
             }
         }, status=status.HTTP_200_OK)
+
+
+
+# recent activity
+# activity/views.py
+
+from itertools import chain
+from invoice.models import Invoice
+from django.contrib.auth import get_user_model
+from invoice.models import Invoice
+from subscriptions.models import Subscription
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAdminUser
+from rest_framework.response import Response
+
+User = get_user_model()
+
+@api_view(["GET"])
+@permission_classes([IsAdminUser])
+def recent_activities(request):
+
+    activities = []
+
+    # User signup
+    for user in User.objects.order_by("-date_joined")[:20]:
+        activities.append({
+            "user_name": user.get_full_name() or user.email,
+            "action": "User Signup",
+            "status": "success",
+            "date": user.date_joined,
+        })
+
+    # Invoice sent
+    for invoice in Invoice.objects.order_by("-created_at")[:20]:
+        activities.append({
+            "user_name": invoice.sent_to_email,
+            "action": "Invoice Sent",
+            "status": invoice.status,
+            "date": invoice.created_at,
+        })
+
+    # Payment completed
+    for invoice in Invoice.objects.filter(
+        status=Invoice.Status.PAID
+    ).order_by("-paid_at")[:20]:
+        activities.append({
+            "user_name": invoice.sent_to_email,
+            "action": "Payment Completed",
+            "status": "paid",
+            "date": invoice.paid_at,
+        })
+
+    activities.sort(
+        key=lambda x: x["date"],
+        reverse=True
+    )
+
+    return Response(activities[:20])

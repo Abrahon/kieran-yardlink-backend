@@ -8,7 +8,8 @@ from .views import (
     AdminTotalUsersAnalyticsView,
     AdminChurnRateAnalyticsView,
     AdminSubscriptionRevenueAnalyticsView,
-    AdminStripeFeeRevenueAnalyticsView
+    AdminStripeFeeRevenueAnalyticsView,
+    recent_activities
 
 )
 
@@ -22,4 +23,5 @@ urlpatterns = [
     path("admin/analytics/churn-rate/", AdminChurnRateAnalyticsView.as_view(), name="admin-churn-rate-analytics"),
     path("admin/analytics/subscription-revenue/", AdminSubscriptionRevenueAnalyticsView.as_view(), name="admin-subscription-revenue-analytics"),
     path("admin/analytics/stripe-fee-revenue/", AdminStripeFeeRevenueAnalyticsView.as_view(), name="admin-stripe-fee-revenue-analytics"),
+    path("admin/recent-activities/",recent_activities,name="recent-activities"),
 ]
