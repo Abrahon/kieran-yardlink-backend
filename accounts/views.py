@@ -827,7 +827,9 @@ class UserListView(APIView):
 
         platform_fee_collected = round(total_job_amount * 0.02, 2)
 
-        active_subscriptions = Subscription.objects.filter(status=SubscriptionStatus.ACTIVE).count()
+        active_subscriptions = Subscription.objects.filter(
+            is_active=True,
+        ).count()
         cancelled_subscriptions = Subscription.objects.filter(status=SubscriptionStatus.CANCELLED).count()
         expired_subscriptions = Subscription.objects.filter(status=SubscriptionStatus.EXPIRED).count()
 
@@ -845,14 +847,15 @@ class UserListView(APIView):
                 output_field=FloatField()
             )
         )["avg_rating"]
+
         basic_subscriptions = Subscription.objects.filter(
-        status=SubscriptionStatus.ACTIVE,
-        plan__name__iexact="basic"
-    ).count()
+            is_active=True,
+            plan__name__iexact="Basic"
+        ).count()
 
         pro_subscriptions = Subscription.objects.filter(
-            status=SubscriptionStatus.ACTIVE,
-            plan__name__iexact="pro"
+            is_active=True,
+            plan__name__iexact="Pro"
         ).count()
 
         # --------------------------
