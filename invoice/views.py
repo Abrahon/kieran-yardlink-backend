@@ -28,6 +28,8 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
+from accounts.models import User
+from notifications.models import Notification
 
 
 
@@ -195,6 +197,21 @@ def send_job_invoice(request, invoice_id):
             )
         except Exception as e:
             print("Email error:", str(e))
+
+
+        # =========================
+        # ADMIN DASHBOARD NOTIFICATION
+        # =========================
+
+        admins = User.objects.filter(is_staff=True)
+
+        for admin in admins:
+            Notification.objects.create(
+                user=admin,
+                notification_type="invoice",
+                title="Invoice Sent",
+                message=f"{request.user.name} sent invoice {invoice.invoice_number}",
+            )
 
         # =========================
         # NOTIFY CLIENT (SAFE)

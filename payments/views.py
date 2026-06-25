@@ -135,7 +135,14 @@ from reportlab.lib.pagesizes import A4
 from django.http import HttpResponse
 from rest_framework.permissions import IsAdminUser
 from rest_framework.views import APIView
-# from payments.stripe import create_stripe_checkout_session 
+from notifications.models import Notification
+
+import stripe
+from django.conf import settings
+from django.http import HttpResponse
+from django.utils import timezone
+from django.db import transaction
+from django.views.decorators.csrf import csrf_exempt
 
 from quickbooks.services import (
     upsert_customer,
@@ -182,18 +189,18 @@ def create_invoice_checkout_session(request):
     except Invoice.DoesNotExist:
         return Response({"error": "Invoice not found"}, status=404)
 
-    # ✅ already paid → block
+    # already paid → block
     if invoice.status == Invoice.Status.PAID:
         return Response({"message": "Invoice already paid"}, status=200)
 
-    # 🔥 IMPORTANT: expire old session
+    #  IMPORTANT: expire old session
     if invoice.stripe_session_id:
         try:
             stripe.checkout.Session.expire(invoice.stripe_session_id)
         except Exception:
             pass
 
-    # ✅ create NEW session every time
+    #  create NEW session every time
     try:
         session = create_invoice_checkout_session(invoice)
     except Exception as e:
@@ -241,7 +248,7 @@ def payment_cancel(request):
 
 
 
-
+# TODO
 class CashPaymentScheduleAPIView(APIView):
     """
     Client selects cash payment for a completed job.
@@ -282,7 +289,7 @@ class CashPaymentScheduleAPIView(APIView):
         })
 
 
-
+# TODO
 class ConfirmCashPaymentAPIView(APIView):
     """
     Landscaper confirms if payment is received or not
@@ -316,178 +323,8 @@ class ConfirmCashPaymentAPIView(APIView):
 
 
 
-import stripe
-from django.conf import settings
-from django.http import HttpResponse
-from django.utils import timezone
-from django.db import transaction
-from django.views.decorators.csrf import csrf_exempt
 
 
-# @csrf_exempt
-# def payment_webhook(request):
-#     payload = request.body
-#     sig_header = request.META.get("HTTP_STRIPE_SIGNATURE")
-
-#     if not sig_header:
-#         return HttpResponse(status=400)
-
-#     try:
-#         event = stripe.Webhook.construct_event(
-#             payload=payload,
-#             sig_header=sig_header,
-#             secret=settings.STRIPE_WEBHOOK_SECRET
-#         )
-#     except Exception as e:
-#         print("Stripe webhook signature error:", str(e))
-#         return HttpResponse(status=400)
-
-#     event_type = event["type"]
-#     data_object = event["data"]["object"]
-
-#     # =========================
-#     # ONLY PAYMENT SUCCESS EVENTS
-#     # =========================
-#     if event_type in [
-#         "checkout.session.completed",
-#         "checkout.session.async_payment_succeeded"
-#     ]:
-
-#         metadata = data_object.get("metadata") or {}
-#         invoice_id = metadata.get("invoice_id")
-#         stripe_session_id = data_object.get("id")
-
-#         if not invoice_id:
-#             return HttpResponse(status=200)
-
-#         try:
-#             with transaction.atomic():
-
-#                 invoice = Invoice.objects.select_related(
-#                     "job",
-#                     "job__landscaper",
-#                     "job__client",
-#                     "job__client__user",
-#                     "job__external_client",
-#                 ).get(id=invoice_id)
-
-#                 # =========================
-#                 # AVOID DUPLICATE PROCESSING
-#                 # =========================
-#                 if invoice.status == Invoice.Status.PAID:
-#                     return HttpResponse(status=200)
-
-#                 invoice.status = Invoice.Status.PAID
-#                 invoice.paid_at = timezone.now()
-#                 invoice.stripe_session_id = stripe_session_id
-#                 invoice.save(update_fields=[
-#                     "status",
-#                     "paid_at",
-#                     "stripe_session_id",
-#                     "updated_at"
-#                 ])
-
-#                 # =========================
-#                 # FIX: SAFE JOB UPDATE
-#                 # =========================
-#                 # if invoice.job:
-#                 #     invoice.job.payment_status = "paid"  # ❗ FIXED HERE
-#                 #     invoice.job.save(update_fields=[
-#                 #         "payment_status",
-#                 #         "updated_at"
-#                 #     ])
-
-#                 # =========================
-#                 # FIX: SAFE JOB UPDATE
-#                 # =========================
-#                 if invoice.job:
-#                     invoice.job.payment_status = "paid"
-#                     invoice.job.save(update_fields=[
-#                         "payment_status",
-#                         "updated_at"
-#                     ])
-
-#                 # =========================
-#                 # PAYMENT NOTIFICATIONS
-#                 # =========================
-
-#                 # Notify landscaper
-#                 if invoice.job and invoice.job.landscaper:
-#                     send_push_notification(
-#                         user=invoice.job.landscaper.user,
-#                         title="Payment Received 💰",
-#                         message=f"Payment for Invoice #{invoice.id} has been completed.",
-#                         notification_type="payment"
-#                     )
-
-#                 # Notify client
-#                 if invoice.job:
-#                     if invoice.job.client and invoice.job.client.user:
-#                         send_push_notification(
-#                             user=invoice.job.client.user,
-#                             title="Payment Successful 💳",
-#                             message=f"Your payment for Invoice #{invoice.id} was successful.",
-#                             notification_type="payment"
-#                         )
-
-#                     elif invoice.job.external_client:
-#                         send_push_notification(
-#                             user=invoice.job.external_client,
-#                             title="Payment Successful 💳",
-#                             message=f"Your payment for Invoice #{invoice.id} was successful.",
-#                             notification_type="payment"
-#                         )
-                        
-#                 # =========================
-#                 # QUICKBOOKS AUTO SYNC (SAFE)
-#                 # =========================
-#                 try:
-#                     connection = QuickBooksConnection.objects.get(
-#                         landscaper=invoice.job.landscaper if invoice.job else None,
-#                         is_active=True
-#                     )
-
-#                     service_item_id = getattr(
-#                         settings,
-#                         "QUICKBOOKS_DEFAULT_SERVICE_ITEM_ID",
-#                         None
-#                     )
-
-#                     deposit_to_account_id = getattr(
-#                         settings,
-#                         "QUICKBOOKS_DEFAULT_DEPOSIT_ACCOUNT_ID",
-#                         None
-#                     )
-
-#                     if service_item_id:
-#                         customer = upsert_customer(connection, invoice)
-#                         qbo_invoice = qbo_create_invoice(
-#                             connection,
-#                             invoice,
-#                             customer["Id"],
-#                             service_item_id
-#                         )
-
-#                         if deposit_to_account_id:
-#                             qbo_create_payment(
-#                                 connection,
-#                                 invoice,
-#                                 customer["Id"],
-#                                 qbo_invoice["Id"],
-#                                 deposit_to_account_id,
-#                             )
-
-#                 except QuickBooksConnection.DoesNotExist:
-#                     pass
-
-#                 except Exception as e:
-#                     # NEVER break Stripe webhook
-#                     print("QuickBooks sync failed:", str(e))
-
-#         except Invoice.DoesNotExist:
-#             return HttpResponse(status=200)
-
-#     return HttpResponse(status=200)
 
 @csrf_exempt
 def payment_webhook(request):
@@ -549,6 +386,20 @@ def payment_webhook(request):
             if invoice.job:
                 invoice.job.payment_status = "paid"
                 invoice.job.save(update_fields=["payment_status", "updated_at"])
+
+            # =========================
+            # ADMIN DASHBOARD NOTIFICATION
+            # =========================
+
+            admins = User.objects.filter(is_staff=True)
+
+            for admin in admins:
+                Notification.objects.create(
+                    user=admin,
+                    notification_type="invoice",
+                    title="Payment Completed 💳",
+                    message=f"Invoice {invoice.invoice_number} paid successfully",
+                )
 
             # =========================
             # SAFE NOTIFICATIONS
@@ -986,149 +837,7 @@ from invoice.models import Invoice
 from subscriptions.models import Subscription
 
 
-# def get_month_range(dt):
-#     start = dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-#     if start.month == 12:
-#         next_month = start.replace(year=start.year + 1, month=1)
-#     else:
-#         next_month = start.replace(month=start.month + 1)
-
-#     return start, next_month
-
-
-# def percent_change(current, previous):
-#     current = Decimal(current)
-#     previous = Decimal(previous)
-
-#     if previous == 0:
-#         return float(100 if current > 0 else 0)
-
-#     return float(((current - previous) / previous) * 100)
-
-
-# @api_view(["GET"])
-# @permission_classes([IsAdminUser])
-# def admin_dashboard_stats(request):
-#     now = timezone.now()
-
-#     # =========================
-#     # DATE RANGES
-#     # =========================
-#     current_start, current_end = get_month_range(now)
-
-#     last_anchor = current_start - timedelta(days=1)
-#     last_start, last_end = get_month_range(last_anchor)
-
-#     prev_anchor = last_start - timedelta(days=1)
-#     prev_start, prev_end = get_month_range(prev_anchor)
-
-#     # =========================
-#     # INVOICE DATA (FIXED)
-#     # =========================
-#     def get_invoice_data(start, end):
-#         qs = (
-#             Invoice.objects
-#             .filter(
-#                 created_at__gte=start,
-#                 created_at__lt=end,
-#             )
-#             .filter(
-#                 Q(status="paid") | Q(status="sent")   # ✅ IMPORTANT FIX
-#             )
-#             .exclude(stripe_session_id__isnull=True)
-#             .exclude(stripe_session_id="")
-#         )
-
-#         total = qs.aggregate(total=Sum("total"))["total"] or Decimal("0.00")
-#         fee = qs.aggregate(total=Sum("service_fee_amount"))["total"] or Decimal("0.00")
-#         count = qs.count()
-
-#         return total, fee, count
-
-#     # =========================
-#     # SUBSCRIPTION DATA
-#     # =========================
-#     def get_subscription_data(start, end):
-#         qs = (
-#             Subscription.objects
-#             .filter(
-#                 created_at__gte=start,
-#                 created_at__lt=end,
-#             )
-#             .exclude(stripe_subscription_id__isnull=True)
-#             .exclude(stripe_subscription_id="")
-#             .select_related("plan")
-#         )
-
-#         total = Decimal("0.00")
-
-#         for sub in qs:
-#             price = Decimal(str(sub.plan.price or 0))
-
-#             if hasattr(sub, "discount_override") and sub.discount_override:
-#                 price -= price * Decimal(str(sub.discount_override)) / Decimal("100")
-
-#             total += price
-
-#         count = qs.count()
-
-#         return total, count
-
-#     # =========================
-#     # CURRENT MONTH
-#     # =========================
-#     cur_invoice_total, cur_fee, cur_invoice_count = get_invoice_data(current_start, current_end)
-#     cur_sub_total, cur_sub_count = get_subscription_data(current_start, current_end)
-
-#     cur_total_revenue = Decimal(cur_invoice_total) + Decimal(cur_sub_total)
-#     cur_total_transactions = cur_invoice_count + cur_sub_count
-
-#     # =========================
-#     # LAST MONTH
-#     # =========================
-#     last_invoice_total, last_fee, last_invoice_count = get_invoice_data(last_start, last_end)
-#     last_sub_total, last_sub_count = get_subscription_data(last_start, last_end)
-
-#     last_total_revenue = Decimal(last_invoice_total) + Decimal(last_sub_total)
-#     last_total_transactions = last_invoice_count + last_sub_count
-
-#     # =========================
-#     # PREVIOUS MONTH
-#     # =========================
-#     prev_invoice_total, prev_fee, prev_invoice_count = get_invoice_data(prev_start, prev_end)
-#     prev_sub_total, prev_sub_count = get_subscription_data(prev_start, prev_end)
-
-#     prev_total_revenue = Decimal(prev_invoice_total) + Decimal(prev_sub_total)
-#     prev_total_transactions = prev_invoice_count + prev_sub_count
-
-#     # =========================
-#     # PERCENT CALCULATIONS
-#     # =========================
-#     revenue_change = percent_change(last_total_revenue, prev_total_revenue)
-#     fee_change = percent_change(last_fee, prev_fee)
-#     transaction_change = percent_change(last_total_transactions, prev_total_transactions)
-
-#     # =========================
-#     # FINAL RESPONSE (UNCHANGED)
-#     # =========================
-#     return Response({
-#         "total_transaction_revenue": {
-#             "value": round(float(cur_total_revenue), 2),
-#             "change_percent": round(revenue_change, 2),
-#             "label": f"{round(revenue_change, 2)}% vs last month"
-#         },
-#         "total_platform_fees": {
-#             "value": round(float(cur_fee), 2),
-#             "change_percent": round(fee_change, 2),
-#             "label": f"{round(fee_change, 2)}% vs last month"
-#         },
-#         "total_transactions": {
-#             "value": cur_total_transactions,
-#             "change_percent": round(transaction_change, 2),
-#             "label": f"{round(transaction_change, 2)}% vs last month"
-#         }
-#     })
 
 @api_view(["GET"])
 @permission_classes([IsAdminUser])

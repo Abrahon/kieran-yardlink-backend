@@ -10,6 +10,8 @@ from .serializers import ContactMessageSerializer,AdminUpdateSerializer,AdminUpd
 from rest_framework import generics, permissions
 from django.db.models import Q
 from chat.email_service import send_email
+from accounts.models import User
+from notifications.models import Notification
 # from core.email_services import send_email
 
 
@@ -39,6 +41,21 @@ class ContactMessageCreateAPIView(generics.CreateAPIView):
             """,
             to_email="admin@gmail.com"   
         )
+        # =========================
+        # ADMIN NOTIFICATION
+        # =========================
+        admins = User.objects.filter(is_staff=True)
+
+        for admin in admins:
+            Notification.objects.create(
+                user=admin,
+                notification_type="support",
+                title="New Support Request 🎫",
+                message=(
+                    f"{instance.name or instance.user.email} "
+                    f"submitted a support request"
+                ),
+            )
 
 
 # ---------------------------

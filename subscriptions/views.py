@@ -94,6 +94,7 @@ from django.db.models import Sum, F, DecimalField, ExpressionWrapper
 from django.db.models.functions import Coalesce
 from .models import Plan, Subscription, SubscriptionStatus
 stripe.api_key = settings.STRIPE_SECRET_KEY
+from notifications.models import Notification
 
 
 
@@ -1055,6 +1056,20 @@ class UpgradePlanAPIView(APIView):
         subscription.status = SubscriptionStatus.ACTIVE
         subscription.is_trial = False  # if any trial
         subscription.save()
+    
+        # =========================
+        # ADMIN NOTIFICATION
+        # =========================
+
+        admins = User.objects.filter(is_staff=True)
+
+        for admin in admins:
+            Notification.objects.create(
+                user=admin,
+                notification_type="subscription",
+                title="Plan Upgraded 🚀",
+                message=f"{user.name or user.email} upgraded to Pro Plan",
+            )
 
         serializer = SubscriptionUpgradeSerializer(subscription)
         return Response({
