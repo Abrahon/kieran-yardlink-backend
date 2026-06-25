@@ -300,66 +300,42 @@ class AdminConversationListAPIView(APIView):
             "results": data
         })
 
-# old
+
+
 class AdminConversationDetailAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAdminUser]
 
     def get(self, request, thread_id):
-        if not request.user.is_staff:
+
+        thread = ChatThread.objects.filter(
+            id=thread_id
+        ).first()
+
+        if not thread:
             return Response(
-                {"error": "Admin only"},
-                status=status.HTTP_403_FORBIDDEN
+                {"detail": "Not found"},
+                status=404
             )
 
-        try:
-            thread = ChatThread.objects.select_related(
-                "client",
-                "landscaper"
-            ).get(id=thread_id)
-        except ChatThread.DoesNotExist:
-            return Response(
-                {"error": "Thread not found"},
-                status=status.HTTP_404_NOT_FOUND
-            )
-
-        messages = thread.messages.select_related("sender").order_by("created_at")
-
-        message_data = []
-        for msg in messages:
-            message_data.append({
-                "id": msg.id,
-                "sender_id": msg.sender.id,
-                "sender_name": msg.sender.get_full_name() or msg.sender.email,
-                "text": msg.text,
-                "file_url": msg.file.url if msg.file else None,
-                "message_type": msg.message_type,
-                "seen_at": msg.seen_at.isoformat() if msg.seen_at else None,
-                "delivered_at": msg.delivered_at.isoformat() if msg.delivered_at else None,
-                "is_deleted_for_all": msg.is_deleted_for_all,
-                "created_at": msg.created_at.isoformat(),
-            })
-
-        return Response(
-            {
-                "thread_id": thread.id,
-                "tag": thread.tag,
-                "client": {
-                    "id": thread.client.id,
-                    "name": getattr(thread.client, "name", "") or thread.client.email,
-                    "email": thread.client.email,
-                    "role": getattr(thread.client, "role", ""),
-                },
-                "landscaper": {
-                    "id": thread.landscaper.id,
-                    "name": getattr(thread.landscaper, "name", "") or thread.landscaper.email,
-                    "email": thread.landscaper.email,
-                    "role": getattr(thread.landscaper, "role", ""),
-                },
-                "messages_count": len(message_data),
-                "messages": message_data,
-            },
-            status=status.HTTP_200_OK
+        messages = thread.messages.select_related(
+            "sender"
         )
+
+        return Response({
+            "thread_id": thread.id,
+
+            "messages": [
+                {
+                    "id": m.id,
+                    "sender_id": m.sender.id,
+                    "sender_name": m.sender.name,
+                    "message": m.text,
+                    "is_admin": m.is_admin_message,
+                    "created_at": m.created_at
+                }
+                for m in messages
+            ]
+        })
     
     
 # old
@@ -409,22 +385,6 @@ class MessageCreateView(generics.CreateAPIView):
         })
 
 
-class AdminChatThreadListView(generics.ListAPIView):
-    serializer_class = ChatThreadSerializer
-    permission_classes = [permissions.IsAdminUser]
-
-    def get_queryset(self):
-        queryset = ChatThread.objects.all()
-
-        tag = self.request.query_params.get("tag")
-
-        if tag:
-            queryset = queryset.filter(tag=tag)
-
-        return queryset.order_by("-updated_at")
-
-
-
 class AdminReplyAPIView(APIView):
     permission_classes = [IsAdminUser]
 
@@ -460,3 +420,70 @@ class AdminReplyAPIView(APIView):
             "message": message.text,
             "created_at": message.created_at
         })
+
+
+
+
+
+class AdminChatThreadListView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+
+        search = request.query_params.get("search")
+
+        threads = ChatThread.objects.select_related(
+            "client",
+            "landscaper"
+        )
+
+        if search:
+            threads = threads.filter(
+                Q(client__name__icontains=search) |
+                Q(client__email__icontains=search) |
+                Q(landscaper__name__icontains=search) |
+                Q(landscaper__email__icontains=search) |
+                Q(tag__icontains=search)
+            )
+
+        threads = threads.order_by("-updated_at")
+
+        data = []
+
+        for thread in threads:
+
+            last_message = thread.messages.order_by(
+                "-created_at"
+            ).first()
+
+            data.append({
+                "thread_id": thread.id,
+
+                "client": {
+                    "id": thread.client.id,
+                    "name": thread.client.name,
+                    "email": thread.client.email
+                },
+
+                "landscaper": {
+                    "id": thread.landscaper.id,
+                    "name": thread.landscaper.name,
+                    "email": thread.landscaper.email
+                },
+
+                "tag": thread.tag,
+
+                "last_message": (
+                    last_message.text
+                    if last_message
+                    else None
+                ),
+
+                "last_message_at": (
+                    last_message.created_at
+                    if last_message
+                    else None
+                )
+            })
+
+        return Response(data)

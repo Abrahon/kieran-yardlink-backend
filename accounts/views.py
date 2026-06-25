@@ -62,6 +62,8 @@ from profiles.models import LandscaperProfilies
 from jobs.models import Job
 from reviews.models import LandscaperReview
 from .models import LoginActivity, AdminAuditLog
+from django.db.models import Case, When
+from .enums import RoleChoices
 
 from .serializers import AdminUserDetailSerializer, AdminUserUpdateSerializer
 from rest_framework.views import APIView
@@ -560,7 +562,7 @@ class ResendForgotOTPView(generics.GenericAPIView):
             status=status.HTTP_200_OK
         )
 
-from django.db.models import Case, When
+
 
 class UserListView(APIView):
     permission_classes = [IsAdminUser]
@@ -574,11 +576,18 @@ class UserListView(APIView):
         search_query = request.query_params.get("search", "").strip()
         sort_by = request.query_params.get("sort")
 
-        users = User.objects.all()
+        # Only landscaper and client users
+        users = User.objects.filter(
+            role__in=[
+                RoleChoices.LANDSCAPER,
+                RoleChoices.CLIENT
+            ]
+        )
 
         # --------------------------
-        # FILTERS (UNCHANGED)
+        # FILTERS
         # --------------------------
+
         if role:
             users = users.filter(role__iexact=role)
 
@@ -598,8 +607,9 @@ class UserListView(APIView):
             )
 
         # --------------------------
-        # SEARCH (FIXED INDENT ONLY)
+        # SEARCH
         # --------------------------
+
         if search_query:
             users = users.filter(
                 Q(name__icontains=search_query) |

@@ -264,3 +264,32 @@ async def disconnect(sid):
     if user_id and user_sockets.get(user_id) == sid:
         user_sockets.pop(user_id)
     logger.info(f"Disconnected: {user_id}")
+
+
+
+async def send_admin_message(
+    thread,
+    receiver,
+    message
+):
+
+    payload = {
+        "id": message.id,
+        "thread_id": thread.id,
+        "sender_name": "YardLink Support",
+        "text": message.text,
+        "is_admin": True,
+        "created_at": message.created_at.isoformat()
+    }
+
+    receiver_sid = user_sockets.get(
+        str(receiver.id)
+    )
+
+    if receiver_sid:
+
+        await sio.emit(
+            "new_message",
+            payload,
+            to=receiver_sid
+        )
