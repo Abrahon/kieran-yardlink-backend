@@ -26,6 +26,13 @@ class Notification(models.Model):
         ("job", "Job"),
         ("payment", "Payment"),
         ("weather", "Weather"),
+
+        # admin
+        ("signup", "Signup"),
+        ("invoice", "Invoice"),
+        ("subscription", "Subscription"),
+        ("support", "Support"),
+        ("system", "System"),
     ]
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="notifications")

@@ -22,7 +22,6 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework import views
-from django.shortcuts import get_object_or_404
 from .serializers import SignupSerializer, LoginSerializer, ResetPasswordSerializer,ResendOTPSerializer
 from .models import User, OTP,UserReport
 from django.utils import timezone
@@ -37,10 +36,9 @@ from django.db.models import Avg, Q
 from accounts.models import LoginActivity
 # from jobs.models import Job, PaymentStatus
 from django.db.models import Q, Sum, FloatField, Count
-from django.shortcuts import get_object_or_404
 from django.db.models import Sum, FloatField, Value
 from django.db.models.functions import Coalesce
-from django.shortcuts import get_object_or_404
+
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -86,15 +84,13 @@ from django.db.models import (
 )
 from django.db.models.functions import Coalesce
 from django.utils import timezone
-
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
-
 from accounts.models import User
 from payments.enums import PaymentStatus
+from notifications.models import Notification
 
-from django.db import transaction  
 
 
 
@@ -169,6 +165,8 @@ def get_tokens_for_user(user):
         'access': str(refresh.access_token),
     }
 
+
+from django.db import transaction 
 from .serializers import LoginSerializer
 from .models import User, OTP, LoginActivity
 from .utils import generate_otp, send_otp_email
@@ -176,7 +174,7 @@ from .security_utils import get_client_ip, parse_device
 from django.contrib.auth.models import update_last_login
 # your existing function
 from .views import get_tokens_for_user  
-from subscriptions.models import Subscription
+
 
 
 class LoginView(generics.GenericAPIView):
@@ -433,9 +431,20 @@ class VerifyOTPView(APIView):
                 # activate user
                 user.is_active = True
                 user.save(update_fields=["is_active"])
+                # notifications
+                admins = User.objects.filter(is_staff=True)
+
+                for admin in admins:
+                    Notification.objects.create(
+                        user=admin,
+                        notification_type="signup",
+                        title="New User Registration",
+                        message=f"{user.name or user.email} registered as {user.role}"
+                    )
 
                 # cleanup OTP
                 OTP.objects.filter(email__iexact=email).delete()
+                
 
         except Exception:
             return Response(
@@ -463,8 +472,10 @@ class VerifyOTPView(APIView):
                 }
             },
             status=201
-        )     
-# verify email
+        )  
+
+
+
 
 # verify otp for forget password 
 class VerifyOTPForgetView(generics.GenericAPIView):

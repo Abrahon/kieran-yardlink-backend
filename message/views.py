@@ -154,25 +154,44 @@ class StartConversationAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Check existing thread (both directions)
+        # Must be one client and one landscaper
+        roles = {current_user.role, other_user.role}
+
+        if roles != {"client", "landscaper"}:
+            return Response(
+                {
+                    "error": "Conversation is allowed only between client and landscaper"
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        client = (
+            current_user
+            if current_user.role == "client"
+            else other_user
+        )
+
+        landscaper = (
+            current_user
+            if current_user.role == "landscaper"
+            else other_user
+        )
+
         thread = ChatThread.objects.filter(
-            Q(client=current_user, landscaper=other_user) |
-            Q(client=other_user, landscaper=current_user)
+            Q(client=client, landscaper=landscaper)
         ).first()
 
         if not thread:
             thread = ChatThread.objects.create(
-                client=current_user if current_user.role == "client" else other_user,
-                landscaper=current_user if current_user.role == "landscaper" else other_user
+                client=client,
+                landscaper=landscaper
             )
 
         return Response({
             "thread_id": thread.id,
             "client_id": thread.client.id,
             "landscaper_id": thread.landscaper.id,
-        }, status=status.HTTP_200_OK)
-
-
+        })
 
 class AdminTagConversationAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -268,12 +287,29 @@ class AdminConversationListAPIView(APIView):
                     "name": getattr(thread.client, "name", "") or thread.client.email,
                     "email": thread.client.email,
                     "role": getattr(thread.client, "role", ""),
+                    "profile_image": (
+                        request.build_absolute_uri(
+                            thread.client.clientprofile.image.url
+                        )
+                        if hasattr(thread.client, "clientprofile")
+                        and thread.client.clientprofile.image
+                        else None
+                    ),
+
                 },
                 "landscaper": {
                     "id": thread.landscaper.id,
                     "name": getattr(thread.landscaper, "name", "") or thread.landscaper.email,
                     "email": thread.landscaper.email,
                     "role": getattr(thread.landscaper, "role", ""),
+                    "profile_image": (
+                        request.build_absolute_uri(
+                            thread.landscaper.landscaperprofilies.image.url
+                        )
+                        if hasattr(thread.landscaper, "landscaperprofilies")
+                        and thread.landscaper.landscaperprofilies.image
+                        else None
+                    ),
                 },
                 "tag": thread.tag,
                 "created_at": thread.created_at,
@@ -291,6 +327,8 @@ class AdminConversationListAPIView(APIView):
                     "file_url": last_message.file.url if last_message.file else None,
                     "created_at": last_message.created_at,
                 } if last_message else None,
+
+                "last_message_preview": last_message.text if last_message else "",
 
                 "messages_count": len(message_list),
             })
