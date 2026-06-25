@@ -39,6 +39,8 @@ from django.db.models import Q, Sum, FloatField, Count
 from django.db.models import Sum, FloatField, Value
 from django.db.models.functions import Coalesce
 
+from django.db.models import Count
+from django.db.models.functions import TruncMonth
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -444,7 +446,7 @@ class VerifyOTPView(APIView):
 
                 # cleanup OTP
                 OTP.objects.filter(email__iexact=email).delete()
-                
+
 
         except Exception:
             return Response(
@@ -1621,88 +1623,29 @@ class AdminSubscriptionInvoiceDetailView(APIView):
 
 
 
-# =====================================================
-# twilio sms  services 
-# =====================================================
-
-# from rest_framework.decorators import api_view, permission_classes
-# from rest_framework.permissions import IsAuthenticated
-# from rest_framework.response import Response
-# from django.utils import timezone
-
-# from .models import UserPhone
-# from .serializers import RequestOTPSerializer, VerifyOTPSerializer
-# from services.sms_service import send_sms
 
 
-# @api_view(["POST"])
-# @permission_classes([IsAuthenticated])
-# def request_otp(request):
-#     serializer = RequestOTPSerializer(data=request.data)
-#     serializer.is_valid(raise_exception=True)
+# usaer groth
+class AdminUserGrowthAPIView(APIView):
+    permission_classes = [IsAdminUser]
 
-#     phone_number = serializer.validated_data["phone_number"]
+    def get(self, request):
 
-#     user_phone, _ = UserPhone.objects.get_or_create(user=request.user)
+        users = (
+            User.objects
+            .annotate(month=TruncMonth("date_joined"))
+            .values("month")
+            .annotate(total_users=Count("id"))
+            .order_by("month")
+        )
 
-#     # 🔴 RATE LIMIT CHECK (basic protection)
-#     if user_phone.code_created_at and not user_phone.is_otp_expired():
-#         return Response(
-#             {"error": "OTP already sent. Please wait before requesting again."},
-#             status=429
-#         )
+        data = []
 
-#     otp = user_phone.generate_otp()
+        for item in users:
+            data.append({
+                "month": item["month"].strftime("%b"),  # Jan, Feb, Mar
+                "year": item["month"].year,
+                "total_users": item["total_users"]
+            })
 
-#     try:
-#         send_sms(phone_number, f"Your YardLink OTP is {otp}")
-#     except Exception as e:
-#         return Response({"error": str(e)}, status=500)
-
-#     return Response({"message": "OTP sent successfully"})
-
-# verify otp 
-# @api_view(["POST"])
-# @permission_classes([IsAuthenticated])
-# def verify_otp(request):
-#     serializer = VerifyOTPSerializer(data=request.data)
-#     serializer.is_valid(raise_exception=True)
-
-#     phone_number = serializer.validated_data["phone_number"]
-#     otp = serializer.validated_data["otp"]
-
-#     try:
-#         user_phone = UserPhone.objects.get(
-#             user=request.user,
-#             phone_number=phone_number
-#         )
-#     except UserPhone.DoesNotExist:
-#         return Response({"error": "Phone number not found"}, status=404)
-
-#     # ❌ OTP expired
-#     if user_phone.is_otp_expired():
-#         return Response({"error": "OTP expired. Request new one."}, status=400)
-
-#     # ❌ Wrong OTP
-#     if user_phone.verification_code != otp:
-#         return Response({"error": "Invalid OTP"}, status=400)
-
-#     # ✅ success
-#     user_phone.is_verified = True
-#     user_phone.verification_code = None
-#     user_phone.verified_at = timezone.now()
-#     user_phone.save()
-
-#     return Response({"message": "Phone verified successfully"})
-
-
-# SMS OPT-IN 
-# @api_view(["POST"])
-# @permission_classes([IsAuthenticated])
-# def update_sms_opt_in(request):
-#     user_phone, _ = UserPhone.objects.get_or_create(user=request.user)
-
-#     user_phone.sms_opt_in = bool(request.data.get("sms_opt_in"))
-#     user_phone.save()
-
-#     return Response({"message": "SMS preference updated"})
+        return Response(data)

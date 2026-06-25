@@ -20,7 +20,8 @@ from .views import (
     AdminUserLoginActivityView,
     AdminSubscriptionBillingHistoryView,
     AdminSubscriptionInvoiceDetailView,
-    AdminUserSuspendView
+    AdminUserSuspendView,
+    AdminUserGrowthAPIView
 
 )
 
@@ -34,8 +35,6 @@ urlpatterns = [
     path('resend-otp/', ResendForgotOTPView.as_view(), name='resend-forgot-otp'),
     path('verify-otp/', VerifyOTPForgetView.as_view(), name='verify-otp'),
     path('reset-password/', ResetPasswordView.as_view(), name='reset-password'),
-    # path('admin/create/', AdminCreateView.as_view(), name='admin-create'),
-    # path('check/token/', CheckTokenView.as_view(), name='check-token'),
     path('users-list/', UserListView.as_view(), name='user-list'),
     path("admin/delete-user/<int:id>/", AdminDeleteUserView.as_view(), name="admin-delete-user"),
     path('admin/users/<int:user_id>/pause/', AdminPauseUserView.as_view(), name='admin-pause-user'),
@@ -54,5 +53,6 @@ urlpatterns = [
     path("admin/users/<int:user_id>/subscription-billing-history/",AdminSubscriptionBillingHistoryView.as_view(),name="admin-subscription-billing-history"),
     path("admin/users/<int:user_id>/subscription-invoices/<str:invoice_id>/",AdminSubscriptionInvoiceDetailView.as_view(),name="admin-subscription-invoice-detail"),
     path("admin/users/<int:user_id>/suspend/", AdminUserSuspendView.as_view(), name="admin-user-suspend"),
+    path("admin/user-growth/",AdminUserGrowthAPIView.as_view(), name="admin-user-growth",),
 
 ]
