@@ -8,7 +8,9 @@ from .views import (
     TestNotificationAPIView,
     remove_fcm_token,
     mark_notification_read,
-    mark_all_notifications_read
+    mark_all_notifications_read,
+    AdminNotificationListAPIView,
+    MarkNotificationReadAPIView
 )
 
 urlpatterns = [
@@ -23,4 +25,7 @@ urlpatterns = [
 
     path("notifications/<int:notification_id>/read/", NotificationReadAPIView.as_view()),
     path("test/", TestNotificationAPIView.as_view(), name="test-notification"),
+    path("admin/notifications/",AdminNotificationListAPIView.as_view(),name="admin-notifications", ),
+
+    path("admin/notifications/<int:notification_id>/read/",MarkNotificationReadAPIView.as_view(),name="mark-notification-read", ),
 ]

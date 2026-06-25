@@ -7,6 +7,10 @@ from rest_framework.decorators import api_view, permission_classes
 from firebase_admin import messaging
 from notifications.models import Notification, NotificationSettings, Device
 from notifications.serializers import NotificationSerializer, NotificationSettingsSerializer
+from rest_framework.permissions import IsAdminUser
+from django.shortcuts import get_object_or_404
+
+
 
 
 
@@ -269,3 +273,55 @@ class TestNotificationAPIView(APIView):
             notification_type="job"
         )
         return Response({"message": "Notification sent"})
+
+
+
+
+
+class AdminNotificationListAPIView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+
+        notifications = Notification.objects.filter(
+            user=request.user
+        ).order_by("-created_at")
+
+        data = []
+
+        for notification in notifications:
+            data.append({
+                "id": notification.id,
+                "title": notification.title,
+                "message": notification.message,
+                "notification_type": notification.notification_type,
+                "is_read": notification.is_read,
+                "created_at": notification.created_at,
+            })
+
+        return Response({
+            "count": len(data),
+            "results": data
+        })
+
+
+
+
+
+class MarkNotificationReadAPIView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def post(self, request, notification_id):
+
+        notification = get_object_or_404(
+            Notification,
+            id=notification_id,
+            user=request.user
+        )
+
+        notification.is_read = True
+        notification.save(update_fields=["is_read"])
+
+        return Response({
+            "message": "Notification marked as read"
+        })

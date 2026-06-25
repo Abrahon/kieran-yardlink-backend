@@ -1721,3 +1721,41 @@ class AdminAssignSubscriptionAPIView(APIView):
             "start_date": subscription.start_date,
             "end_date": subscription.end_date
         }, status=201)
+
+
+
+# susbscription breakdown
+from django.db.models import Sum, Count, F, DecimalField
+from django.db.models.functions import TruncMonth
+
+
+class AdminRevenueBreakdownAPIView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+
+        revenue = (
+            Subscription.objects.filter(is_active=True)
+            .annotate(month=TruncMonth("created_at"))
+            .values("month")
+            .annotate(
+                total_revenue=Sum(
+                    F("plan__price"),
+                    output_field=DecimalField()
+                ),
+                total_subscriptions=Count("id")
+            )
+            .order_by("month")
+        )
+
+        data = []
+
+        for item in revenue:
+            data.append({
+                "month": item["month"].strftime("%b"),  # Jan, Feb, Mar
+                "year": item["month"].year,
+                "total_revenue": item["total_revenue"],
+                "total_subscriptions": item["total_subscriptions"]
+            })
+
+        return Response(data)
