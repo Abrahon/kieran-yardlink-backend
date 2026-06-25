@@ -9,7 +9,7 @@ from .views import (
     WorkerBlockToggleView,
     AcceptedInvitationListView,
     BlockedWorkerListView,
-    accept_invitation_page,
+    # accept_invitation_page,
     invitation_success
 )
 # from .views import accept_invite_page
@@ -22,7 +22,7 @@ urlpatterns = [
     path("delete/<int:invitation_id>/", DeleteInvitationView.as_view(), name="delete-invitation"),
     # invitations/urls.py
     path("accept-invite/<uuid:token>/",AcceptInvitationView.as_view(),name="accept-invite-api"),
-    path("invitations/accept/<uuid:token>/",accept_invitation_page, name="accept-invitation-page"),
+    # path("invitations/accept/<uuid:token>/",accept_invitation_page, name="accept-invitation-page"),
     path("invitation-success/",invitation_success,name="invitation-success"),
 
     path("workers/<int:worker_id>/block-toggle/", WorkerBlockToggleView.as_view(), name="worker-block-toggle"),

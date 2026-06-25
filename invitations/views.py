@@ -19,70 +19,20 @@ from django.core.exceptions import ValidationError
 
 from subscriptions.helpers import can_add_team_member
 
+from django.shortcuts import render, get_object_or_404
+from django.http import HttpResponse
+
+from django.core.mail import EmailMultiAlternatives
+from rest_framework.generics import CreateAPIView
+from rest_framework.permissions import IsAuthenticated
+from rest_framework import status
+
+
 # =========================
 # SEND INVITATION
 # =========================
 
 
-
-
-# class SendInvitationView(CreateAPIView):
-#     serializer_class = SendInvitationSerializer
-#     permission_classes = [IsAuthenticated]
-
-#     def create(self, request, *args, **kwargs):
-
-#         user = request.user
-#         landscaper = user.landscaper_profile
-#         email = request.data.get("email")
-
-#         # -------------------------
-#         # LIMIT CHECK (STOP HERE)
-#         # -------------------------
-#         if not can_add_team_member(user):
-#             return Response(
-#                 {
-#                     "success": False,
-#                     "message": "Team member limit reached for your plan"
-#                 },
-#                 status=status.HTTP_403_FORBIDDEN
-#             )
-
-#         serializer = self.get_serializer(data=request.data)
-#         serializer.is_valid(raise_exception=True)
-
-#         invitation = TeamInvitation.objects.create(
-#             inviter=user,
-#             landscaper=landscaper,
-#             email=email
-#         )
-
-#         invite_link = f"/invitations/accept/{invitation.token}/"
-
-#         # -------------------------
-#         # EMAIL ONLY WHEN SUCCESS
-#         # -------------------------
-#         send_mail(
-#             subject="You're invited to join a landscaper team",
-#             message=f"Accept invitation using this link: {invite_link}",
-#             from_email=settings.DEFAULT_FROM_EMAIL,
-#             recipient_list=[email],
-#         )
-
-#         return Response(
-#             {
-#                 "success": True,
-#                 "message": "Invitation sent successfully",
-#                 "invite_link": invite_link
-#             },
-#             status=status.HTTP_201_CREATED
-#         )
-
-from django.core.mail import EmailMultiAlternatives
-from rest_framework.generics import CreateAPIView
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework import status
 
 
 class SendInvitationView(CreateAPIView):
@@ -117,7 +67,11 @@ class SendInvitationView(CreateAPIView):
         )
 
         # Full URL
-        invite_link = f"http://127.0.0.1:8000/invitations/accept/{invitation.token}/"
+        invite_link = (
+
+            f"http://localhost:5400/accept-invite?token={invitation.token}"
+        )
+            
 
         # HTML Email
         html_content = f"""
@@ -217,26 +171,11 @@ class AcceptInvitationView(APIView):
         )
 
 
-from django.shortcuts import render, get_object_or_404
-from django.http import HttpResponse
-
-
-from django.shortcuts import render, get_object_or_404
-from .models import TeamInvitation
-
-
-def accept_invitation_page(request, token):
-    invitation = get_object_or_404(TeamInvitation, token=token)
-
-    return render(request, "invitations/accept.html", {
-        "invitation": invitation
-    })
-
 
 def invitation_success(request):
     return render(
         request,
-        "invitations/success.html"
+        "http://localhost:5400/accept-invite/success"
     )
 
 

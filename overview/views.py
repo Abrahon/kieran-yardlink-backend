@@ -1490,7 +1490,7 @@ def recent_activities(request):
     activities = []
 
     # User signup
-    for user in User.objects.order_by("-date_joined")[:20]:
+    for user in User.objects.order_by("-date_joined")[:10]:
         activities.append({
             "user_name": user.get_full_name() or user.email,
             "action": "User Signup",
@@ -1499,7 +1499,7 @@ def recent_activities(request):
         })
 
     # Invoice sent
-    for invoice in Invoice.objects.order_by("-created_at")[:20]:
+    for invoice in Invoice.objects.order_by("-created_at")[:10]:
         activities.append({
             "user_name": invoice.sent_to_email,
             "action": "Invoice Sent",
@@ -1510,7 +1510,7 @@ def recent_activities(request):
     # Payment completed
     for invoice in Invoice.objects.filter(
         status=Invoice.Status.PAID
-    ).order_by("-paid_at")[:20]:
+    ).order_by("-paid_at")[:10]:
         activities.append({
             "user_name": invoice.sent_to_email,
             "action": "Payment Completed",
@@ -1523,4 +1523,4 @@ def recent_activities(request):
         reverse=True
     )
 
-    return Response(activities[:20])
+    return Response(activities[:10])

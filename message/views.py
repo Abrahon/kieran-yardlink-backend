@@ -15,6 +15,7 @@ from django.db.models import Q
 from rest_framework import generics, permissions
 from rest_framework.response import Response
 from .models import ChatThread, Message
+from rest_framework.permissions import IsAdminUser
 
 
 class ConversationListAPIView(APIView):
@@ -421,3 +422,41 @@ class AdminChatThreadListView(generics.ListAPIView):
             queryset = queryset.filter(tag=tag)
 
         return queryset.order_by("-updated_at")
+
+
+
+class AdminReplyAPIView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def post(self, request, thread_id):
+
+        thread = ChatThread.objects.filter(
+            id=thread_id
+        ).first()
+
+        if not thread:
+            return Response(
+                {"detail": "Conversation not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        text = request.data.get("text")
+
+        if not text:
+            return Response(
+                {"detail": "Message required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        message = Message.objects.create(
+            thread=thread,
+            sender=request.user,
+            text=text,
+            is_admin_message=True
+        )
+
+        return Response({
+            "id": message.id,
+            "message": message.text,
+            "created_at": message.created_at
+        })

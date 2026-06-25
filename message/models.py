@@ -39,6 +39,7 @@ class Message(models.Model):
         on_delete=models.CASCADE
     )
     text = models.TextField(blank=True, null=True)
+    is_admin_message = models.BooleanField(default=False)
     file = CloudinaryField("file", blank=True, null=True)
 
     # ✅ Real-time chat fields
