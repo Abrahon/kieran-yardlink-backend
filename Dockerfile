@@ -16,8 +16,12 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt /app/
-RUN pip install --upgrade pip setuptools wheel \
-    && pip install -r requirements.txt
+
+RUN echo "========== REQUIREMENTS ==========" \
+    && grep "Django==" /app/requirements.txt \
+    && grep "django-filter" /app/requirements.txt \
+    && pip install --upgrade pip setuptools wheel \
+    && pip install -r /app/requirements.txt
 
 COPY . /app
 
