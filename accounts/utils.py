@@ -13,15 +13,66 @@ def generate_otp():
 
 def send_otp_email(to_email, otp_code, name="User", sender_name=None):
     subject = "🔐 Your OTP Code for Verification"
-
     html_content = f"""
-    <div style="font-family:Arial,sans-serif;max-width:600px;margin:20px auto;
-                border:1px solid #e2e2e2;padding:20px;border-radius:10px;background-color:#f9f9f9;">
-        <h2 style="color:#2c3e50;">Hello {name} 👋,</h2>
-        <p>Your OTP code is:</p>
-        <h1 style="color:#28a745;">{otp_code}</h1>
-        <p>This OTP is valid for 5 minutes.</p>
-    </div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+           style="background:#f4f4f4;padding:30px 0;">
+        <tr>
+            <td align="center">
+
+                <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"
+                       style="background:#ffffff;
+                              border-radius:12px;
+                              padding:40px;
+                              border:1px solid #e5e5e5;
+                              text-align:center;
+                              font-family:Arial,sans-serif;">
+
+                    <tr>
+                        <td>
+
+                            <h2 style="margin:0;color:#2c3e50;">
+                                Hello {name} 👋
+                            </h2>
+
+                            <p style="margin-top:20px;
+                                      font-size:16px;
+                                      color:#555;">
+                                Use the OTP below to complete your verification.
+                            </p>
+
+                            <div style="
+                                display:inline-block;
+                                margin:25px 0;
+                                padding:15px 35px;
+                                background:#28a745;
+                                color:#ffffff;
+                                font-size:34px;
+                                font-weight:bold;
+                                letter-spacing:8px;
+                                border-radius:8px;
+                            ">
+                                {otp_code}
+                            </div>
+
+                            <p style="color:#666;font-size:15px;">
+                                This OTP is valid for
+                                <strong>5 minutes</strong>.
+                            </p>
+
+                            <hr style="margin:30px 0;border:none;border-top:1px solid #eeeeee;">
+
+                            <p style="font-size:13px;color:#999;">
+                                If you didn't request this OTP, you can safely ignore this email.
+                            </p>
+
+                        </td>
+                    </tr>
+
+                </table>
+
+            </td>
+        </tr>
+    </table>
     """
 
     plain_text = strip_tags(html_content)

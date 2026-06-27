@@ -1629,6 +1629,8 @@ class AdminSubscriptionInvoiceDetailView(APIView):
 
 
 # usaer groth
+from django.db.models import Count, Q
+
 class AdminUserGrowthAPIView(APIView):
     permission_classes = [IsAdminUser]
 
@@ -1638,7 +1640,17 @@ class AdminUserGrowthAPIView(APIView):
             User.objects
             .annotate(month=TruncMonth("date_joined"))
             .values("month")
-            .annotate(total_users=Count("id"))
+            .annotate(
+                total_users=Count("id"),
+                total_clients=Count(
+                    "id",
+                    filter=Q(role=RoleChoices.CLIENT)
+                ),
+                total_landscapers=Count(
+                    "id",
+                    filter=Q(role=RoleChoices.LANDSCAPER)
+                ),
+            )
             .order_by("month")
         )
 
@@ -1646,9 +1658,11 @@ class AdminUserGrowthAPIView(APIView):
 
         for item in users:
             data.append({
-                "month": item["month"].strftime("%b"),  # Jan, Feb, Mar
+                "month": item["month"].strftime("%b"),
                 "year": item["month"].year,
-                "total_users": item["total_users"]
+                "total_users": item["total_users"],
+                "total_clients": item["total_clients"],
+                "total_landscapers": item["total_landscapers"],
             })
 
         return Response(data)

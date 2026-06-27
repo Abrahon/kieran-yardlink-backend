@@ -222,6 +222,11 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'notifications.tasks.send_client_service_reminders',
         'schedule': crontab(minute='*/10'),
     },
+    
+    "check-trials-every-hour": {
+        "task": "subscriptions.tasks.check_expired_trials",
+        "schedule": 3600.0,
+    },
 }
 
 SIMPLE_JWT = {

@@ -188,7 +188,7 @@ def invitation_success(request):
 
 
 class PendingInvitationListView(ListAPIView):
-    permission_classes = [IsAuthenticated, IsProLandscaper]
+    permission_classes = [IsAuthenticated]
     serializer_class = InvitationListSerializer
 
     def get_queryset(self):
@@ -202,7 +202,7 @@ class PendingInvitationListView(ListAPIView):
 # CANCEL INVITATION
 # =========================
 class CancelInvitationView(APIView):
-    permission_classes = [IsAuthenticated, IsProLandscaper]
+    permission_classes = [IsAuthenticated]
 
     def delete(self, request, invitation_id):
         invitation = TeamInvitation.objects.filter(
@@ -225,7 +225,7 @@ class CancelInvitationView(APIView):
 # DELETE INVITATION
 # =========================
 class DeleteInvitationView(APIView):
-    permission_classes = [IsAuthenticated, IsProLandscaper]
+    permission_classes = [IsAuthenticated]
 
     def delete(self, request, invitation_id):
         invitation = TeamInvitation.objects.filter(
@@ -318,7 +318,7 @@ class WorkerBlockToggleView(APIView):
         )
 
 class AcceptedInvitationListView(ListAPIView):
-    permission_classes = [IsAuthenticated, IsProLandscaper]
+    permission_classes = [IsAuthenticated]
     serializer_class = InvitationListSerializer
 
     def get_queryset(self):
@@ -341,7 +341,7 @@ def accept_invite_page(request, token):
 
 
 class BlockedWorkerListView(ListAPIView):
-    permission_classes = [IsAuthenticated, IsProLandscaper]
+    permission_classes = [IsAuthenticated]
     serializer_class = InvitationListSerializer
 
     def get_queryset(self):
