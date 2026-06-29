@@ -78,18 +78,22 @@ class PropertyMultipleImageUploadView(APIView):
 
 class PropertyListCreateView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated]
-    serializer_class = PropertySerializer  # ✅ simplify
+    serializer_class = PropertySerializer
 
     def get_queryset(self):
-        # ✅ FIX: removed is_active filter
-        return Property.objects.filter(
-            owner=self.request.user
-        )
+        return Property.objects.filter(owner=self.request.user)
 
     def perform_create(self, serializer):
+        images = self.request.data.get("images", [])
+
+        # ensure list safety
+        if images is None:
+            images = []
+
         serializer.save(
             owner=self.request.user,
-            is_active=True   # ✅ ensure default consistency
+            is_active=True,
+            images=images  # ✅ IMPORTANT FIX
         )
 
 

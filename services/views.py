@@ -34,7 +34,7 @@ from jobs.models import Job, JobImage
 from django.db.models import F
 from django.utils import timezone
 from payments.enums import PaymentStatus
-# add ons
+from profiles.models import ClientProfile
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework import status
 from django.shortcuts import get_object_or_404
@@ -115,7 +115,16 @@ class ServiceOverviewAPIView(APIView):
     permission_classes = [IsClient]
 
     def get(self, request):
-        client = request.user.clientprofile
+
+        # -------------------------
+        # GET CLIENT PROFILE SAFELY
+        # -------------------------
+        client = ClientProfile.objects.filter(user=request.user).first()
+
+        if not client:
+            return Response({
+                "detail": "Client profile not found."
+            }, status=404)
 
         # -------------------------
         # ALL CLIENT JOBS
@@ -130,11 +139,15 @@ class ServiceOverviewAPIView(APIView):
             "images"
         ).order_by("-scheduled_date")
 
-        if not jobs.exists():
-            return Response({
-                "message": "No service history found.",
-                "data": None
-            })
+        jobs = Job.objects.filter(
+            client=client,
+            is_active=True
+        ).select_related(
+            "job_property",
+            "invoice"
+        ).prefetch_related(
+            "images"
+        ).order_by("-scheduled_date")
 
         # -------------------------
         # LAST COMPLETED JOB (FOR SERVICE)
@@ -177,6 +190,9 @@ class ServiceOverviewAPIView(APIView):
         if property_obj:
             prop_instance = property_obj
 
+        property_data = None
+
+        if property_obj:
             property_data = {
                 "id": property_obj.id,
                 "address": property_obj.address,
@@ -187,7 +203,7 @@ class ServiceOverviewAPIView(APIView):
                 "grass_types": property_obj.grass_types,
                 "notes": property_obj.notes,
                 "is_active": property_obj.is_active,
-                "images": property_obj.images,
+                "images": property_obj.images, 
             }
         # -------------------------
         # SERVICE SUMMARY
