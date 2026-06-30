@@ -626,6 +626,7 @@ class ClientJobDetailSerializer(serializers.ModelSerializer):
         return invoice.stripe_checkout_url
 
 
+
 class ProblemJobSerializer(serializers.ModelSerializer):
 
     property_address = serializers.SerializerMethodField()

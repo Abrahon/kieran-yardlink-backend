@@ -55,6 +55,7 @@ from notifications.models import Notification
 from django.utils import timezone
 from datetime import datetime
 from django.db.models import Q
+from invoice.models import Invoice
 
 
 
@@ -1035,6 +1036,59 @@ class CompletedJobDetailView(generics.RetrieveAPIView):
         })
 
 
+# class ClientUnpaidCompletedJobView(generics.RetrieveAPIView):
+
+#     serializer_class = ClientJobDetailSerializer
+#     permission_classes = [permissions.IsAuthenticated]
+
+#     def get_object(self):
+
+#         client = getattr(self.request.user, "clientprofile", None)
+
+#         if not client:
+#             raise NotFound("Client profile not found")
+
+#         job = (
+#             Job.objects.filter(
+#                 client=client,
+#                 is_active=True,
+#                 status=Job.Status.COMPLETED,
+#                 payment_status=Invoice.Status.SENT
+#             )
+#             .select_related(
+#                 "client",
+#                 "landscaper",
+#                 "landscaper__user",
+#                 "invoice"
+#             )
+#             .prefetch_related(
+#                 "items",
+#                 "images"
+#             )
+#             .order_by("-completed_at")
+#             .first()
+#         )
+
+#         if not job:
+#             raise NotFound("No completed unpaid job found")
+
+#         # 🔥 SAFETY: ensure invoice exists before Stripe link usage
+#         if hasattr(job, "invoice") and job.invoice:
+#             if not job.invoice.stripe_checkout_url:
+#                 from payments.stripe_service import create_invoice_checkout_session
+
+#                 session = create_invoice_checkout_session(job.invoice)
+
+#                 job.invoice.stripe_checkout_url = session.url
+#                 job.invoice.stripe_session_id = session.id
+#                 job.invoice.save(update_fields=[
+#                     "stripe_checkout_url",
+#                     "stripe_session_id",
+#                     "updated_at"
+#                 ])
+
+#         return job
+
 class ClientUnpaidCompletedJobView(generics.RetrieveAPIView):
 
     serializer_class = ClientJobDetailSerializer
@@ -1042,51 +1096,38 @@ class ClientUnpaidCompletedJobView(generics.RetrieveAPIView):
 
     def get_object(self):
 
+        print("========== DEBUG ==========")
+        print("Logged in user ID:", self.request.user.id)
+        print("Logged in email:", self.request.user.email)
+
         client = getattr(self.request.user, "clientprofile", None)
+        print("Client Profile:", client)
 
-        if not client:
-            raise NotFound("Client profile not found")
-
-        job = (
-            Job.objects.filter(
-                client=client,
-                is_active=True,
-                status=Job.Status.COMPLETED,
-                payment_status="pending"
-            )
-            .select_related(
-                "client",
-                "landscaper",
-                "landscaper__user",
-                "invoice"
-            )
-            .prefetch_related(
-                "items",
-                "images"
-            )
-            .order_by("-completed_at")
-            .first()
+        queryset = Job.objects.filter(
+            client=client,
+            is_active=True,
+            status=Job.Status.COMPLETED,
+            invoice__status=Invoice.Status.SENT,
         )
+
+        print("Matching jobs:", queryset.count())
+        print(list(queryset.values("id", "client_id")))
+
+        job = queryset.select_related(
+            "client",
+            "landscaper",
+            "landscaper__user",
+            "invoice",
+        ).prefetch_related(
+            "items",
+            "images"
+        ).order_by("-completed_at").first()
 
         if not job:
             raise NotFound("No completed unpaid job found")
 
-        # 🔥 SAFETY: ensure invoice exists before Stripe link usage
-        if hasattr(job, "invoice") and job.invoice:
-            if not job.invoice.stripe_checkout_url:
-                from payments.stripe_service import create_invoice_checkout_session
-
-                session = create_invoice_checkout_session(job.invoice)
-
-                job.invoice.stripe_checkout_url = session.url
-                job.invoice.stripe_session_id = session.id
-                job.invoice.save(update_fields=[
-                    "stripe_checkout_url",
-                    "stripe_session_id",
-                    "updated_at"
-                ])
-
         return job
+
     
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated])
