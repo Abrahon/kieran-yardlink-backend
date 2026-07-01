@@ -21,15 +21,26 @@ class NotificationListView(APIView):
     def get(self, request):
         """
         GET /api/notifications/
-        Returns all notifications for the logged-in user.
-        Optional query param: ?unread=true to filter unread only.
+        Returns notifications along with a YouTube-style UNREAD badge count.
         """
-        unread = request.query_params.get("unread") == "true"
-        notifications = Notification.objects.filter(user=request.user)
-        if unread:
-            notifications = notifications.filter(is_read=False)
-        serializer = NotificationSerializer(notifications, many=True)
-        return Response({"notifications": serializer.data})
+        unread_only = request.query_params.get("unread") == "true"
+        
+        # 1. Base user notifications
+        notifications_queryset = Notification.objects.filter(user=request.user).order_by('-created_at')
+        
+        # 2. Always calculate the badge count based ONLY on unread items
+        unread_badge_count = notifications_queryset.filter(is_read=False).count()
+        
+        # 3. Apply list filtering if explicitly requested via query params
+        if unread_only:
+            notifications_queryset = notifications_queryset.filter(is_read=False)
+            
+        serializer = NotificationSerializer(notifications_queryset, many=True)
+        
+        return Response({
+            "count": unread_badge_count,  # Dynamic badge count decreases as items are read
+            "notifications": serializer.data
+        })
 
     def post(self, request):
         """
@@ -52,6 +63,8 @@ class NotificationListView(APIView):
             )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
+
+    
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated])
 def mark_notification_read(request, id):
@@ -70,12 +83,21 @@ def mark_notification_read(request, id):
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated])
 def mark_all_notifications_read(request):
+    """
+    PATCH /api/notifications/read/
+    Marks all user notifications as read and drops the badge count straight to 0.
+    """
+    # 1. Mark everything read
     Notification.objects.filter(
         user=request.user,
         is_read=False
     ).update(is_read=True)
 
-    return Response({"message": "All notifications marked as read"})
+    # 2. Return 0 for the badge count so the frontend UI badge disappears immediately
+    return Response({
+        "message": "All notifications marked as read",
+        "count": 0
+    })
 
 
 class NotificationSettingsView(APIView):
