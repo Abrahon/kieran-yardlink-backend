@@ -147,6 +147,7 @@ class BusinessLandscaperProfileSerializer(serializers.ModelSerializer):
         personal_profile.save()
 
         return instance
+
     def update(self, instance, validated_data):
         for field in [
             "business_name",
@@ -156,6 +157,7 @@ class BusinessLandscaperProfileSerializer(serializers.ModelSerializer):
             "description",
             "latitude",
             "longitude",
+            "service_radius_km",
             "profile_image",
             "insurance_doc",
             "license_doc",
@@ -164,10 +166,24 @@ class BusinessLandscaperProfileSerializer(serializers.ModelSerializer):
                 setattr(instance, field, validated_data[field])
 
         instance.save()
+
+        # Update personal profile if needed
+        personal_profile, _ = LandscaperProfilies.objects.get_or_create(
+            user=instance.user
+        )
+
+        if "name" in validated_data:
+            personal_profile.name = validated_data["name"]
+
+        if "phone" in validated_data:
+            personal_profile.phone = validated_data["phone"]
+
+        personal_profile.save()
+
         return instance
 
 
-# models.py
+
 
 # serializers.py
 

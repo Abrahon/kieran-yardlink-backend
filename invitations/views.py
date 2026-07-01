@@ -190,6 +190,7 @@ def invitation_success(request):
 class PendingInvitationListView(ListAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = InvitationListSerializer
+    pagination_class = None  # Disable pagination
 
     def get_queryset(self):
         return TeamInvitation.objects.filter(
@@ -203,6 +204,7 @@ class PendingInvitationListView(ListAPIView):
 # =========================
 class CancelInvitationView(APIView):
     permission_classes = [IsAuthenticated]
+    
 
     def delete(self, request, invitation_id):
         invitation = TeamInvitation.objects.filter(
