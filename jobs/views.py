@@ -57,36 +57,10 @@ from datetime import datetime
 from django.db.models import Q
 from invoice.models import Invoice
 
-
-
-
-
-
-# class UpcomingJobsListView(generics.ListAPIView):
-
-#     serializer_class = JobSerializer
-#     permission_classes = [permissions.IsAuthenticated]
-
-#     def get_queryset(self):
-
-#         user = self.request.user
-#         landscaper = getattr(user, "landscaper_profile", None)
-
-#         if not landscaper:
-#             return Job.objects.none()
-
-#         now = timezone.now()
-
-#         return Job.objects.filter(
-#             landscaper=landscaper,
-#             is_active=True,
-#             status=Job.Status.UPCOMING
-#         ).filter(
-#             Q(scheduled_date__gt=now.date()) |
-#             Q(scheduled_date=now.date(), scheduled_time__gte=now.time())
-#         ).order_by("scheduled_date", "scheduled_time")
-
 from django.utils import timezone
+
+
+
 
 class UpcomingJobsListView(generics.ListAPIView):
 
@@ -451,6 +425,8 @@ class JobImageCreateView(generics.CreateAPIView):
 
 
 
+
+
 @api_view(["PATCH"])
 @permission_classes([permissions.IsAuthenticated])
 def add_job_note(request, job_id):
@@ -507,6 +483,9 @@ def add_job_note(request, job_id):
         "status": job.status,
         "note": job.note
     }, status=200)
+
+
+
 
 
 # --- Add Job Reschedule ---
@@ -649,6 +628,8 @@ class JobRescheduleCreateView(generics.CreateAPIView):
 
 
 
+
+
 # landscaper approval and client requested reschedule list
 class PendingRescheduleListView(generics.ListAPIView):
     serializer_class = JobRescheduleSerializer
@@ -665,6 +646,9 @@ class PendingRescheduleListView(generics.ListAPIView):
             job__landscaper=landscaper,
             status="pending"
         ).select_related("job", "requested_by").order_by("-created_at")
+
+
+
 
 
 
@@ -751,6 +735,8 @@ class RescheduleActionView(generics.GenericAPIView):
             {"error": "Invalid action. Use 'approve' or 'reject'."},
             status=400
         )
+
+
 
 
 
@@ -873,6 +859,9 @@ class ProblemJobsListView(generics.ListAPIView):
             return Job.objects.none()
 
         return qs.order_by("-updated_at")
+
+
+
 
 
 # manual job created
@@ -1036,58 +1025,6 @@ class CompletedJobDetailView(generics.RetrieveAPIView):
         })
 
 
-# class ClientUnpaidCompletedJobView(generics.RetrieveAPIView):
-
-#     serializer_class = ClientJobDetailSerializer
-#     permission_classes = [permissions.IsAuthenticated]
-
-#     def get_object(self):
-
-#         client = getattr(self.request.user, "clientprofile", None)
-
-#         if not client:
-#             raise NotFound("Client profile not found")
-
-#         job = (
-#             Job.objects.filter(
-#                 client=client,
-#                 is_active=True,
-#                 status=Job.Status.COMPLETED,
-#                 payment_status=Invoice.Status.SENT
-#             )
-#             .select_related(
-#                 "client",
-#                 "landscaper",
-#                 "landscaper__user",
-#                 "invoice"
-#             )
-#             .prefetch_related(
-#                 "items",
-#                 "images"
-#             )
-#             .order_by("-completed_at")
-#             .first()
-#         )
-
-#         if not job:
-#             raise NotFound("No completed unpaid job found")
-
-#         # 🔥 SAFETY: ensure invoice exists before Stripe link usage
-#         if hasattr(job, "invoice") and job.invoice:
-#             if not job.invoice.stripe_checkout_url:
-#                 from payments.stripe_service import create_invoice_checkout_session
-
-#                 session = create_invoice_checkout_session(job.invoice)
-
-#                 job.invoice.stripe_checkout_url = session.url
-#                 job.invoice.stripe_session_id = session.id
-#                 job.invoice.save(update_fields=[
-#                     "stripe_checkout_url",
-#                     "stripe_session_id",
-#                     "updated_at"
-#                 ])
-
-#         return job
 
 class ClientUnpaidCompletedJobView(generics.RetrieveAPIView):
 

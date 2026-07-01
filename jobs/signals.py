@@ -10,17 +10,26 @@ def job_created(sender, instance, created, **kwargs):
     if not created:
         return
 
-    if instance.client:
+    user = None
+
+    # safer access pattern
+    if getattr(instance, "client", None) and getattr(instance.client, "user", None):
         user = instance.client.user
-    elif instance.external_client:
+
+    elif getattr(instance, "external_client", None) and getattr(instance.external_client, "user", None):
         user = instance.external_client.user
-    else:
+
+    if not user:
         return
 
-    send_push_notification(
-        user=user,
-        title="New Job Created",
-        message=f"Job #{instance.id} has been scheduled",
-        notification_type="job",
-        data={"job_id": instance.id}
-    )
+    try:
+        send_push_notification(
+            user=user,
+            title="New Job Created",
+            message=f"Job #{instance.id} has been scheduled",
+            notification_type="job",
+            data={"job_id": instance.id},
+        )
+    except Exception:
+        # never break job creation because notification failed
+        pass

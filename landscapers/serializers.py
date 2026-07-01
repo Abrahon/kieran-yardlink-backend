@@ -24,7 +24,7 @@ from .models import ServiceQuote
 from property.serializers import PropertySerializer
 # from profiles.serializers import ClientProfileMiniSerializer
 from landscapers.models import BusinessProfile
-
+from decimal import Decimal, InvalidOperation
 
 
 
@@ -81,31 +81,28 @@ class BusinessLandscaperProfileSerializer(serializers.ModelSerializer):
         return attrs
 
 
-    # def create(self, validated_data):
-    #     request = self.context.get("request")
-    #     user = request.user
+    def validate_latitude(self, value):
+        try:
+            value = Decimal(str(value))
+        except (InvalidOperation, TypeError):
+            raise serializers.ValidationError("Invalid latitude value")
 
-    #     if hasattr(user, "landscaper_profile"):
-    #         raise ValidationError("Business profile already exists.")
+        if value < -90 or value > 90:
+            raise serializers.ValidationError("Latitude must be between -90 and 90")
 
-    #     profile_image = validated_data.pop("profile_image", None)
-    #     insurance_doc = validated_data.pop("insurance_doc", None)
-    #     license_doc = validated_data.pop("license_doc", None)
+        return value
 
-    #     instance = BusinessProfile.objects.create(
-    #         user=user,
-    #         **validated_data
-    #     )
 
-    #     if profile_image:
-    #         instance.profile_image = profile_image
-    #     if insurance_doc:
-    #         instance.insurance_doc = insurance_doc
-    #     if license_doc:
-    #         instance.license_doc = license_doc
+    def validate_longitude(self, value):
+        try:
+            value = Decimal(str(value))
+        except (InvalidOperation, TypeError):
+            raise serializers.ValidationError("Invalid longitude value")
 
-    #     instance.save()
-    #     return instance
+        if value < -180 or value > 180:
+            raise serializers.ValidationError("Longitude must be between -180 and 180")
+
+        return value
 
     # -----------------------------
     # CREATE

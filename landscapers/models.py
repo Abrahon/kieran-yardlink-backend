@@ -45,14 +45,15 @@ class BusinessProfile(models.Model):
 
     # Location
     latitude = models.DecimalField(
-        max_digits=20,
-        decimal_places=18,
+        max_digits=9,
+        decimal_places=6,
         null=True,
         blank=True
     )
+
     longitude = models.DecimalField(
-        max_digits=20,
-        decimal_places=18,
+        max_digits=9,
+        decimal_places=6,
         null=True,
         blank=True
     )
