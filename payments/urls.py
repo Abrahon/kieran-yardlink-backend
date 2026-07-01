@@ -17,7 +17,8 @@ from .views import (
     AdminStripeVsCashDashboardAPIView,
     admin_dashboard_stats,
     EarningsCSVExportView,
-    AdminUserPaymentsView
+    AdminUserPaymentsView,
+    revenue_report_pdf
 
     
 )
@@ -73,6 +74,8 @@ urlpatterns = [
         ProLandscaperMonthlyRevenueView.as_view(),
         name="pro-landscaper-monthly-revenue"
     ),
+    path('reports/revenue/pdf/', revenue_report_pdf, name='revenue_report_pdf'),
+  
     path(
         "admin/dashboard/payment-ratio/",
         AdminStripeVsCashDashboardAPIView.as_view(),

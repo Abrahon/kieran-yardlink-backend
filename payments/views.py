@@ -1755,7 +1755,226 @@ class ProLandscaperMonthlyRevenueView(APIView):
             }
         }, status=200)
     
+
+
+from io import BytesIO
+from datetime import datetime
+
+from django.http import HttpResponse
+from django.utils import timezone
+from django.db.models import Sum
+from django.db.models.functions import ExtractMonth
+
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Paragraph,
+    Spacer,
+    Table,
+    TableStyle,
+)
+
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def revenue_report_pdf(request):
+    # Fallback validation to ensure user profile context
+    landscaper = getattr(request.user, "landscaper_profile", None)
+    if not landscaper:
+        return Response(
+            {"error": "Landscaper profile not found."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    # 1. Target Year Detection
+    current_year = timezone.now().year
+    target_year_str = request.query_params.get("year", str(current_year))
+    try:
+        target_year = int(target_year_str)
+    except ValueError:
+        target_year = current_year
+
+    # --------------------------------------------------
+    # 2. Dynamic DB Calculations (Using your exact fields)
+    # --------------------------------------------------
+    # Filtering invoices belonging to current authenticated user for the target year
+    base_query = Invoice.objects.filter(
+        created_by=request.user, 
+        created_at__year=target_year
+    )
+
+    # Total and Pending calculations using 'total' instead of 'total_amount'
+    total_revenue = base_query.filter(status="paid").aggregate(Sum("total"))["total__sum"] or 0.0
+    pending_amount = base_query.filter(status="pending").aggregate(Sum("total"))["total__sum"] or 0.0
     
+    paid_jobs_count = base_query.filter(status="paid").count()
+    pending_jobs_count = base_query.filter(status="pending").count()
+    completed_jobs_count = base_query.filter(status="completed").count()
+
+    # Monthly Breakdown Calculation via ExtractMonth
+    monthly_data = (
+        base_query.filter(status="paid")
+        .annotate(month_num=ExtractMonth("created_at"))
+        .values("month_num")
+        .annotate(total_monthly=Sum("total"))
+        .order_by("month_num")
+    )
+
+    # Matrix fill loop for all 12 calendar cycles
+    monthly_revenue_list = []
+    monthly_lookup = {item["month_num"]: item["total_monthly"] for item in monthly_data}
+    
+    for month_idx in range(1, 13):
+        month_str = f"{target_year}-{month_idx:02d}"
+        amount = monthly_lookup.get(month_idx, 0.0)
+        monthly_revenue_list.append({
+            "month": month_str,
+            "total_amount": float(amount)
+        })
+
+    # --------------------------------------------------
+    # 3. PDF Construction Engine
+    # --------------------------------------------------
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=36,
+        leftMargin=36,
+        topMargin=36,
+        bottomMargin=36,
+    )
+
+    log_text_left = ParagraphStyle(
+        "LogTextLeft", fontName="Courier", fontSize=9, leading=12, alignment=TA_LEFT
+    )
+    log_text_right = ParagraphStyle(
+        "LogTextRight", fontName="Courier", fontSize=9, leading=12, alignment=TA_RIGHT
+    )
+    title_style = ParagraphStyle(
+        "LogTitle", fontName="Courier-Bold", fontSize=12, leading=14, alignment=TA_CENTER
+    )
+
+    elements = []
+    page_width = A4[0] - 72  
+    char_repeat_count = 85   
+
+    def add_divider(char="=", space=5):
+        elements.append(Spacer(1, space))
+        elements.append(Paragraph(char * char_repeat_count, log_text_left))
+        elements.append(Spacer(1, space))
+
+    def create_kv_table(data_list):
+        table_data = []
+        for key, value in data_list:
+            v_str = str(value) if value is not None else ""
+            table_data.append([
+                Paragraph(str(key), log_text_left),
+                Paragraph(":", log_text_left),
+                Paragraph(v_str, log_text_left)
+            ])
+        t = Table(table_data, colWidths=[180, 15, page_width - 195])
+        t.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('LEFTPADDING', (0,0), (-1,-1), 0),
+            ('RIGHTPADDING', (0,0), (-1,-1), 0),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+            ('TOPPADDING', (0,0), (-1,-1), 2),
+        ]))
+        return t
+
+    def fmt_curr(val):
+        return f"${val:,.2f}"
+
+    # 1. Main Title Header
+    elements.append(Paragraph("Financial & Job Metrics Log", title_style))
+    add_divider("=")
+
+    # 2. Section: Report Meta Information
+    elements.append(Paragraph("Report Information", log_text_left))
+    elements.append(Spacer(1, 5))
+    
+    current_time_str = timezone.now().strftime("%Y-%m-%d %H:%M")
+    meta_info = [
+        ("Status", "SUCCESS"),
+        ("Generated At", current_time_str),
+        ("Scope Year", str(target_year)),
+    ]
+    elements.append(create_kv_table(meta_info))
+    add_divider("=")
+
+    # 3. Section: Revenue Summary
+    elements.append(Paragraph("Revenue Summary", log_text_left))
+    elements.append(Spacer(1, 5))
+    
+    rev_info = [
+        ("Total Revenue", fmt_curr(total_revenue)),
+        ("Yearly Revenue", fmt_curr(total_revenue)), 
+        ("Pending Amount", fmt_curr(pending_amount)),
+    ]
+    elements.append(create_kv_table(rev_info))
+    add_divider("=")
+
+    # 4. Section: Job Operations Breakdown
+    elements.append(Paragraph("Job Performance Metrics", log_text_left))
+    elements.append(Spacer(1, 5))
+    
+    job_info = [
+        ("Completed Jobs Count", completed_jobs_count),
+        ("Paid Jobs Count", paid_jobs_count),
+        ("Pending Jobs Count", pending_jobs_count),
+    ]
+    elements.append(create_kv_table(job_info))
+    add_divider("=")
+
+    # 5. Section: Monthly Revenue Matrix List Table
+    elements.append(Paragraph("Monthly Breakdown", log_text_left))
+    add_divider("-", space=2)
+
+    breakdown_rows = [
+        [Paragraph("Month Period", log_text_left), 
+         Paragraph("", log_text_left), 
+         Paragraph("Total Amount", log_text_right)]
+    ]
+
+    for entry in monthly_revenue_list:
+        breakdown_rows.append([
+            Paragraph(str(entry["month"]), log_text_left),
+            Paragraph("", log_text_left),
+            Paragraph(fmt_curr(entry["total_amount"]), log_text_right)
+        ])
+
+    breakdown_table = Table(breakdown_rows, colWidths=[200, 123, 200])
+    breakdown_table.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('LEFTPADDING', (0,0), (-1,-1), 0),
+        ('RIGHTPADDING', (0,0), (-1,-1), 0),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ('TOPPADDING', (0,0), (-1,-1), 3),
+    ]))
+    elements.append(breakdown_table)
+    add_divider("-", space=10)
+
+    # Footer
+    elements.append(Paragraph("Generated automatically from YardLink QuickBooks Integration Reporting Node.", log_text_left))
+
+    doc.build(elements)
+    buffer.seek(0)
+
+    response = HttpResponse(buffer, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="financial_metrics_{target_year}.pdf"'
+    return response
+
+
 # csv export
 class EarningsCSVExportView(APIView):
     permission_classes = [IsProLandscaper]
